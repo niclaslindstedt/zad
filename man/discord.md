@@ -26,6 +26,7 @@ matching bot token from the OS keychain.
 | `leave` | Leave a thread channel. |
 | `discover` | Walk the bot's visible guilds/channels/members and cache a name → snowflake map. |
 | `directory` | Inspect or hand-edit that cache. |
+| `permissions` | Inspect, scaffold, or dry-run the per-project permissions policy. |
 
 Every verb supports `--json` to emit machine-readable output instead
 of the human-readable default.
@@ -46,6 +47,36 @@ to edit. The mapping is:
 
 See `docs/configuration.md` for the full scope list and for the
 local-vs-global precedence rules.
+
+## Permissions (second layer)
+
+Scope is the coarse gate — "is this family of operations enabled?".
+**Permissions** are the fine gate — "is *this* call (to this target, at
+this time, with this content) allowed?". They live in an optional
+TOML file at:
+
+- Global: `~/.zad/services/discord/permissions.toml`
+- Local:  `~/.zad/projects/<slug>/services/discord/permissions.toml`
+
+Both files apply — a call must pass every file that exists. Missing
+files contribute no restrictions. The `docs/configuration.md` file
+documents the full schema (allow/deny globs and regex, denied content
+words and patterns, UTC time windows, per-function blocks). The mapping
+from verb to function block is:
+
+| Verb | Permissions block | Matches against |
+|---|---|---|
+| `send`     | `[send]`     | `channels` (for `--channel`) or `users` (for `--dm`); body against `content` |
+| `read`     | `[read]`     | `channels` |
+| `channels` | `[channels]` | `guilds` |
+| `join`     | `[join]`     | `channels` |
+| `leave`    | `[leave]`    | `channels` |
+| `discover` | `[discover]` | `guilds` — denied guilds are silently skipped in the walk |
+| (library-level `manage`) | `[manage]` | `channels` |
+
+Permission violations surface with a `permission denied` error that
+names the function, the reason, and the exact file path to edit — the
+same shape as the scope-denied error.
 
 ## Name resolution
 
@@ -173,6 +204,38 @@ error, so agent scripts don't have to pre-check.
 | `--force` | bool | `false` | Required by `clear` to confirm wiping the directory. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
+## `zad discord permissions`
+
+```
+zad discord permissions                          # show (same as `show`)
+zad discord permissions show
+zad discord permissions path
+zad discord permissions init  [--local] [--force]
+zad discord permissions check --function <name> [--channel|--user|--guild <id|name>] [--body <text>]
+```
+
+- `show` — print both candidate file paths plus the body of whichever
+  files exist.
+- `path` — print only the two candidate paths, one per line.
+- `init` — write a starter policy. Defaults to the global scope; pass
+  `--local` to target `~/.zad/projects/<slug>/services/discord/`. The
+  template denies admin-like channels and all `channels.manage`
+  operations.
+- `check` — dry-run a proposed action against the effective policy.
+  Exits 0 on allow, 1 on deny with the reason and the config path
+  printed.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--function <name>` | string | — | One of `send`, `read`, `channels`, `join`, `leave`, `discover`, `manage`. |
+| `--channel <id\|name>` | snowflake \| directory name | — | Target channel for channel-scoped functions. |
+| `--user <id\|name>` | snowflake \| directory name | — | Target user for `send --dm`. Mutually exclusive with `--channel`. |
+| `--guild <id\|name>` | snowflake \| directory name | — | Target guild for `channels` / `discover`. |
+| `--body <text>` | string | — | Message body to test against `content` rules (only for `send`). |
+| `--force` | bool | false | Required by `init` to overwrite an existing file. |
+| `--local` | bool | false | `init` writes to the project-local scope instead of global. |
+| `--json` | bool | false | Emit machine-readable JSON. |
+
 ## Environment variables
 
 | Variable | Description |
@@ -208,6 +271,10 @@ tail -n 20 deploy.log | zad discord send --channel general --stdin
 
 # DM a user directly
 zad discord send --dm @alice "standup in 5 minutes"
+
+# Scaffold a local permissions policy, then dry-run a send
+zad discord permissions init --local
+zad discord permissions check --function send --channel general --body "hello"
 
 # Read recent history from a channel
 zad discord read --channel general --limit 50 --json | jq '.messages[].body'

@@ -58,6 +58,15 @@ pub enum ZadError {
     #[error("discord channel {id} not found or the bot cannot see it")]
     DiscordChannelNotFound { id: u64 },
 
+    #[error(
+        "permission denied for `{function}`: {reason}\n  config: {config_path}\n  tip: edit that file (or delete it) to adjust the rule"
+    )]
+    PermissionDenied {
+        function: &'static str,
+        reason: String,
+        config_path: PathBuf,
+    },
+
     #[error("invalid input: {0}")]
     Invalid(String),
 

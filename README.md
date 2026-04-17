@@ -70,14 +70,40 @@ Configuration actions: `create` (register credentials), `enable` /
 Runtime verbs are chosen per service. For `discord`: `send`, `read`,
 `channels`, `join`, `leave`, plus `discover` (best-effort walk that
 caches a name → snowflake map at
-`~/.zad/projects/<slug>/services/discord/directory.toml`) and
-`directory` (list / set / remove entries by hand). After `discover`,
-the destination flags accept names — `--channel general`, `--dm @alice`
-— with a numeric snowflake still working as a fallback. Every command
-takes `--json` for machine-readable output. Today the only service is
-`discord`. See [`man/main.md`](man/main.md) for the top-level overview
-and [`man/service.md`](man/service.md) / [`man/discord.md`](man/discord.md)
-for the full per-command reference.
+`~/.zad/projects/<slug>/services/discord/directory.toml`),
+`directory` (list / set / remove entries by hand), and `permissions`
+(inspect, scaffold, or dry-run the per-project permissions policy).
+After `discover`, the destination flags accept names — `--channel general`,
+`--dm @alice` — with a numeric snowflake still working as a fallback.
+Every command takes `--json` for machine-readable output. Today the
+only service is `discord`. See [`man/main.md`](man/main.md) for the
+top-level overview and [`man/service.md`](man/service.md) /
+[`man/discord.md`](man/discord.md) for the full per-command reference.
+
+### Permissions (optional second layer)
+
+Scopes declare *which families of operations* a service may perform;
+**permissions** are a finer layer that pins down *which channels, which
+users, which times, and which content* each function is allowed to
+touch. They live in an optional TOML file — globally at
+`~/.zad/services/<service>/permissions.toml` and/or per project at
+`~/.zad/projects/<slug>/services/<service>/permissions.toml`. Both
+files apply simultaneously (strictest wins), so a global baseline can
+never be loosened by a project. An absent file contributes no
+restrictions.
+
+```sh
+# Scaffold a project-local policy (deny admin-like channels + channels.manage).
+zad discord permissions init --local
+
+# Dry-run an action without hitting Discord.
+zad discord permissions check --function send --channel general --body "hello"
+```
+
+See [`docs/configuration.md`](docs/configuration.md#permissions-file)
+for the full schema. The same pattern will apply to every future
+service — each provider picks up the generic `content` / `time` /
+`allow` / `deny` primitives and names its own per-function blocks.
 
 ## Configuration
 
