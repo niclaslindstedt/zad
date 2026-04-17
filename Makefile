@@ -30,7 +30,9 @@ docs:
 	@echo "see docs/"
 
 website:
+	cargo build --bin zad
 	cd website && npm install && npm run build
 
 website-dev:
+	cargo build --bin zad
 	cd website && npm install && npm run dev

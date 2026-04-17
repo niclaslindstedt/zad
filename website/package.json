@@ -5,10 +5,11 @@
   "scripts": {
     "extract": "node scripts/extract-source-data.mjs",
     "dev": "npm run extract && vite",
-    "build": "npm run extract && vite build",
+    "build": "npm run extract && node scripts/build.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "smol-toml": "^1.3.0",
     "vite": "^5"
   }
 }

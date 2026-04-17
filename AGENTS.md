@@ -123,7 +123,8 @@ primitives (`PatternListRaw`, `ContentRulesRaw`, `TimeWindowRaw`),
 expose `EffectivePermissions { global, local }` with one
 `check_<verb>_<target>` method per runtime verb, wire the four
 `permissions` subcommands, and ship a realistic example at
-`examples/<service>-permissions.toml`.
+`examples/<service>-permissions/` (subdirectory with `permissions.toml`
+and a `README.md`, per §13 of `OSS_SPEC.md`).
 
 ## Website staleness policy
 
@@ -139,8 +140,10 @@ Per §21 of `OSS_SPEC.md`, this repo ships agent skills for keeping drift-prone 
 
 | Skill | When to run |
 |---|---|
-| `maintenance`   | When several artifacts have likely drifted at once — umbrella skill that runs every `update-*` skill in the correct order. |
-| `update-docs`   | After any change to the public API, configuration keys, or error messages. |
-| `update-readme` | After any change that alters user-visible behavior, commands, or install instructions. |
+| `maintenance`     | When several artifacts have likely drifted at once — umbrella skill that runs every `update-*` skill in the correct order. |
+| `update-manpages` | After any change to the clap CLI tree (subcommand added / renamed, flag added or removed, default changed). |
+| `update-docs`     | After any change to the public API, configuration keys, or error messages. |
+| `update-readme`   | After any change that alters user-visible behavior, commands, or install instructions. |
+| `update-website`  | After README, `docs/`, `OSS_SPEC.md` front matter, or `Cargo.toml` version moves — the website extractor reads from those. |
 
-Each skill has a `SKILL.md` (the playbook) and a `.last-updated` file (the baseline commit hash). Run a skill by loading its `SKILL.md` and following the discovery process and update checklist. The skill rewrites `.last-updated` at the end of a successful run, and improves itself in place when it discovers new mapping entries. The `maintenance` skill owns a **Registry** table listing every `update-*` skill — add a row whenever you create a new sync skill.
+Each skill has a `SKILL.md` (the playbook) and a `.last-updated` file (the baseline commit hash). Run a skill by loading its `SKILL.md` and following the discovery process and update checklist. The skill rewrites `.last-updated` at the end of a successful run, and improves itself in place when it discovers new mapping entries. The `maintenance` skill owns a **Registry** table listing every `update-*` skill — add a row whenever you create a new sync skill. Skills are accessible via the `.claude/skills` symlink (→ `.agent/skills/`).

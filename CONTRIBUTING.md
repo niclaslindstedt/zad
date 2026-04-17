@@ -70,6 +70,52 @@ non-trivial logic should have at least one test.
 If your change touches user-visible behavior, update the relevant `docs/`
 topic and the README quick start. See `AGENTS.md` for the full sync table.
 
+## Pre-commit hooks
+
+A [`.pre-commit-config.yaml`](.pre-commit-config.yaml) ships with the
+repo. Install the hooks once after cloning:
+
+```sh
+pipx install pre-commit   # or: pip install --user pre-commit
+pre-commit install
+pre-commit install --hook-type commit-msg
+```
+
+Hooks mirror the CI gate (`fmt-check`, `lint`, trailing whitespace,
+conventional-commit message format). Running `git commit` will now
+refuse to commit anything that would fail CI.
+
+## Governance
+
+`zad` follows a **BDFL** governance model while it is pre-1.0:
+
+- **Merge rights.** [@niclaslindstedt](https://github.com/niclaslindstedt)
+  is the only maintainer with commit and merge rights on `main`.
+  All other contributors land changes via pull request.
+- **Decisions.** Design decisions are made in issues, RFC-style PRs, or
+  discussion threads. The maintainer has final say on merges and
+  release cadence, but welcomes disagreement in the thread — the goal
+  is the best outcome for `zad`, not maintainer ego.
+- **Adding maintainers.** When the project outgrows a single
+  maintainer, additional committers will be invited on the basis of
+  sustained, high-quality contributions. The maintainer team will
+  promote governance from BDFL to a **maintainer team** model and this
+  section will be updated accordingly.
+- **Disagreements.** When a contributor and the maintainer cannot
+  agree, the maintainer's decision stands, but the reasoning must be
+  documented in the PR or issue so it can be revisited later.
+- **Fork / transfer.** This is an open source project; the `zad`
+  codebase is MIT-licensed and anyone may fork it. If the maintainer
+  steps away for an extended period, a well-formed fork under a new
+  maintainer is welcomed and this repository will be archived with a
+  pointer to the successor.
+
+## Where to discuss
+
+- **Bugs and feature requests** — open a [GitHub issue](https://github.com/niclaslindstedt/zad/issues).
+- **Questions, ideas, show-and-tell** — use [GitHub Discussions](https://github.com/niclaslindstedt/zad/discussions).
+- **Security reports** — the private channel in [SECURITY.md](SECURITY.md).
+
 ## Code of Conduct
 
 By participating you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md).
