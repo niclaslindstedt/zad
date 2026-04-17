@@ -75,9 +75,9 @@ caches a name → snowflake map at
 the destination flags accept names — `--channel general`, `--dm @alice`
 — with a numeric snowflake still working as a fallback. Every command
 takes `--json` for machine-readable output. Today the only service is
-`discord`. See [`man/main.md`](man/main.md) for the full reference —
-every command
-and subcommand is in that single manpage.
+`discord`. See [`man/main.md`](man/main.md) for the top-level overview
+and [`man/service.md`](man/service.md) / [`man/discord.md`](man/discord.md)
+for the full per-command reference.
 
 ## Configuration
 

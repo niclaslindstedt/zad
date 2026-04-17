@@ -24,7 +24,7 @@ live in the OS keychain under the `zad` service.
 
 ## Discord service
 
-Commands that drive it (documented in [`man/main.md`](../man/main.md)):
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/discord.md`](../man/discord.md)):
 
 - `zad service create discord [--local]` — register credentials.
 - `zad service enable discord` — enable the service in the current project.
