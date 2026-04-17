@@ -15,9 +15,11 @@ pub enum Action {
     /// Create credentials for an adapter.
     Create(CreateArgs),
     /// Enable an adapter in the current project (using existing credentials).
-    Add(AddArgs),
+    Enable(EnableArgs),
+    /// Disable an adapter in the current project (inverse of `enable`).
+    Disable(DisableArgs),
     /// List all adapters with credential and project-enablement status.
-    List,
+    List(adapter_list::ListArgs),
     /// Show details for a configured adapter.
     Show(ShowArgs),
     /// Delete credentials for an adapter (inverse of `create`).
@@ -38,15 +40,27 @@ pub enum CreateAdapter {
 }
 
 #[derive(Debug, Args)]
-pub struct AddArgs {
+pub struct EnableArgs {
     #[command(subcommand)]
-    pub adapter: AddAdapter,
+    pub adapter: EnableAdapter,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum AddAdapter {
+pub enum EnableAdapter {
     /// Enable the Discord adapter in the current project.
-    Discord(adapter_discord::AddArgs),
+    Discord(adapter_discord::EnableArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DisableArgs {
+    #[command(subcommand)]
+    pub adapter: DisableAdapter,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DisableAdapter {
+    /// Disable the Discord adapter in the current project.
+    Discord(adapter_discord::DisableArgs),
 }
 
 #[derive(Debug, Args)]
@@ -79,10 +93,13 @@ pub async fn run(args: AdapterArgs) -> Result<()> {
         Action::Create(c) => match c.adapter {
             CreateAdapter::Discord(a) => adapter_discord::run_create(a).await,
         },
-        Action::Add(a) => match a.adapter {
-            AddAdapter::Discord(a) => adapter_discord::run_add(a),
+        Action::Enable(a) => match a.adapter {
+            EnableAdapter::Discord(a) => adapter_discord::run_enable(a),
         },
-        Action::List => adapter_list::run(),
+        Action::Disable(d) => match d.adapter {
+            DisableAdapter::Discord(a) => adapter_discord::run_disable(a),
+        },
+        Action::List(a) => adapter_list::run(a),
         Action::Show(s) => match s.adapter {
             ShowAdapter::Discord(a) => adapter_discord::run_show(a),
         },

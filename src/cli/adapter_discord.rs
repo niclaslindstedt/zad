@@ -1,5 +1,6 @@
 use clap::Args;
 use dialoguer::{Input, MultiSelect, Password, theme::ColorfulTheme};
+use serde::Serialize;
 
 use crate::adapter::discord::DiscordHttp;
 use crate::config::{self, DiscordAdapterCfg};
@@ -59,21 +60,41 @@ pub struct CreateArgs {
     /// Skip the `GET /users/@me` token validation step.
     #[arg(long)]
     pub no_validate: bool,
+
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateOutput {
+    command: &'static str,
+    scope: &'static str,
+    config_path: String,
+    application_id: String,
+    scopes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_guild: Option<String>,
+    token_account: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authenticated_as: Option<String>,
 }
 
 pub async fn run_create(args: CreateArgs) -> Result<()> {
-    let (path, scope_label, keychain_scope): (_, _, Scope<'_>) = if args.local {
+    let (path, scope_label, scope_machine, keychain_scope): (_, _, _, Scope<'_>) = if args.local {
         let slug = config::path::project_slug()?;
         let p = config::path::project_adapter_config_path_for(&slug, "discord")?;
         (
             p,
             "local (project-scoped)".to_string(),
+            "local",
             Scope::Project(leak(slug)),
         )
     } else {
         (
             config::path::global_adapter_config_path("discord")?,
             "global".to_string(),
+            "global",
             Scope::Global,
         )
     };
@@ -95,11 +116,17 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
     let default_guild = resolve_default_guild(args.default_guild.as_deref(), args.non_interactive)?;
     let scopes = resolve_scopes(args.scopes.as_deref(), args.non_interactive)?;
 
+    let mut authenticated_as: Option<String> = None;
     if !args.no_validate {
         tracing::info!("validating Discord bot token");
         let http = DiscordHttp::new(&token);
         match http.validate_token().await {
-            Ok(name) => println!("  ✓ authenticated as bot `{name}`"),
+            Ok(name) => {
+                if !args.json {
+                    println!("  ✓ authenticated as bot `{name}`");
+                }
+                authenticated_as = Some(name);
+            }
             Err(e) => return Err(ZadError::Discord(format!("token validation failed: {e}"))),
         }
     }
@@ -114,37 +141,63 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
     };
     config::save_flat(&path, &cfg)?;
 
-    println!();
-    println!("Discord credentials created ({scope_label}).");
-    println!("  config : {}", path.display());
-    println!("  app id : {application_id}");
-    println!("  scopes : {}", scopes.join(", "));
-    if let Some(g) = &default_guild {
-        println!("  guild  : {g}");
+    if args.json {
+        let out = CreateOutput {
+            command: "adapter.create.discord",
+            scope: scope_machine,
+            config_path: path.display().to_string(),
+            application_id,
+            scopes,
+            default_guild,
+            token_account: account,
+            authenticated_as,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!();
+        println!("Discord credentials created ({scope_label}).");
+        println!("  config : {}", path.display());
+        println!("  app id : {application_id}");
+        println!("  scopes : {}", scopes.join(", "));
+        if let Some(g) = &default_guild {
+            println!("  guild  : {g}");
+        }
+        println!("  token  : OS keychain (service=\"zad\", account=\"{account}\")");
+        println!();
+        println!("Next: run `zad adapter enable discord` in each project that should use Discord.");
     }
-    println!("  token  : OS keychain (service=\"zad\", account=\"{account}\")");
-    println!();
-    println!("Next: run `zad adapter add discord` in each project that should use Discord.");
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// add — enables the adapter in the current project
+// enable — enables the adapter in the current project
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
-pub struct AddArgs {
+pub struct EnableArgs {
     /// Overwrite an existing `[adapter.discord]` entry in the project
     /// config.
     #[arg(long)]
     pub force: bool,
 
-    /// Fail instead of prompting (reserved; `add` has no prompts today).
+    /// Fail instead of prompting (reserved; `enable` has no prompts today).
     #[arg(long)]
     pub non_interactive: bool,
+
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
 }
 
-pub fn run_add(args: AddArgs) -> Result<()> {
+#[derive(Debug, Serialize)]
+struct EnableOutput {
+    command: &'static str,
+    project_config: String,
+    credentials_path: String,
+    credentials_scope: &'static str,
+}
+
+pub fn run_enable(args: EnableArgs) -> Result<()> {
     let slug = config::path::project_slug()?;
     let local_creds = config::path::project_adapter_config_path_for(&slug, "discord")?;
     let global_creds = config::path::global_adapter_config_path("discord")?;
@@ -174,12 +227,80 @@ pub fn run_add(args: AddArgs) -> Result<()> {
     project_cfg.enable_discord();
     config::save_to(&project_path, &project_cfg)?;
 
-    println!("Discord adapter enabled for this project.");
-    println!("  project config : {}", project_path.display());
-    println!(
-        "  credentials    : {} ({scope_label})",
-        creds_path.display()
-    );
+    if args.json {
+        let out = EnableOutput {
+            command: "adapter.enable.discord",
+            project_config: project_path.display().to_string(),
+            credentials_path: creds_path.display().to_string(),
+            credentials_scope: scope_label,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("Discord adapter enabled for this project.");
+        println!("  project config : {}", project_path.display());
+        println!(
+            "  credentials    : {} ({scope_label})",
+            creds_path.display()
+        );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// disable — removes the adapter entry from the project config
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct DisableArgs {
+    /// Succeed silently even if the adapter is not currently enabled in
+    /// this project.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct DisableOutput {
+    command: &'static str,
+    project_config: String,
+    was_enabled: bool,
+}
+
+pub fn run_disable(args: DisableArgs) -> Result<()> {
+    let project_path = config::path::project_config_path()?;
+    let mut project_cfg = config::load_from(&project_path)?;
+    let was_enabled = project_cfg.has_adapter("discord");
+
+    if !was_enabled && !args.force {
+        return Err(ZadError::Invalid(format!(
+            "discord adapter is not enabled for this project ({}). \
+             Pass --force to ignore.",
+            project_path.display()
+        )));
+    }
+
+    if was_enabled {
+        project_cfg.disable_discord();
+        config::save_to(&project_path, &project_cfg)?;
+    }
+
+    if args.json {
+        let out = DisableOutput {
+            command: "adapter.disable.discord",
+            project_config: project_path.display().to_string(),
+            was_enabled,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else if was_enabled {
+        println!("Discord adapter disabled for this project.");
+        println!("  project config : {}", project_path.display());
+    } else {
+        println!("Discord adapter was not enabled for this project (nothing to do).");
+        println!("  project config : {}", project_path.display());
+    }
     Ok(())
 }
 
@@ -188,9 +309,46 @@ pub fn run_add(args: AddArgs) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
-pub struct ShowArgs {}
+pub struct ShowArgs {
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
 
-pub fn run_show(_args: ShowArgs) -> Result<()> {
+#[derive(Debug, Serialize)]
+struct ShowOutput {
+    command: &'static str,
+    adapter: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effective: Option<&'static str>,
+    global: ScopeBlock,
+    local: ScopeBlock,
+    project: ProjectBlock,
+}
+
+#[derive(Debug, Serialize)]
+struct ScopeBlock {
+    path: String,
+    configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    application_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scopes: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_guild: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token_account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token_present: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectBlock {
+    config: String,
+    enabled: bool,
+}
+
+pub fn run_show(args: ShowArgs) -> Result<()> {
     let slug = config::path::project_slug()?;
     let global_path = config::path::global_adapter_config_path("discord")?;
     let local_path = config::path::project_adapter_config_path_for(&slug, "discord")?;
@@ -205,6 +363,26 @@ pub fn run_show(_args: ShowArgs) -> Result<()> {
     } else {
         None
     };
+
+    let project_path = config::path::project_config_path()?;
+    let project_cfg = config::load_from(&project_path)?;
+    let project_enabled = project_cfg.has_adapter("discord");
+
+    if args.json {
+        let out = ShowOutput {
+            command: "adapter.show.discord",
+            adapter: "discord",
+            effective,
+            global: scope_block(&global_path, global_cfg.as_ref(), Scope::Global)?,
+            local: scope_block(&local_path, local_cfg.as_ref(), Scope::Project(&slug))?,
+            project: ProjectBlock {
+                config: project_path.display().to_string(),
+                enabled: project_enabled,
+            },
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
 
     println!("Adapter: discord");
     println!();
@@ -225,9 +403,7 @@ pub fn run_show(_args: ShowArgs) -> Result<()> {
 
     println!();
     println!("## Project");
-    let project_path = config::path::project_config_path()?;
-    let project_cfg = config::load_from(&project_path)?;
-    if project_cfg.has_adapter("discord") {
+    if project_enabled {
         println!("  enabled : yes");
     } else {
         println!("  enabled : no");
@@ -235,6 +411,32 @@ pub fn run_show(_args: ShowArgs) -> Result<()> {
     println!("  config  : {}", project_path.display());
 
     Ok(())
+}
+
+fn scope_block(
+    path: &std::path::Path,
+    cfg: Option<&DiscordAdapterCfg>,
+    scope: Scope<'_>,
+) -> Result<ScopeBlock> {
+    let mut block = ScopeBlock {
+        path: path.display().to_string(),
+        configured: cfg.is_some(),
+        application_id: None,
+        scopes: None,
+        default_guild: None,
+        token_account: None,
+        token_present: None,
+    };
+    if let Some(c) = cfg {
+        block.application_id = Some(c.application_id.clone());
+        block.scopes = Some(c.scopes.clone());
+        block.default_guild = c.default_guild.clone();
+        let account = secrets::discord_bot_account(scope);
+        let present = secrets::load(&account)?.is_some();
+        block.token_account = Some(account);
+        block.token_present = Some(present);
+    }
+    Ok(block)
 }
 
 fn print_scope_block(
@@ -284,21 +486,37 @@ pub struct DeleteArgs {
     /// Succeed silently even if no config file exists at the chosen scope.
     #[arg(long)]
     pub force: bool,
+
+    /// Emit machine-readable JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct DeleteOutput {
+    command: &'static str,
+    scope: &'static str,
+    config_path: String,
+    config_removed: bool,
+    token_account: String,
+    project_still_references: bool,
 }
 
 pub fn run_delete(args: DeleteArgs) -> Result<()> {
-    let (path, scope_label, keychain_scope): (_, _, Scope<'_>) = if args.local {
+    let (path, scope_label, scope_machine, keychain_scope): (_, _, _, Scope<'_>) = if args.local {
         let slug = config::path::project_slug()?;
         let p = config::path::project_adapter_config_path_for(&slug, "discord")?;
         (
             p,
             "local (project-scoped)".to_string(),
+            "local",
             Scope::Project(leak(slug)),
         )
     } else {
         (
             config::path::global_adapter_config_path("discord")?,
             "global".to_string(),
+            "global",
             Scope::Global,
         )
     };
@@ -338,6 +556,23 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let account = secrets::discord_bot_account(keychain_scope);
     secrets::delete(&account)?;
 
+    let project_path = config::path::project_config_path()?;
+    let project_cfg = config::load_from(&project_path)?;
+    let project_still_references = project_cfg.has_adapter("discord");
+
+    if args.json {
+        let out = DeleteOutput {
+            command: "adapter.delete.discord",
+            scope: scope_machine,
+            config_path: path.display().to_string(),
+            config_removed: existed,
+            token_account: account,
+            project_still_references,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+
     println!("Discord credentials deleted ({scope_label}).");
     println!(
         "  config : {} ({})",
@@ -346,15 +581,15 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     );
     println!("  token  : OS keychain entry `{account}` cleared");
 
-    let project_path = config::path::project_config_path()?;
-    let project_cfg = config::load_from(&project_path)?;
-    if project_cfg.has_adapter("discord") {
+    if project_still_references {
         println!();
         println!(
             "warning: this project still references the discord adapter ({}).",
             project_path.display()
         );
-        println!("         Remove the `[adapter.discord]` entry manually if desired.");
+        println!(
+            "         Run `zad adapter disable discord` to remove the `[adapter.discord]` entry."
+        );
     }
 
     Ok(())

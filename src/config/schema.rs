@@ -58,6 +58,10 @@ impl ProjectConfig {
         );
     }
 
+    pub fn disable_discord(&mut self) {
+        self.adapter.remove("discord");
+    }
+
     pub fn has_adapter(&self, name: &str) -> bool {
         self.adapter.contains_key(name)
     }

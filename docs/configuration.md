@@ -24,10 +24,13 @@ live in the OS keychain under the `zad` service.
 
 ## Discord adapter
 
-Two commands drive it (documented in [`man/main.md`](../man/main.md)):
+Commands that drive it (documented in [`man/main.md`](../man/main.md)):
 
 - `zad adapter create discord [--local]` — register credentials.
-- `zad adapter add discord` — enable the adapter in the current project.
+- `zad adapter enable discord` — enable the adapter in the current project.
+- `zad adapter disable discord` — disable it again (leaves credentials intact).
+
+Every command accepts `--json` for script-friendly structured output.
 
 ### Credentials file
 
