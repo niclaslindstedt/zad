@@ -1,5 +1,7 @@
 pub mod discord;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
@@ -77,4 +79,57 @@ pub trait Service: Send + Sync {
     async fn read_messages(&self, channel: ChannelId, limit: usize) -> Result<Vec<Message>>;
     async fn listen(&self) -> Result<BoxStream<'static, Event>>;
     async fn manage(&self, cmd: ManageCmd) -> Result<()>;
+}
+
+/// A single side-effect that would have been sent to a remote service.
+/// Services emit one of these to a [`DryRunSink`] when `--dry-run` is
+/// active, in place of the underlying network call. Service-agnostic by
+/// design so any future service wrapper (Slack, GitHub, …) can reuse it.
+#[derive(Debug, Clone)]
+pub struct DryRunOp {
+    /// Service name, matching [`Service::name`] (e.g. `"discord"`).
+    pub service: &'static str,
+    /// Verb being previewed (e.g. `"send"`, `"join"`, `"leave"`).
+    pub verb: &'static str,
+    /// One-line human-readable summary, e.g. `"would send 42 chars to channel 12345"`.
+    pub summary: String,
+    /// Structured payload the caller would have sent. Rendered verbatim
+    /// as JSON by [`StderrTracingSink`]; other sinks may reformat.
+    pub details: serde_json::Value,
+}
+
+/// Where [`DryRunOp`] records go when intercepted. Implementations decide
+/// whether to print, log, buffer for tests, etc.
+pub trait DryRunSink: Send + Sync {
+    fn record(&self, op: DryRunOp);
+}
+
+/// Default sink: logs a one-line `tracing::info!` at the `dry_run` target
+/// and prints the structured payload as pretty JSON on stdout. The
+/// summary goes through `tracing` so it lands in the debug file log
+/// alongside every other service event; the JSON lands on stdout so
+/// piped consumers (`| jq`) get a machine-readable preview.
+pub struct StderrTracingSink;
+
+impl DryRunSink for StderrTracingSink {
+    fn record(&self, op: DryRunOp) {
+        tracing::info!(
+            target: "dry_run",
+            service = op.service,
+            verb = op.verb,
+            "DRY RUN: {}",
+            op.summary,
+        );
+        match serde_json::to_string_pretty(&op.details) {
+            Ok(rendered) => println!("{rendered}"),
+            Err(e) => eprintln!("dry-run: failed to render payload as JSON: {e}"),
+        }
+    }
+}
+
+/// Construct the default stderr+stdout sink wrapped in an [`Arc`] ready
+/// to hand to a dry-run transport. Exists so the call-sites in
+/// `src/cli/` don't need to import `Arc` + `StderrTracingSink` directly.
+pub fn default_dry_run_sink() -> Arc<dyn DryRunSink> {
+    Arc::new(StderrTracingSink)
 }

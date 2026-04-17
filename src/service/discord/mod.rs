@@ -1,6 +1,7 @@
 pub mod client;
 pub mod gateway;
 pub mod permissions;
+pub mod transport;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -12,6 +13,7 @@ use crate::error::Result;
 use crate::service::{ChannelId, Event, ManageCmd, Message, MessageId, Service, Target};
 
 pub use client::DiscordHttp;
+pub use transport::{DiscordTransport, DryRunDiscordTransport};
 
 pub struct DiscordService {
     http: DiscordHttp,
