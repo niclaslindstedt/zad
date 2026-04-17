@@ -85,6 +85,46 @@ config keys| `docs/configuration.md`
   with every clap subcommand and flag defined in `src/cli/` whenever
   commands, flags, or subcommands are added, removed, or renamed.
 
+## Permissions pattern (cross-service)
+
+Every service with runtime side effects layers **permissions** on top
+of scope. Scope answers "is this family of operations enabled?";
+permissions answer "is *this* call — to this target, at this time, with
+this content — allowed?". The generic primitives live under
+`src/permissions/` (`pattern`, `content`, `time`) and are specialized
+per service under `src/service/<name>/permissions.rs`.
+
+Non-negotiable semantics shared by every service:
+
+- Two-scope files: `~/.zad/services/<svc>/permissions.toml` (global)
+  and `~/.zad/projects/<slug>/services/<svc>/permissions.toml` (local).
+  Credentials replace across scopes; **permissions intersect** — both
+  files apply, strictest wins, a missing file contributes nothing.
+  Local can only tighten global, never loosen it.
+- Top-level `[content]` and `[time]` defaults; one block per runtime
+  verb, each optionally narrowing those defaults. Deny always beats
+  allow; an empty allow list is "no positive constraint" (not "deny
+  all"). Patterns support exact names, globs (`*`, `?`), numeric
+  snowflakes, and `re:<regex>` for full regex.
+- Rules run against **every alias** of the target: the raw input
+  (sigils stripped), the resolved ID as a string, and every directory
+  entry that maps to that ID — so a deny on `*admin*` fires even when
+  the agent pastes the raw snowflake.
+- Enforcement happens **before any network call**, in the CLI layer
+  where the directory is in scope.
+- Error shape is `ZadError::PermissionDenied { function, reason,
+  config_path }`; every message names the file to edit.
+- Every service exposes four `permissions` subcommands with the same
+  names: `show`, `path`, `init [--local] [--force]`, and `check
+  --function <name> [--channel|--user|--guild <id|name>] [--body <text>]`.
+
+When adding a new service, build its schema on top of the generic
+primitives (`PatternListRaw`, `ContentRulesRaw`, `TimeWindowRaw`),
+expose `EffectivePermissions { global, local }` with one
+`check_<verb>_<target>` method per runtime verb, wire the four
+`permissions` subcommands, and ship a realistic example at
+`examples/<service>-permissions.toml`.
+
 ## Website staleness policy
 
 Per §11.2 of `OSS_SPEC.md`, the website must be regenerated whenever

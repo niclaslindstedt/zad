@@ -2866,6 +2866,7 @@ dependencies = [
  "futures",
  "keyring",
  "predicates",
+ "regex",
  "serde",
  "serde_json",
  "serenity",

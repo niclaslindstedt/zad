@@ -36,7 +36,7 @@ and are **never** written to the TOML.
 | Command | Description | Manpage |
 |---|---|---|
 | `service <ACTION> <SERVICE>` | Configure or inspect external services (credentials, project enablement). | [`zad man service`](service.md) |
-| `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory). | [`zad man discord`](discord.md) |
+| `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions). | [`zad man discord`](discord.md) |
 | `help` | Show help text. | — |
 
 Each top-level command has its own manpage with every subcommand, flag,

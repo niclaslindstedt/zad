@@ -72,6 +72,115 @@ When both a global and a project-local credentials file exist, the local
 file **replaces** the global one for that project — scopes are not
 merged. Write the full scope set each time.
 
+### Permissions file
+
+Scopes answer "is this family of operations enabled at all?".
+Permissions are a second, finer layer — *which channels, which users,
+which times, which content* — that a declared scope may actually act
+on. They live in an optional file next to the credentials:
+
+- Global: `~/.zad/services/discord/permissions.toml`
+- Local:  `~/.zad/projects/<slug>/services/discord/permissions.toml`
+
+Unlike credentials, **both files apply**: a call must pass every file
+that exists. This makes it safe to ship a strict global baseline — a
+project can only add further restrictions, never loosen the global
+rule. An absent file contributes no restrictions; when both are absent,
+scope is the only gate.
+
+The schema is a small TOML file with top-level defaults plus one block
+per function:
+
+```toml
+# Shared defaults. Each per-function block inherits from these and can
+# add further narrowing.
+[content]
+deny_words    = ["password", "api_key", "secret"]
+deny_patterns = ["(?i)bearer\\s+[a-z0-9]+"]
+max_length    = 1500      # codepoints; narrows Discord's 2000 hard cap
+
+[time]
+days    = ["mon", "tue", "wed", "thu", "fri"]
+windows = ["09:00-18:00"]  # UTC
+
+# Per-function blocks. Each has channels / users / guilds sublists
+# (whichever apply to the function) plus optional content / time
+# overrides that **narrow** the top-level defaults.
+[send]
+channels.allow = ["general", "bot-*", "team/*"]
+channels.deny  = ["*admin*", "mod-*"]
+users.allow    = ["alice", "bob"]
+
+[read]
+channels.deny = ["*private*"]
+
+[channels]
+guilds.allow = ["main-server"]
+
+[join]
+channels.deny = ["*admin*"]
+
+[leave]
+# no restrictions
+
+[discover]
+guilds.allow = ["main-server"]
+
+[manage]
+# Default-deny for channels.manage: nothing is touched unless allowed.
+channels.allow = []
+channels.deny  = ["*"]
+```
+
+Pattern grammar (used anywhere an allow/deny list appears):
+
+| Form | Meaning |
+|---|---|
+| `general` | Exact name match. |
+| `bot-*`, `team/*` | Glob: `*` and `?` wildcards. Other regex metacharacters are escaped. |
+| `re:<regex>` | Full Rust regex syntax. Anchor it yourself if you need to (`re:^mod-[0-9]+$`). |
+| `1234567890` | Numeric — matches the resolved snowflake exactly. |
+
+Evaluation order:
+
+1. If any **deny** pattern matches, the call is denied. Deny always wins.
+2. If the **allow** list is empty, there is no positive constraint —
+   the call passes on this front.
+3. Otherwise the call must match at least one allow pattern.
+
+A rule is evaluated against every alias of the target: the input the
+agent typed (with `#` or `@` sigils stripped), the resolved snowflake
+as a string, and every name the `directory.toml` has for that
+snowflake. So a deny on `*admin*` fires even when the agent passes the
+raw snowflake, as long as the directory knows the ID under an
+admin-like name.
+
+Content rules (`deny_words`, `deny_patterns`, `max_length`) apply to
+outbound message bodies. `deny_words` is case-insensitive substring
+matching; `deny_patterns` is full regex; `max_length` is measured in
+codepoints and only *tightens* Discord's 2000-char ceiling.
+
+The `[time]` block pins a UTC business-hours window. An empty `days`
+list admits every day; an empty `windows` list admits the whole day.
+Windows may cross midnight (`22:00-02:00`).
+
+Manage permissions from the CLI:
+
+- `zad discord permissions show` — print the effective policy (both
+  scopes).
+- `zad discord permissions path` — print the two candidate paths.
+- `zad discord permissions init [--local] [--force]` — write a
+  starter policy. The default template denies admin-like channels and
+  all `channels.manage` operations.
+- `zad discord permissions check --function <name> [--channel|--user|--guild <id|name>] [--body TEXT]` —
+  dry-run: returns allow/deny and the config path that decided, without
+  hitting Discord. Intended for agents that want to pre-flight an
+  action.
+
+When a runtime verb is denied, the error message names the function,
+the deny reason, and the exact file path to edit — the same shape as
+the scope-denied error.
+
 ### Project file
 
 `~/.zad/projects/<slug>/config.toml` records which services are enabled

@@ -14,6 +14,7 @@ use crate::config::{self, DiscordServiceCfg};
 use crate::error::{Result, ZadError};
 use crate::secrets::{self, Scope};
 use crate::service::discord::DiscordHttp;
+use crate::service::discord::permissions::{self as perms, DiscordFunction};
 use crate::service::{ChannelId, Target, UserId};
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,9 @@ pub enum Action {
     Discover(DiscoverArgs),
     /// Inspect or hand-edit the name -> snowflake directory.
     Directory(DirectoryArgs),
+    /// Inspect, scaffold, or dry-run the permissions policy that narrows
+    /// what this service may actually do.
+    Permissions(PermissionsArgs),
 }
 
 pub async fn run(args: DiscordArgs) -> Result<()> {
@@ -58,6 +62,7 @@ pub async fn run(args: DiscordArgs) -> Result<()> {
         Action::Leave(a) => run_leave(a).await,
         Action::Discover(a) => run_discover(a).await,
         Action::Directory(a) => run_directory(a),
+        Action::Permissions(a) => run_permissions(a),
     }
 }
 
@@ -101,13 +106,19 @@ async fn run_send(args: SendArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
+    let permissions = perms::load_effective()?;
+    permissions.check_time(DiscordFunction::Send)?;
     let target = match (&args.channel, &args.dm) {
-        (Some(c), None) => Target::Channel(ChannelId(resolve_channel(
-            c,
-            &directory,
-            context_guild.as_deref(),
-        )?)),
-        (None, Some(u)) => Target::Dm(UserId(resolve_user(u, &directory)?)),
+        (Some(c), None) => {
+            let id = resolve_channel(c, &directory, context_guild.as_deref())?;
+            permissions.check_send_channel(c, id, &directory)?;
+            Target::Channel(ChannelId(id))
+        }
+        (None, Some(u)) => {
+            let id = resolve_user(u, &directory)?;
+            permissions.check_send_dm(u, id, &directory)?;
+            Target::Dm(UserId(id))
+        }
         (None, None) => {
             return Err(ZadError::Invalid(
                 "missing destination: pass --channel <ID> or --dm <USER_ID>".into(),
@@ -124,6 +135,7 @@ async fn run_send(args: SendArgs) -> Result<()> {
             crate::service::discord::client::DISCORD_MAX_MESSAGE_LEN
         )));
     }
+    permissions.check_send_body(&body)?;
     let http = discord_http_for("messages.send")?;
     let msg_id = http.send(target.clone(), &body).await?;
 
@@ -189,11 +201,11 @@ async fn run_read(args: ReadArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let channel_id = ChannelId(resolve_channel(
-        &args.channel,
-        &directory,
-        context_guild.as_deref(),
-    )?);
+    let permissions = perms::load_effective()?;
+    permissions.check_time(DiscordFunction::Read)?;
+    let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
+    permissions.check_read_channel(&args.channel, id, &directory)?;
+    let channel_id = ChannelId(id);
     let http = discord_http_for("messages.read")?;
     let msgs = http.history(channel_id.clone(), args.limit).await?;
 
@@ -264,11 +276,19 @@ struct ChannelRow {
 async fn run_channels(args: ChannelsArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
+    let permissions = perms::load_effective()?;
+    permissions.check_time(DiscordFunction::Channels)?;
     let guild = resolve_guild_arg(
         args.guild.as_deref(),
         cfg.default_guild.as_deref(),
         &directory,
     )?;
+    let guild_input = args
+        .guild
+        .clone()
+        .or_else(|| cfg.default_guild.clone())
+        .unwrap_or_else(|| guild.to_string());
+    permissions.check_channels_guild(&guild_input, guild, &directory)?;
     let http = discord_http_for("guilds")?;
     let channels = http.list_channels(guild).await?;
 
@@ -340,11 +360,11 @@ async fn run_join(args: JoinArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let channel = ChannelId(resolve_channel(
-        &args.channel,
-        &directory,
-        context_guild.as_deref(),
-    )?);
+    let permissions = perms::load_effective()?;
+    permissions.check_time(DiscordFunction::Join)?;
+    let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
+    permissions.check_join_channel(&args.channel, id, &directory)?;
+    let channel = ChannelId(id);
     let http = discord_http_for("guilds")?;
     http.join_channel(channel.clone()).await?;
     if args.json {
@@ -363,11 +383,11 @@ async fn run_leave(args: LeaveArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let channel = ChannelId(resolve_channel(
-        &args.channel,
-        &directory,
-        context_guild.as_deref(),
-    )?);
+    let permissions = perms::load_effective()?;
+    permissions.check_time(DiscordFunction::Leave)?;
+    let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
+    permissions.check_leave_channel(&args.channel, id, &directory)?;
+    let channel = ChannelId(id);
     let http = discord_http_for("guilds")?;
     http.leave_channel(channel.clone()).await?;
     if args.json {
@@ -552,6 +572,8 @@ struct DiscoverOutput {
 }
 
 async fn run_discover(args: DiscoverArgs) -> Result<()> {
+    let permissions = perms::load_effective()?;
+    permissions.check_time(DiscordFunction::Discover)?;
     let http = discord_http_for("guilds")?;
     let mut directory = dir::load().unwrap_or_default();
     let mut warnings: Vec<String> = vec![];
@@ -577,10 +599,27 @@ async fn run_discover(args: DiscoverArgs) -> Result<()> {
         })
         .transpose()?;
 
+    // Filter the walk to guilds the operator actually allowed discovery
+    // into. `guilds.allow`/`guilds.deny` for the `discover` block narrows
+    // the walk; silently skipping a denied guild is the right shape
+    // because `discover` is already best-effort.
     let targets: Vec<_> = match scoped {
         Some(id) => guilds.iter().filter(|g| g.id == id).cloned().collect(),
-        None => guilds.clone(),
+        None => guilds
+            .iter()
+            .filter(|g| {
+                permissions
+                    .check_discover_guild(&g.name, g.id, &directory)
+                    .is_ok()
+            })
+            .cloned()
+            .collect(),
     };
+    if let Some(id) = scoped
+        && let Some(g) = guilds.iter().find(|g| g.id == id)
+    {
+        permissions.check_discover_guild(&g.name, g.id, &directory)?;
+    }
 
     for g in &guilds {
         directory.guilds.insert(g.name.clone(), g.id.to_string());
@@ -894,6 +933,352 @@ fn run_directory_clear(args: DirectoryClearArgs) -> Result<()> {
         println!("Cleared {}.", path.display());
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// permissions — inspect / scaffold / dry-run the permissions policy
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct PermissionsArgs {
+    #[command(subcommand)]
+    pub action: Option<PermissionsAction>,
+
+    /// When no subcommand is given, behave like `show`.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PermissionsAction {
+    /// Print the effective policy (global + local) for this project.
+    Show(PermissionsShowArgs),
+    /// Write a starter `permissions.toml` at the selected scope.
+    Init(PermissionsInitArgs),
+    /// Print the paths considered for this project, in precedence order.
+    Path(PermissionsPathArgs),
+    /// Dry-run: ask whether a proposed action would be admitted *without*
+    /// hitting Discord. Useful for agents that want to pre-flight.
+    Check(PermissionsCheckArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PermissionsShowArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PermissionsInitArgs {
+    /// Write to the project-local `permissions.toml`. Default is global.
+    #[arg(long)]
+    pub local: bool,
+
+    /// Overwrite any existing file at that scope.
+    #[arg(long)]
+    pub force: bool,
+
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PermissionsPathArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PermissionsCheckArgs {
+    /// Function to check: `send`, `read`, `channels`, `join`, `leave`,
+    /// `discover`, `manage`.
+    #[arg(long)]
+    pub function: String,
+
+    /// Channel name or snowflake to test against the channel list for
+    /// `send` / `read` / `join` / `leave`.
+    #[arg(long, conflicts_with = "user")]
+    pub channel: Option<String>,
+
+    /// User name or snowflake to test against the DM list for `send`.
+    #[arg(long, conflicts_with = "channel")]
+    pub user: Option<String>,
+
+    /// Guild name or snowflake to test against the guild list for
+    /// `channels` / `discover`.
+    #[arg(long)]
+    pub guild: Option<String>,
+
+    /// Body to test against `content` rules (applies only to `send`).
+    #[arg(long)]
+    pub body: Option<String>,
+
+    #[arg(long)]
+    pub json: bool,
+}
+
+fn run_permissions(args: PermissionsArgs) -> Result<()> {
+    match args.action {
+        None => run_permissions_show(PermissionsShowArgs { json: args.json }),
+        Some(PermissionsAction::Show(a)) => run_permissions_show(a),
+        Some(PermissionsAction::Init(a)) => run_permissions_init(a),
+        Some(PermissionsAction::Path(a)) => run_permissions_path(a),
+        Some(PermissionsAction::Check(a)) => run_permissions_check(a),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct PermissionsShowOutput {
+    command: &'static str,
+    global: PermissionsScopeBlock,
+    local: PermissionsScopeBlock,
+}
+
+#[derive(Debug, Serialize)]
+struct PermissionsScopeBlock {
+    path: String,
+    present: bool,
+}
+
+fn run_permissions_show(args: PermissionsShowArgs) -> Result<()> {
+    let global_p = perms::global_path()?;
+    let local_p = perms::local_path_current()?;
+    let global_present = global_p.exists();
+    let local_present = local_p.exists();
+
+    // Pre-load to surface any compile errors up front, before printing.
+    let effective = perms::load_effective()?;
+    let _ = effective;
+
+    if args.json {
+        let out = PermissionsShowOutput {
+            command: "discord.permissions.show",
+            global: PermissionsScopeBlock {
+                path: global_p.display().to_string(),
+                present: global_present,
+            },
+            local: PermissionsScopeBlock {
+                path: local_p.display().to_string(),
+                present: local_present,
+            },
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+
+    println!("# permissions");
+    println!(
+        "  global : {} ({})",
+        global_p.display(),
+        if global_present {
+            "present"
+        } else {
+            "not present (no restrictions at this scope)"
+        }
+    );
+    println!(
+        "  local  : {} ({})",
+        local_p.display(),
+        if local_present {
+            "present"
+        } else {
+            "not present (no restrictions at this scope)"
+        }
+    );
+    println!();
+    if !global_present && !local_present {
+        println!("No permission files found. Every declared scope is currently unrestricted.");
+        println!("Run `zad discord permissions init` to scaffold a starter policy.");
+        return Ok(());
+    }
+    for p in [&global_p, &local_p] {
+        if !p.exists() {
+            continue;
+        }
+        println!("## {}", p.display());
+        match std::fs::read_to_string(p) {
+            Ok(body) => {
+                for line in body.lines() {
+                    println!("  {line}");
+                }
+            }
+            Err(e) => println!("  (failed to read: {e})"),
+        }
+        println!();
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct PermissionsInitOutput {
+    command: &'static str,
+    scope: &'static str,
+    path: String,
+    written: bool,
+}
+
+fn run_permissions_init(args: PermissionsInitArgs) -> Result<()> {
+    let (path, scope) = if args.local {
+        (perms::local_path_current()?, "local")
+    } else {
+        (perms::global_path()?, "global")
+    };
+    if path.exists() && !args.force {
+        return Err(ZadError::Invalid(format!(
+            "permissions file already exists at {}. Pass --force to overwrite.",
+            path.display()
+        )));
+    }
+    let template = perms::starter_template();
+    perms::save_file(&path, &template)?;
+    if args.json {
+        let out = PermissionsInitOutput {
+            command: "discord.permissions.init",
+            scope,
+            path: path.display().to_string(),
+            written: true,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("Wrote starter permissions ({scope}): {}", path.display());
+        println!("Review it; the defaults deny admin-like channels and channels.manage.");
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct PermissionsPathOutput {
+    command: &'static str,
+    global: String,
+    local: String,
+}
+
+fn run_permissions_path(args: PermissionsPathArgs) -> Result<()> {
+    let global_p = perms::global_path()?;
+    let local_p = perms::local_path_current()?;
+    if args.json {
+        let out = PermissionsPathOutput {
+            command: "discord.permissions.path",
+            global: global_p.display().to_string(),
+            local: local_p.display().to_string(),
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("{}", global_p.display());
+        println!("{}", local_p.display());
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct PermissionsCheckOutput {
+    command: &'static str,
+    function: String,
+    allowed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    config_path: Option<String>,
+}
+
+fn run_permissions_check(args: PermissionsCheckArgs) -> Result<()> {
+    let function = parse_function(&args.function)?;
+    let permissions = perms::load_effective()?;
+    let directory = dir::load().unwrap_or_default();
+
+    let mut outcome: Result<()> = Ok(());
+    outcome = outcome.and_then(|()| permissions.check_time(function));
+
+    if outcome.is_ok() {
+        outcome = match (function, &args.channel, &args.user, &args.guild) {
+            (DiscordFunction::Send, Some(c), None, _) => {
+                let id = directory.resolve_channel(c, None).unwrap_or(0);
+                permissions.check_send_channel(c, id, &directory)
+            }
+            (DiscordFunction::Send, None, Some(u), _) => {
+                let id = directory.resolve_user(u).unwrap_or(0);
+                permissions.check_send_dm(u, id, &directory)
+            }
+            (DiscordFunction::Read, Some(c), None, _) => {
+                let id = directory.resolve_channel(c, None).unwrap_or(0);
+                permissions.check_read_channel(c, id, &directory)
+            }
+            (DiscordFunction::Channels, _, _, Some(g)) => {
+                let id = directory.resolve_guild(g).unwrap_or(0);
+                permissions.check_channels_guild(g, id, &directory)
+            }
+            (DiscordFunction::Join, Some(c), None, _) => {
+                let id = directory.resolve_channel(c, None).unwrap_or(0);
+                permissions.check_join_channel(c, id, &directory)
+            }
+            (DiscordFunction::Leave, Some(c), None, _) => {
+                let id = directory.resolve_channel(c, None).unwrap_or(0);
+                permissions.check_leave_channel(c, id, &directory)
+            }
+            (DiscordFunction::Discover, _, _, Some(g)) => {
+                let id = directory.resolve_guild(g).unwrap_or(0);
+                permissions.check_discover_guild(g, id, &directory)
+            }
+            _ => Ok(()),
+        };
+    }
+
+    if outcome.is_ok()
+        && function == DiscordFunction::Send
+        && let Some(body) = &args.body
+    {
+        outcome = permissions.check_send_body(body);
+    }
+
+    let (allowed, reason, config_path) = match outcome {
+        Ok(()) => (true, None, None),
+        Err(ZadError::PermissionDenied {
+            reason,
+            config_path,
+            ..
+        }) => (false, Some(reason), Some(config_path.display().to_string())),
+        Err(e) => return Err(e),
+    };
+
+    if args.json {
+        let out = PermissionsCheckOutput {
+            command: "discord.permissions.check",
+            function: args.function.clone(),
+            allowed,
+            reason,
+            config_path,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else if allowed {
+        println!("allow");
+    } else {
+        println!(
+            "deny — {}",
+            reason.as_deref().unwrap_or("unspecified reason")
+        );
+        if let Some(p) = &config_path {
+            println!("  config: {p}");
+        }
+    }
+    if !allowed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn parse_function(name: &str) -> Result<DiscordFunction> {
+    match name {
+        "send" => Ok(DiscordFunction::Send),
+        "read" => Ok(DiscordFunction::Read),
+        "channels" => Ok(DiscordFunction::Channels),
+        "join" => Ok(DiscordFunction::Join),
+        "leave" => Ok(DiscordFunction::Leave),
+        "discover" => Ok(DiscordFunction::Discover),
+        "manage" => Ok(DiscordFunction::Manage),
+        other => Err(ZadError::Invalid(format!(
+            "unknown function `{other}`. Expected one of: send, read, channels, join, leave, discover, manage."
+        ))),
+    }
 }
 
 fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {

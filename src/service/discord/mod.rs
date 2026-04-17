@@ -1,5 +1,6 @@
 pub mod client;
 pub mod gateway;
+pub mod permissions;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
