@@ -1,0 +1,27 @@
+# cargo-audit configuration (OSS_SPEC.md §14).
+#
+# Every ignore below names a specific RUSTSEC advisory, the crate it
+# affects, the transitive dependency chain that pins us to the
+# vulnerable version, and the upstream move we are waiting on.
+#
+# Review this file on every dependency bump: each time an advisory's
+# upstream fix lands in our transitive closure, delete the
+# corresponding `"RUSTSEC-..."` entry below and let CI re-verify.
+
+[advisories]
+ignore = [
+    # rustls-webpki 0.102.8 — CRL Distribution Point matching flaw.
+    # Fixed in rustls-webpki 0.103.10+, which requires rustls 0.23.x,
+    # which requires a serenity release past 0.12.5 (its
+    # tokio-tungstenite 0.21 pins tokio-rustls 0.25 → rustls 0.22).
+    # Tracking: https://github.com/serenity-rs/serenity/
+    "RUSTSEC-2026-0049",
+
+    # rustls-webpki 0.102.8 — name constraints incorrectly accepted
+    # for URI names. Same transitive pin as above.
+    "RUSTSEC-2026-0098",
+
+    # rustls-webpki 0.102.8 — name constraints accepted for
+    # certificates asserting wildcard names. Same transitive pin.
+    "RUSTSEC-2026-0099",
+]

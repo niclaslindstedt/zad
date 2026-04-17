@@ -67,7 +67,7 @@ jobs:
       - name: Install cargo-audit
         run: cargo install --locked cargo-audit
       - name: cargo audit
-        run: cargo audit
+        run: cargo audit -c .cargo/audit.toml
 
   # Website staleness check (OSS_SPEC §11.2). Builds the CLI, runs the
   # website extractor, and fails if the extractor exits non-zero — the
