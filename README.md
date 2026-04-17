@@ -4,6 +4,7 @@ A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack,
 
 [![CI](https://github.com/niclaslindstedt/zad/actions/workflows/ci.yml/badge.svg)](https://github.com/niclaslindstedt/zad/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![crates.io](https://img.shields.io/crates/v/zad.svg)](https://crates.io/crates/zad)
 
 ## Why?
 
@@ -73,7 +74,21 @@ See [`examples/`](examples/) for runnable demos.
 
 ## Troubleshooting
 
-_Common failure modes and fixes._
+**Keychain permission denied** — On macOS, `zad` writes to the system keychain.
+If you see `Error: keychain access denied`, open Keychain Access, find the
+`zad` entry, and grant access; or re-run with `sudo` once to seed the entry.
+
+**Missing `DISCORD_BOT_TOKEN`** — `zad adapter create discord` reads this
+variable from the environment. Export it before running the command:
+```sh
+export DISCORD_BOT_TOKEN=<your-bot-token>
+```
+If you pass `--bot-token-env` with a custom variable name, export that name
+instead.
+
+**`zad: command not found` after `cargo install`** — Ensure `~/.cargo/bin` is
+on your `PATH`. Add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell
+profile and reload it.
 
 ## Documentation
 
