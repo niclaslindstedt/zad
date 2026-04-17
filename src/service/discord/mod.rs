@@ -4,19 +4,19 @@ pub mod gateway;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use crate::adapter::{Adapter, ChannelId, Event, ManageCmd, Message, MessageId, Target};
 use crate::error::Result;
+use crate::service::{ChannelId, Event, ManageCmd, Message, MessageId, Service, Target};
 
 pub use client::DiscordHttp;
 
-pub struct DiscordAdapter {
+pub struct DiscordService {
     http: DiscordHttp,
     token: String,
 }
 
-impl DiscordAdapter {
-    /// Construct an adapter from a bot token. Does not validate the token —
-    /// call [`DiscordHttp::validate_token`] via [`DiscordAdapter::http`] if
+impl DiscordService {
+    /// Construct a service from a bot token. Does not validate the token —
+    /// call [`DiscordHttp::validate_token`] via [`DiscordService::http`] if
     /// you need eager validation.
     pub fn new(token: impl Into<String>) -> Self {
         let token = token.into();
@@ -32,7 +32,7 @@ impl DiscordAdapter {
 }
 
 #[async_trait]
-impl Adapter for DiscordAdapter {
+impl Service for DiscordService {
     fn name(&self) -> &'static str {
         "discord"
     }

@@ -47,7 +47,7 @@ make fmt-check
 ## Tests
 
 Tests live in `tests/` as standalone Rust integration-test files. File names
-must end with `_test` or `_tests` (e.g. `adapter_test.rs`). There are no
+must end with `_test` or `_tests` (e.g. `service_test.rs`). There are no
 inline `#[cfg(test)]` blocks in source files.
 
 Run the full suite:

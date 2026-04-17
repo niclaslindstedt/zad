@@ -3,7 +3,7 @@ pub mod schema;
 
 use std::path::Path;
 
-pub use schema::{AdapterRef, DiscordAdapterCfg, DiscordProjectRef, ProjectConfig};
+pub use schema::{DiscordProjectRef, DiscordServiceCfg, ProjectConfig, ServiceRef};
 
 use crate::error::{Result, ZadError};
 
@@ -44,7 +44,7 @@ pub fn save(cfg: &ProjectConfig) -> Result<()> {
 }
 
 /// Load a TOML-serializable value from `path`, returning `None` when the
-/// file does not exist. Used for the flat global adapter configs.
+/// file does not exist. Used for the flat global service configs.
 pub fn load_flat<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<Option<T>> {
     if !path.exists() {
         return Ok(None);

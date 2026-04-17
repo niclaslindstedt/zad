@@ -1,6 +1,6 @@
-pub mod adapter;
-pub mod adapter_discord;
-pub mod adapter_list;
+pub mod service;
+pub mod service_discord;
+pub mod service_list;
 
 use clap::{Parser, Subcommand};
 
@@ -10,7 +10,7 @@ use crate::error::Result;
 #[command(
     name = "zad",
     version,
-    about = "Connect AI agents to external services via scoped adapter configs.",
+    about = "Connect AI agents to external services via scoped service configs.",
     disable_help_subcommand = true,
     propagate_version = true
 )]
@@ -25,8 +25,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Configure or inspect external-service adapters.
-    Adapter(adapter::AdapterArgs),
+    /// Configure or inspect external services.
+    Service(service::ServiceArgs),
 }
 
 pub async fn run() -> Result<()> {
@@ -34,7 +34,7 @@ pub async fn run() -> Result<()> {
     crate::logging::init(cli.debug);
 
     match cli.command {
-        Some(Command::Adapter(args)) => adapter::run(args).await,
+        Some(Command::Service(args)) => service::run(args).await,
         None => {
             println!("zad {}", crate::version());
             println!("Run `zad --help` for usage.");

@@ -64,27 +64,27 @@ pub fn project_config_path() -> Result<PathBuf> {
     Ok(project_dir()?.join("config.toml"))
 }
 
-/// `~/.zad/adapters/<adapter>/` — home for shared adapter credentials
-/// reused by every project that opts in via `zad adapter <name> add`.
-pub fn global_adapter_dir(adapter: &str) -> Result<PathBuf> {
-    Ok(zad_home()?.join("adapters").join(adapter))
+/// `~/.zad/services/<service>/` — home for shared service credentials
+/// reused by every project that opts in via `zad service <name> add`.
+pub fn global_service_dir(service: &str) -> Result<PathBuf> {
+    Ok(zad_home()?.join("services").join(service))
 }
 
-pub fn global_adapter_config_path(adapter: &str) -> Result<PathBuf> {
-    Ok(global_adapter_dir(adapter)?.join("config.toml"))
+pub fn global_service_config_path(service: &str) -> Result<PathBuf> {
+    Ok(global_service_dir(service)?.join("config.toml"))
 }
 
-/// `~/.zad/projects/<slug>/adapters/<adapter>/` — home for credentials
+/// `~/.zad/projects/<slug>/services/<service>/` — home for credentials
 /// that only apply to one project. When present, these take precedence
-/// over the global adapter config.
-pub fn project_adapter_dir_for(slug: &str, adapter: &str) -> Result<PathBuf> {
-    Ok(project_dir_for(slug)?.join("adapters").join(adapter))
+/// over the global service config.
+pub fn project_service_dir_for(slug: &str, service: &str) -> Result<PathBuf> {
+    Ok(project_dir_for(slug)?.join("services").join(service))
 }
 
-pub fn project_adapter_config_path_for(slug: &str, adapter: &str) -> Result<PathBuf> {
-    Ok(project_adapter_dir_for(slug, adapter)?.join("config.toml"))
+pub fn project_service_config_path_for(slug: &str, service: &str) -> Result<PathBuf> {
+    Ok(project_service_dir_for(slug, service)?.join("config.toml"))
 }
 
-pub fn project_adapter_config_path(adapter: &str) -> Result<PathBuf> {
-    project_adapter_config_path_for(&project_slug()?, adapter)
+pub fn project_service_config_path(service: &str) -> Result<PathBuf> {
+    project_service_config_path_for(&project_slug()?, service)
 }

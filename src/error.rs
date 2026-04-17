@@ -30,8 +30,8 @@ pub enum ZadError {
     #[error("keyring error: {0}")]
     Keyring(#[from] keyring::Error),
 
-    #[error("adapter '{name}' is already configured; pass --force to overwrite")]
-    AdapterAlreadyConfigured { name: String },
+    #[error("service '{name}' is already configured; pass --force to overwrite")]
+    ServiceAlreadyConfigured { name: String },
 
     #[error("missing required value for '{0}' (running with --non-interactive)")]
     MissingRequired(&'static str),
@@ -45,7 +45,7 @@ pub enum ZadError {
     #[error("invalid input: {0}")]
     Invalid(String),
 
-    #[error("operation not supported by this adapter: {0}")]
+    #[error("operation not supported by this service: {0}")]
     Unsupported(&'static str),
 
     #[error("interactive prompt error: {0}")]

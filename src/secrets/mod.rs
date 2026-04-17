@@ -81,7 +81,7 @@ pub fn delete(account: &str) -> Result<()> {
     }
 }
 
-/// Scope of an adapter credential: either shared across every project
+/// Scope of a service credential: either shared across every project
 /// (`Global`) or scoped to a single project slug.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Scope<'a> {

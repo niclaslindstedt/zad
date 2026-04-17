@@ -38,17 +38,17 @@ make fmt-check     # verify formatting (CI)
 
 `zad` is a single Rust crate whose entry point is `src/main.rs`. The crate
 is split into four top-level modules: `cli` (argument parsing via clap),
-`adapter` (one sub-module per integration, e.g. `adapter::discord`),
+`service` (one sub-module per integration, e.g. `service::discord`),
 `config` (TOML schema and path helpers), and `secrets` (OS-keychain I/O).
 `src/lib.rs` re-exports the public surface so that integration tests under
 `tests/` can reach it without going through the binary.
 
-Dependency direction is strictly layered: `cli` → `adapter` + `config` →
-`secrets`. Adapters never import from `cli`; `config` never imports from
-`adapter`. `src/error.rs` and `src/logging.rs` are leaf utilities imported
-by all layers. Adding a new adapter means adding a sub-module under
-`src/adapter/`, implementing the shared adapter trait defined in
-`src/adapter/mod.rs`, and wiring a new subcommand in `src/cli/`.
+Dependency direction is strictly layered: `cli` → `service` + `config` →
+`secrets`. Services never import from `cli`; `config` never imports from
+`service`. `src/error.rs` and `src/logging.rs` are leaf utilities imported
+by all layers. Adding a new service means adding a sub-module under
+`src/service/`, implementing the shared service trait defined in
+`src/service/mod.rs`, and wiring a new subcommand in `src/cli/`.
 
 ## Where new code goes
 
@@ -76,7 +76,7 @@ config keys| `docs/configuration.md`
 
 ## Parity / cross-cutting rules
 
-- Every new adapter (`src/adapter/<name>/`) must have a matching manpage at
+- Every new service (`src/service/<name>/`) must have a matching manpage at
   `man/<name>.md` and at least one runnable example under `examples/`.
 - The `man/main.md` command reference must stay in sync with every clap
   subcommand defined in `src/cli/`. Update it whenever commands, flags, or

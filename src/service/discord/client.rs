@@ -7,11 +7,11 @@ use serenity::all::{
 use serenity::builder::CreateChannel;
 use serenity::http::Http;
 
-use crate::adapter::{ChannelId, Message, MessageId, Target, UserId};
 use crate::error::Result;
+use crate::service::{ChannelId, Message, MessageId, Target, UserId};
 
 /// Thin wrapper around `serenity::http::Http` that translates between the
-/// adapter's domain types and serenity's.
+/// service's domain types and serenity's.
 #[derive(Clone)]
 pub struct DiscordHttp {
     pub(crate) http: Arc<Http>,
