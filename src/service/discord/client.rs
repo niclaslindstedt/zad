@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use serenity::all::{
-    ChannelId as SerenityChannelId, CreateMessage, GetMessages, GuildId as SerenityGuildId,
-    UserId as SerenityUserId,
+    ChannelId as SerenityChannelId, ChannelType, CreateMessage, GetMessages,
+    GuildId as SerenityGuildId, UserId as SerenityUserId,
 };
 use serenity::builder::CreateChannel;
 use serenity::http::Http;
 
 use crate::error::Result;
-use crate::service::{ChannelId, Message, MessageId, Target, UserId};
+use crate::service::{ChannelId, ChannelInfo, Message, MessageId, Target, UserId};
 
 /// Thin wrapper around `serenity::http::Http` that translates between the
 /// service's domain types and serenity's.
@@ -74,5 +74,58 @@ impl DiscordHttp {
             .delete(&*self.http)
             .await?;
         Ok(())
+    }
+
+    /// List every channel in `guild`, including threads and voice channels.
+    /// Callers can filter by [`ChannelInfo::kind`] to narrow the result.
+    pub async fn list_channels(&self, guild: u64) -> Result<Vec<ChannelInfo>> {
+        let channels = self.http.get_channels(SerenityGuildId::new(guild)).await?;
+        let mut out: Vec<ChannelInfo> = channels
+            .into_iter()
+            .map(|c| ChannelInfo {
+                id: ChannelId(c.id.get()),
+                name: c.name,
+                kind: channel_kind_name(c.kind).to_string(),
+                parent: c.parent_id.map(|p| ChannelId(p.get())),
+                position: c.position,
+            })
+            .collect();
+        out.sort_by(|a, b| a.position.cmp(&b.position).then(a.name.cmp(&b.name)));
+        Ok(out)
+    }
+
+    /// Join a thread channel. Discord only allows the bot to explicitly
+    /// "join" threads — guild text/voice channels are joined implicitly by
+    /// having the Guild membership and the right permissions.
+    pub async fn join_channel(&self, channel: ChannelId) -> Result<()> {
+        self.http
+            .join_thread_channel(SerenityChannelId::new(channel.0))
+            .await?;
+        Ok(())
+    }
+
+    pub async fn leave_channel(&self, channel: ChannelId) -> Result<()> {
+        self.http
+            .leave_thread_channel(SerenityChannelId::new(channel.0))
+            .await?;
+        Ok(())
+    }
+}
+
+fn channel_kind_name(kind: ChannelType) -> &'static str {
+    match kind {
+        ChannelType::Text => "text",
+        ChannelType::Private => "dm",
+        ChannelType::Voice => "voice",
+        ChannelType::GroupDm => "group_dm",
+        ChannelType::Category => "category",
+        ChannelType::News => "news",
+        ChannelType::NewsThread => "news_thread",
+        ChannelType::PublicThread => "public_thread",
+        ChannelType::PrivateThread => "private_thread",
+        ChannelType::Stage => "stage",
+        ChannelType::Directory => "directory",
+        ChannelType::Forum => "forum",
+        _ => "unknown",
     }
 }

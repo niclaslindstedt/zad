@@ -12,8 +12,9 @@ src/
   logging.rs      — tracing subscriber + always-on rolling file appender
   cli/
     mod.rs        — clap root + `run()` dispatcher
-    service.rs    — `zad service <action> <service>` group
-    service_discord.rs — Discord handlers for `create` / `add`
+    service.rs    — `zad service <action> <service>` group (configuration)
+    service_discord.rs — Discord handlers for `create` / `enable` / `show` / …
+    discord.rs    — `zad discord <verb>` runtime handlers (send, read, channels, join, leave)
   config/
     path.rs       — project-slug + `~/.zad/` path resolution
     schema.rs     — serde types: `ProjectConfig`, `ServiceRef`, `DiscordServiceCfg`

@@ -1,3 +1,4 @@
+pub mod discord;
 pub mod service;
 pub mod service_discord;
 pub mod service_list;
@@ -27,6 +28,8 @@ pub struct Cli {
 pub enum Command {
     /// Configure or inspect external services.
     Service(service::ServiceArgs),
+    /// Operate the Discord service (send, read, channels, join, leave).
+    Discord(discord::DiscordArgs),
 }
 
 pub async fn run() -> Result<()> {
@@ -35,6 +38,7 @@ pub async fn run() -> Result<()> {
 
     match cli.command {
         Some(Command::Service(args)) => service::run(args).await,
+        Some(Command::Discord(args)) => discord::run(args).await,
         None => {
             println!("zad {}", crate::version());
             println!("Run `zad --help` for usage.");

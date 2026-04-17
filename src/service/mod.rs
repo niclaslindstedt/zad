@@ -28,6 +28,18 @@ pub struct Message {
     pub body: String,
 }
 
+/// Lightweight descriptor for a channel returned by a service's listing
+/// endpoint. `kind` is a free-form, service-specific label (e.g. `"text"`,
+/// `"voice"`, `"public_thread"` for Discord).
+#[derive(Debug, Clone)]
+pub struct ChannelInfo {
+    pub id: ChannelId,
+    pub name: String,
+    pub kind: String,
+    pub parent: Option<ChannelId>,
+    pub position: u16,
+}
+
 #[derive(Debug, Clone)]
 pub enum Event {
     MessageCreated(Message),

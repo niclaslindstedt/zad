@@ -63,6 +63,7 @@ separate manpages.
 | Command | Description |
 |---|---|
 | `service <ACTION> <SERVICE>` | Configure or inspect external services. |
+| `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave). |
 | `help` | Show help text. |
 
 ---
@@ -245,6 +246,95 @@ still references the service a warning is printed (run
 
 ---
 
+## `zad discord`
+
+```
+zad discord <VERB> [OPTIONS]
+```
+
+Operate the Discord service at runtime. The project must already have
+Discord enabled (`zad service enable discord`) and valid credentials
+registered in either scope — runtime commands resolve the effective
+configuration with local winning over global, then load the matching
+bot token from the OS keychain.
+
+| Verb | Description |
+|---|---|
+| `send` | Send a message to a channel or a direct message to a user. |
+| `read` | Fetch recent messages from a channel. |
+| `channels` | List every channel in a guild (text, voice, threads, categories). |
+| `join` | Join a thread channel. |
+| `leave` | Leave a thread channel. |
+
+### `zad discord send`
+
+```
+zad discord send (--channel <ID> | --dm <USER_ID>) [--stdin] [BODY]
+```
+
+Post a message. Exactly one of `--channel` or `--dm` is required. The
+body is taken from the positional argument, or from standard input when
+`--stdin` is set.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--channel <id>` | snowflake | — | Destination channel ID. Mutually exclusive with `--dm`. |
+| `--dm <user_id>` | snowflake | — | Destination user ID for a direct message. Mutually exclusive with `--channel`. |
+| `--stdin` | bool | `false` | Read the body from standard input instead of a positional argument. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+### `zad discord read`
+
+```
+zad discord read --channel <ID> [--limit N]
+```
+
+Fetch up to `--limit` recent messages from `--channel` (most Discord
+endpoints cap this at 100). Output is printed in chronological order
+(oldest first) so a terminal reader sees the natural flow.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--channel <id>` | snowflake | — | Channel to read from. |
+| `--limit <n>` | integer | `20` | Maximum number of messages to fetch (1–100). |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+### `zad discord channels`
+
+```
+zad discord channels [--guild <ID>]
+```
+
+List every channel visible to the bot in `--guild`. Falls back to the
+service config's `default_guild` when no flag is passed. Output columns
+are `ID`, `KIND` (one of `text`, `voice`, `category`, `news`,
+`public_thread`, `private_thread`, `news_thread`, `stage`, `forum`,
+`directory`, `unknown`), and `NAME`.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--guild <id>` | snowflake | `default_guild` from the effective config | Guild (server) whose channels to list. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of the human-readable table. |
+
+### `zad discord join` / `zad discord leave`
+
+```
+zad discord join --channel <ID>
+zad discord leave --channel <ID>
+```
+
+Join or leave a **thread** channel. Discord only supports explicit
+join/leave on thread members; regular guild text and voice channels
+are joined implicitly by having the guild membership and the right
+permissions, so the commands error for non-thread channel IDs.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--channel <id>` | snowflake | — | Thread channel to join or leave. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+---
+
 ## Environment variables
 
 | Variable | Description |
@@ -292,6 +382,27 @@ zad service delete discord             # remove the global creds (keychain too)
 
 # Script-friendly JSON output is available on every command
 zad service list --json | jq '.services[] | select(.enabled)'
+
+# --- Runtime Discord commands (once create + enable have run) ---
+
+# Post a message to a channel
+zad discord send --channel 1111111111111111 "deploy finished"
+
+# Or send it via stdin (handy for multi-line bodies from CI logs)
+tail -n 20 deploy.log | zad discord send --channel 1111111111111111 --stdin
+
+# DM a user directly
+zad discord send --dm 222222222222222 "standup in 5 minutes"
+
+# Read recent history from a channel
+zad discord read --channel 1111111111111111 --limit 50 --json | jq '.messages[].body'
+
+# List channels in a guild (falls back to default_guild from the config)
+zad discord channels --json
+
+# Join and leave a thread channel
+zad discord join --channel 3333333333333333
+zad discord leave --channel 3333333333333333
 ```
 
 ## See also

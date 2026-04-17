@@ -42,6 +42,11 @@ zad service create discord \
 # 2. Enable the service inside each project that should use it.
 cd ~/code/my-project
 zad service enable discord
+
+# 3. Drive the service at runtime.
+zad discord send --channel 1111111111111111 "deploy finished"
+zad discord read --channel 1111111111111111 --limit 20
+zad discord channels --json
 ```
 
 Use `--local` on `create` to store credentials only for the current
@@ -51,14 +56,18 @@ credential flags to run the interactive walkthrough instead.
 ## Usage
 
 ```
-zad service <ACTION> <SERVICE>
+zad service <ACTION> <SERVICE>   # configuration (create / enable / list / …)
+zad <SERVICE> <VERB>             # runtime operations (service-specific verbs)
 ```
 
-Actions today: `create` (register credentials), `enable` / `disable`
-(toggle for this project), `list`, `show`, and `delete`. Every action
-takes `--json` for machine-readable output. Today the only service is
-`discord`. See [`man/main.md`](man/main.md) for the full reference —
-every command and subcommand is in that single manpage.
+Configuration actions: `create` (register credentials), `enable` /
+`disable` (toggle for this project), `list`, `show`, and `delete`.
+
+Runtime verbs are chosen per service. For `discord`: `send`, `read`,
+`channels`, `join`, `leave`. Every command takes `--json` for
+machine-readable output. Today the only service is `discord`. See
+[`man/main.md`](man/main.md) for the full reference — every command
+and subcommand is in that single manpage.
 
 ## Configuration
 
