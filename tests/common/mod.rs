@@ -10,6 +10,25 @@
 
 use std::path::{Path, PathBuf};
 
+use predicates::BoxPredicate;
+use predicates::prelude::*;
+use predicates::str::contains;
+
+/// `predicates::str::contains` that tolerates OS-specific path
+/// separators. Authors write forward-slash paths (`services/discord/
+/// config.toml`); on Windows the rendered path uses backslashes
+/// (`services\discord\config.toml`) and a plain `contains` assertion
+/// silently fails. This predicate matches either form.
+///
+/// Use this for **every** assertion that substrings a filesystem path
+/// out of stdout/stderr — otherwise the test passes on Unix CI and
+/// fails on Windows CI after the branch is pushed.
+pub fn contains_path(fragment: &str) -> BoxPredicate<str> {
+    let unix = fragment.to_owned();
+    let windows = unix.replace('/', "\\");
+    BoxPredicate::new(contains(unix).or(contains(windows)))
+}
+
 /// Slugify a project path the same way the `zad` binary does, including
 /// the macOS realpath workaround.
 ///

@@ -8,6 +8,9 @@ use predicates::prelude::*;
 use predicates::str::contains;
 use serial_test::serial;
 
+mod common;
+use common::contains_path;
+
 fn bin() -> Command {
     let mut c = Command::cargo_bin("zad").expect("zad binary built");
     c.env("ZAD_SECRETS_MEMORY", "1");
@@ -342,10 +345,7 @@ fn send_denied_when_scope_missing() {
         .failure()
         .stderr(
             contains("scope `messages.send` is not enabled")
-                // Assert only on the filename — the separator in the
-                // rendered path is OS-specific (`/` on Unix, `\` on
-                // Windows).
-                .and(contains("config.toml")),
+                .and(contains_path("services/discord/config.toml")),
         );
 }
 

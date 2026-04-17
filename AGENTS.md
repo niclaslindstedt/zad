@@ -65,6 +65,7 @@ by all layers. Adding a new service means adding a sub-module under
 - **All tests live in separate files** — never inline in source files (no `#[cfg(test)]` blocks, no `if __name__ == "__main__"` test harnesses). This keeps source files free of test scaffolding and lets agents, hooks, and linters treat source and test code differently.
 - Test files are named with a `_test` or `_tests` suffix (e.g. `check_test.rs`, `utils_test.py`). The stem must match the pattern `_?[Tt]ests?$` per §20 of `OSS_SPEC.md`.
 - Tests live in `tests/`. Use `tempfile` or equivalent for any test that writes to the filesystem.
+- **Any assertion that substrings a filesystem path out of stdout/stderr MUST use `common::contains_path("…/…")` instead of raw `predicates::str::contains`.** Windows CI renders paths with `\` separators and a plain `contains("a/b/c")` silently fails there even though it passes on Unix. The helper in `tests/common/mod.rs` matches both forms; write the author-facing fragment with forward slashes.
 
 ## Documentation sync points
 
