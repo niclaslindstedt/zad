@@ -119,7 +119,7 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
     let mut authenticated_as: Option<String> = None;
     if !args.no_validate {
         tracing::info!("validating Discord bot token");
-        let http = DiscordHttp::new(&token);
+        let http = DiscordHttp::unscoped(&token);
         match http.validate_token().await {
             Ok(name) => {
                 if !args.json {

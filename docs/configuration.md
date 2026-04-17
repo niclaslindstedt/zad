@@ -55,6 +55,23 @@ default_guild  = "987654321"   # optional
 | `scopes` | `[string]` | `["guilds", "messages.read", "messages.send"]` | Capabilities the service is permitted to use. |
 | `default_guild` | string? | — | Optional default guild (server) ID. |
 
+Scopes are **enforced at runtime, before any network call**. Omitting a
+scope denies the corresponding operation locally with a `scope denied`
+error that names the config path — Discord's OAuth permissions are not
+trusted on their own. The supported values are:
+
+| Scope | Gates |
+|---|---|
+| `guilds` | `channels`, `join`, `leave`, `discover` (listing guilds, channels, members) |
+| `messages.read` | `read` (channel history) |
+| `messages.send` | `send` (channel or DM) |
+| `channels.manage` | Creating or deleting channels (library-level only; no CLI verb today) |
+| `gateway.listen` | Gateway event listener (library-level only) |
+
+When both a global and a project-local credentials file exist, the local
+file **replaces** the global one for that project — scopes are not
+merged. Write the full scope set each time.
+
 ### Project file
 
 `~/.zad/projects/<slug>/config.toml` records which services are enabled
