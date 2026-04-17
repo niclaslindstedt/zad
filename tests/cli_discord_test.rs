@@ -15,15 +15,26 @@ fn bin() -> Command {
 }
 
 fn seed_global(home: &std::path::Path) {
+    seed_global_with_scopes(home, &["guilds", "messages.read", "messages.send"]);
+}
+
+fn seed_global_with_scopes(home: &std::path::Path, scopes: &[&str]) {
     let p = home
         .join(".zad")
         .join("services")
         .join("discord")
         .join("config.toml");
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    let scope_list = scopes
+        .iter()
+        .map(|s| format!("\"{s}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
     std::fs::write(
         &p,
-        "application_id = \"1234567890\"\nscopes = [\"guilds\"]\ndefault_guild = \"999\"\n",
+        format!(
+            "application_id = \"1234567890\"\nscopes = [{scope_list}]\ndefault_guild = \"999\"\n"
+        ),
     )
     .unwrap();
 }
@@ -207,6 +218,44 @@ fn read_rejects_zero_limit() {
 
 #[test]
 #[serial]
+fn read_rejects_limit_above_100() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "read", "--channel", "12345", "--limit", "101"])
+        .assert()
+        .failure()
+        .stderr(contains("between 1 and 100"));
+}
+
+#[test]
+#[serial]
+fn send_rejects_oversized_body() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    let body = "x".repeat(2001);
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "send", "--channel", "12345", &body])
+        .assert()
+        .failure()
+        // The oversized-body error must fire before any keychain or
+        // network access — `2001 characters` only appears in the local
+        // pre-validation message.
+        .stderr(contains("2001 characters").and(contains("hard limit is 2000")));
+}
+
+#[test]
+#[serial]
 fn channels_needs_guild_when_no_default() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
@@ -271,6 +320,64 @@ fn leave_rejects_non_numeric_channel() {
         .stderr(contains(
             "is neither a numeric snowflake nor a known directory entry",
         ));
+}
+
+// ---------------------------------------------------------------------------
+// scope enforcement (runtime, before any network call)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial]
+fn send_denied_when_scope_missing() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global_with_scopes(home.path(), &["messages.read", "guilds"]);
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "send", "--channel", "12345", "hi"])
+        .assert()
+        .failure()
+        .stderr(
+            contains("scope `messages.send` is not enabled")
+                .and(contains("services/discord/config.toml")),
+        );
+}
+
+#[test]
+#[serial]
+fn read_denied_when_scope_missing() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global_with_scopes(home.path(), &["messages.send", "guilds"]);
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "read", "--channel", "12345"])
+        .assert()
+        .failure()
+        .stderr(contains("scope `messages.read` is not enabled"));
+}
+
+#[test]
+#[serial]
+fn channels_denied_when_guilds_scope_missing() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global_with_scopes(home.path(), &["messages.read", "messages.send"]);
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "channels", "--guild", "42"])
+        .assert()
+        .failure()
+        .stderr(contains("scope `guilds` is not enabled"));
 }
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,23 @@ matching bot token from the OS keychain.
 Every verb supports `--json` to emit machine-readable output instead
 of the human-readable default.
 
+## Scope enforcement
+
+Every runtime verb checks the required scope against the `scopes` array
+in the effective credentials file **before** any network call. Missing
+the scope returns a `scope denied` error that names the exact file path
+to edit. The mapping is:
+
+| Verb | Required scope |
+|---|---|
+| `send` | `messages.send` |
+| `read` | `messages.read` |
+| `channels`, `discover`, `join`, `leave` | `guilds` |
+| `directory` | none (local state only) |
+
+See `docs/configuration.md` for the full scope list and for the
+local-vs-global precedence rules.
+
 ## Name resolution
 
 `--channel`, `--dm`, and `--guild` all accept either a numeric snowflake or
@@ -49,7 +66,8 @@ zad discord send (--channel <ID|NAME> | --dm <USER|NAME>) [--stdin] [BODY]
 
 Post a message. Exactly one of `--channel` or `--dm` is required. The
 body is taken from the positional argument, or from standard input when
-`--stdin` is set.
+`--stdin` is set. Bodies longer than Discord's 2000-codepoint hard limit
+are rejected locally (no round-trip).
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
@@ -71,7 +89,7 @@ so a terminal reader sees the natural flow.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--channel <id\|name>` | snowflake \| directory name | — | Channel to read from. |
-| `--limit <n>` | integer | `20` | Maximum number of messages to fetch (1–100). |
+| `--limit <n>` | integer | `20` | Maximum number of messages to fetch (1–100). Values outside that range are rejected locally with exit code 2. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
 ## `zad discord channels`

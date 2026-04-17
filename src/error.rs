@@ -42,6 +42,22 @@ pub enum ZadError {
     #[error("discord API error: {0}")]
     Discord(String),
 
+    #[error(
+        "discord: scope `{scope}` is not enabled for this project\n  config: {config_path}\n  tip: add `{scope}` to `scopes` in that file (or re-run `zad service create discord --force`)"
+    )]
+    ScopeDenied {
+        scope: &'static str,
+        config_path: PathBuf,
+    },
+
+    #[error(
+        "discord requires the `{intent}` privileged intent — enable it in the Developer Portal (https://discord.com/developers/applications) and restart the bot"
+    )]
+    DiscordPrivilegedIntent { intent: &'static str },
+
+    #[error("discord channel {id} not found or the bot cannot see it")]
+    DiscordChannelNotFound { id: u64 },
+
     #[error("invalid input: {0}")]
     Invalid(String),
 

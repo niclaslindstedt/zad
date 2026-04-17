@@ -1,6 +1,9 @@
 pub mod client;
 pub mod gateway;
 
+use std::collections::BTreeSet;
+use std::path::PathBuf;
+
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
@@ -15,13 +18,16 @@ pub struct DiscordService {
 }
 
 impl DiscordService {
-    /// Construct a service from a bot token. Does not validate the token —
-    /// call [`DiscordHttp::validate_token`] via [`DiscordService::http`] if
+    /// Construct a service from a bot token and its declared scope set.
+    /// `config_path` is referenced only in scope-violation error
+    /// messages so the caller can find and edit the right file; no I/O
+    /// happens against it here. Does not validate the token — call
+    /// [`DiscordHttp::validate_token`] via [`DiscordService::http`] if
     /// you need eager validation.
-    pub fn new(token: impl Into<String>) -> Self {
+    pub fn new(token: impl Into<String>, scopes: BTreeSet<String>, config_path: PathBuf) -> Self {
         let token = token.into();
         Self {
-            http: DiscordHttp::new(&token),
+            http: DiscordHttp::new(&token, scopes, config_path),
             token,
         }
     }

@@ -117,7 +117,14 @@ async fn run_send(args: SendArgs) -> Result<()> {
     };
 
     let body = resolve_body(args.body.as_deref(), args.stdin)?;
-    let http = discord_http()?;
+    let len = body.chars().count();
+    if len > crate::service::discord::client::DISCORD_MAX_MESSAGE_LEN {
+        return Err(ZadError::Invalid(format!(
+            "message body is {len} characters; Discord's hard limit is {}",
+            crate::service::discord::client::DISCORD_MAX_MESSAGE_LEN
+        )));
+    }
+    let http = discord_http_for("messages.send")?;
     let msg_id = http.send(target.clone(), &body).await?;
 
     let (kind, tid) = match &target {
@@ -174,8 +181,10 @@ struct ReadMessage {
 }
 
 async fn run_read(args: ReadArgs) -> Result<()> {
-    if args.limit == 0 {
-        return Err(ZadError::Invalid("--limit must be at least 1".into()));
+    if args.limit == 0 || args.limit > 100 {
+        return Err(ZadError::Invalid(
+            "--limit must be between 1 and 100 (Discord API maximum)".into(),
+        ));
     }
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
@@ -185,7 +194,7 @@ async fn run_read(args: ReadArgs) -> Result<()> {
         &directory,
         context_guild.as_deref(),
     )?);
-    let http = discord_http()?;
+    let http = discord_http_for("messages.read")?;
     let msgs = http.history(channel_id.clone(), args.limit).await?;
 
     if args.json {
@@ -260,7 +269,7 @@ async fn run_channels(args: ChannelsArgs) -> Result<()> {
         cfg.default_guild.as_deref(),
         &directory,
     )?;
-    let http = discord_http()?;
+    let http = discord_http_for("guilds")?;
     let channels = http.list_channels(guild).await?;
 
     if args.json {
@@ -336,7 +345,7 @@ async fn run_join(args: JoinArgs) -> Result<()> {
         &directory,
         context_guild.as_deref(),
     )?);
-    let http = discord_http()?;
+    let http = discord_http_for("guilds")?;
     http.join_channel(channel.clone()).await?;
     if args.json {
         let out = MembershipOutput {
@@ -359,7 +368,7 @@ async fn run_leave(args: LeaveArgs) -> Result<()> {
         &directory,
         context_guild.as_deref(),
     )?);
-    let http = discord_http()?;
+    let http = discord_http_for("guilds")?;
     http.leave_channel(channel.clone()).await?;
     if args.json {
         let out = MembershipOutput {
@@ -423,10 +432,29 @@ fn load_token(scope: &EffectiveScope) -> Result<String> {
     })
 }
 
-fn discord_http() -> Result<DiscordHttp> {
-    let (_cfg, scope) = effective_config()?;
+/// Resolve config + token + scope set into a ready-to-call client, and
+/// fail fast with [`ZadError::ScopeDenied`] if `required` isn't declared.
+/// The fail-fast scope check happens *before* the keychain read so a
+/// denied op never touches secrets; [`DiscordHttp`] still guards the
+/// same scope internally, which covers library callers (`DiscordService`)
+/// that bypass this helper.
+fn discord_http_for(required: &'static str) -> Result<DiscordHttp> {
+    let (cfg, scope) = effective_config()?;
+    let config_path = match &scope {
+        EffectiveScope::Local(slug) => {
+            config::path::project_service_config_path_for(slug, "discord")?
+        }
+        EffectiveScope::Global => config::path::global_service_config_path("discord")?,
+    };
+    let scopes: std::collections::BTreeSet<String> = cfg.scopes.iter().cloned().collect();
+    if !scopes.contains(required) {
+        return Err(ZadError::ScopeDenied {
+            scope: required,
+            config_path,
+        });
+    }
     let token = load_token(&scope)?;
-    Ok(DiscordHttp::new(&token))
+    Ok(DiscordHttp::new(&token, scopes, config_path))
 }
 
 fn resolve_guild_arg(
@@ -524,7 +552,7 @@ struct DiscoverOutput {
 }
 
 async fn run_discover(args: DiscoverArgs) -> Result<()> {
-    let http = discord_http()?;
+    let http = discord_http_for("guilds")?;
     let mut directory = dir::load().unwrap_or_default();
     let mut warnings: Vec<String> = vec![];
 
