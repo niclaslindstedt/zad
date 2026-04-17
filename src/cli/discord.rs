@@ -4,8 +4,6 @@
 //! keychain entry holds the bot token. The project must already have
 //! enabled the Discord service.
 
-mod help_agent;
-
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
@@ -21,13 +19,6 @@ use crate::service::{ChannelId, Target, UserId};
 
 #[derive(Debug, Args)]
 pub struct DiscordArgs {
-    /// Emit a machine-readable JSON reference document for this command
-    /// group and every verb it supports. Designed so an LLM or other
-    /// automation can discover the full Discord CLI surface in a single
-    /// call without scraping `--help`.
-    #[arg(long)]
-    pub help_agent: bool,
-
     #[command(subcommand)]
     pub action: Option<Action>,
 }
@@ -47,17 +38,9 @@ pub enum Action {
 }
 
 pub async fn run(args: DiscordArgs) -> Result<()> {
-    if args.help_agent {
-        println!("{}", help_agent::render()?);
-        return Ok(());
-    }
-    let action = args.action.ok_or_else(|| {
-        ZadError::Invalid(
-            "missing subcommand. Run `zad discord --help` for a human summary \
-             or `zad discord --help-agent` for a machine-readable reference."
-                .into(),
-        )
-    })?;
+    let action = args
+        .action
+        .ok_or_else(|| ZadError::Invalid("missing subcommand. Run `zad discord --help`.".into()))?;
     match action {
         Action::Send(a) => run_send(a).await,
         Action::Read(a) => run_read(a).await,
