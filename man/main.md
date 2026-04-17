@@ -266,6 +266,12 @@ bot token from the OS keychain.
 | `join` | Join a thread channel. |
 | `leave` | Leave a thread channel. |
 
+#### Group-level flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--help-agent` | bool | `false` | Print a single JSON document describing every verb, its flags, positional arguments, defaults, conflicts, examples, and `--json` response shape — designed for an LLM or other automation to consume without scraping `--help`. Skips execution. |
+
 ### `zad discord send`
 
 ```
@@ -403,6 +409,9 @@ zad discord channels --json
 # Join and leave a thread channel
 zad discord join --channel 3333333333333333
 zad discord leave --channel 3333333333333333
+
+# Hand an agent the full Discord CLI surface in one call
+zad discord --help-agent | jq '.verbs[] | {name, usage, examples}'
 ```
 
 ## See also

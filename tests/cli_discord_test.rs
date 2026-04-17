@@ -266,3 +266,83 @@ fn leave_rejects_non_numeric_channel() {
         .failure()
         .stderr(contains("numeric Discord snowflake"));
 }
+
+// ---------------------------------------------------------------------------
+// --help-agent
+// ---------------------------------------------------------------------------
+
+#[test]
+fn help_agent_emits_parseable_json_document() {
+    let out = bin()
+        .args(["discord", "--help-agent"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let body = String::from_utf8(out).expect("utf8 stdout");
+    let doc: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+
+    assert_eq!(doc["command"], "discord");
+    assert!(doc["version"].is_string());
+    assert!(doc["auth"].is_object());
+    assert!(doc["preconditions"].is_array());
+    assert!(doc["concepts"].is_object());
+    assert!(doc["exit_codes"].is_array());
+
+    let verbs = doc["verbs"].as_array().expect("verbs array");
+    let names: Vec<&str> = verbs.iter().map(|v| v["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["send", "read", "channels", "join", "leave"]);
+
+    // Every verb documents its flags, JSON command id, and at least one
+    // example — an agent shouldn't need to guess invocation shape.
+    for v in verbs {
+        assert!(v["usage"].as_str().unwrap().starts_with("zad discord "));
+        assert!(!v["examples"].as_array().unwrap().is_empty());
+        assert!(
+            v["json_output"]["command_id"]
+                .as_str()
+                .unwrap()
+                .starts_with("discord.")
+        );
+    }
+
+    // Spot-check that flag introspection picks up the snowflake type and
+    // the `--limit` default for `read`.
+    let read = &verbs[1];
+    let limit_flag = read["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["long"] == "--limit")
+        .expect("--limit flag present");
+    assert_eq!(limit_flag["type"], "integer");
+    assert_eq!(limit_flag["default"], "20");
+
+    let send = &verbs[0];
+    let channel_flag = send["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["long"] == "--channel")
+        .expect("--channel flag present");
+    assert_eq!(channel_flag["type"], "snowflake");
+    assert_eq!(channel_flag["takes_value"], true);
+
+    // `send` has a BODY positional; `read` has none.
+    assert_eq!(send["positionals"].as_array().unwrap()[0]["name"], "BODY");
+    assert!(read["positionals"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn help_agent_does_not_require_a_subcommand() {
+    // `zad discord` without a verb or --help-agent errors with a helpful
+    // message, but `zad discord --help-agent` alone succeeds.
+    bin()
+        .args(["discord"])
+        .assert()
+        .failure()
+        .stderr(contains("missing subcommand"));
+
+    bin().args(["discord", "--help-agent"]).assert().success();
+}
