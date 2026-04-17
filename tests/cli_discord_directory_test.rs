@@ -8,6 +8,8 @@ use assert_cmd::Command;
 use predicates::str::contains;
 use serial_test::serial;
 
+mod common;
+
 fn bin() -> Command {
     let mut c = Command::cargo_bin("zad").expect("zad binary built");
     c.env("ZAD_SECRETS_MEMORY", "1");
@@ -38,34 +40,7 @@ fn enable_discord(home: &std::path::Path, project: &std::path::Path) {
 }
 
 fn directory_path(home: &std::path::Path, project: &std::path::Path) -> std::path::PathBuf {
-    // On macOS tempfile hands out paths under `/var/`, a symlink to
-    // `/private/var/`, and `getcwd(3)` inside the spawned child resolves
-    // the symlink — so the slug must match the canonical form. Windows
-    // canonicalization yields `\\?\`-prefixed paths the child won't
-    // return, so we skip canonicalization there.
-    let effective = if cfg!(target_os = "macos") {
-        std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf())
-    } else {
-        project.to_path_buf()
-    };
-    let slug: String = effective
-        .to_str()
-        .unwrap()
-        .chars()
-        .map(|c| {
-            if matches!(c, '/' | '\\' | ':') {
-                '-'
-            } else {
-                c
-            }
-        })
-        .collect();
-    home.join(".zad")
-        .join("projects")
-        .join(slug)
-        .join("services")
-        .join("discord")
-        .join("directory.toml")
+    common::project_service_dir(home, project, "discord").join("directory.toml")
 }
 
 // ---------------------------------------------------------------------------
