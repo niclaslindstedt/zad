@@ -5,7 +5,14 @@ environment, the conventions we follow, and how to get a change merged.
 
 ## Prerequisites
 
-- _Exact tooling versions._
+- **Rust 1.88+** (edition 2024) — install via [rustup](https://rustup.rs/). Run
+  `rustup update stable` to get the latest stable toolchain.
+- **cargo** — ships with Rust; no separate install needed.
+- **clippy** and **rustfmt** — `rustup component add clippy rustfmt`.
+- **make** — used to run the project's convenience targets (`make build`,
+  `make test`, etc.). Comes pre-installed on macOS and most Linux distros.
+- An OS keychain zad can write to: macOS Keychain, Linux Secret Service
+  (gnome-keyring or KWallet), or Windows Credential Manager.
 
 ## Getting the source
 
@@ -39,7 +46,24 @@ make fmt-check
 
 ## Tests
 
-_Where tests live, what coverage is expected, how to run a single test._
+Tests live in `tests/` as standalone Rust integration-test files. File names
+must end with `_test` or `_tests` (e.g. `adapter_test.rs`). There are no
+inline `#[cfg(test)]` blocks in source files.
+
+Run the full suite:
+```sh
+make test
+# or directly:
+cargo test
+```
+
+Run a single test by name:
+```sh
+cargo test <test_name>
+```
+
+No formal coverage target is enforced, but every public function that contains
+non-trivial logic should have at least one test.
 
 ## Documentation
 

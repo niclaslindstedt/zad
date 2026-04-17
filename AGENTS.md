@@ -36,7 +36,19 @@ make fmt-check     # verify formatting (CI)
 
 ## Architecture summary
 
-_Describe the module layout and dependency direction in 1–3 paragraphs._
+`zad` is a single Rust crate whose entry point is `src/main.rs`. The crate
+is split into four top-level modules: `cli` (argument parsing via clap),
+`adapter` (one sub-module per integration, e.g. `adapter::discord`),
+`config` (TOML schema and path helpers), and `secrets` (OS-keychain I/O).
+`src/lib.rs` re-exports the public surface so that integration tests under
+`tests/` can reach it without going through the binary.
+
+Dependency direction is strictly layered: `cli` → `adapter` + `config` →
+`secrets`. Adapters never import from `cli`; `config` never imports from
+`adapter`. `src/error.rs` and `src/logging.rs` are leaf utilities imported
+by all layers. Adding a new adapter means adding a sub-module under
+`src/adapter/`, implementing the shared adapter trait defined in
+`src/adapter/mod.rs`, and wiring a new subcommand in `src/cli/`.
 
 ## Where new code goes
 
@@ -64,7 +76,19 @@ config keys| `docs/configuration.md`
 
 ## Parity / cross-cutting rules
 
-_Any rule that spans multiple files (e.g. keeping bindings in sync)._
+- Every new adapter (`src/adapter/<name>/`) must have a matching manpage at
+  `man/<name>.md` and at least one runnable example under `examples/`.
+- The `man/main.md` command reference must stay in sync with every clap
+  subcommand defined in `src/cli/`. Update it whenever commands, flags, or
+  subcommands are added, removed, or renamed.
+
+## Website staleness policy
+
+Per §11.2 of `OSS_SPEC.md`, the website must be regenerated whenever
+commands, configuration keys, or examples change. Run `make website` locally
+(or push to `main` — the `pages` CI workflow rebuilds and deploys
+automatically). If `make website` is not available yet, the `pages` CI job
+will catch drift on every push to `main`.
 
 ## Maintenance skills
 
