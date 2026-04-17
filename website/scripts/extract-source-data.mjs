@@ -5,7 +5,7 @@ import path from "node:path";
 
 const out = {
   name: "zad",
-  description: "A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped adapter configurations instead of MCP servers.",
+  description: "A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers.",
   generatedAt: new Date().toISOString(),
 };
 

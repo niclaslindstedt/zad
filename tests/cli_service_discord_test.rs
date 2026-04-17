@@ -14,7 +14,7 @@ fn bin() -> Command {
 fn seed_global(home: &std::path::Path) {
     let p = home
         .join(".zad")
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -36,7 +36,7 @@ fn create_global_writes_flat_config_and_keychain() {
         .env("DISCORD_BOT_TOKEN", "t.est.token")
         .current_dir(project.path())
         .args([
-            "adapter",
+            "service",
             "create",
             "discord",
             "--application-id",
@@ -57,12 +57,12 @@ fn create_global_writes_flat_config_and_keychain() {
     let global_path = home
         .path()
         .join(".zad")
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     let body = fs::read_to_string(&global_path).unwrap();
 
-    assert!(!body.contains("[adapter.discord]"), "got:\n{body}");
+    assert!(!body.contains("[service.discord]"), "got:\n{body}");
     assert!(
         body.contains("application_id = \"1234567890\""),
         "got:\n{body}"
@@ -95,7 +95,7 @@ fn create_local_writes_under_project_slug() {
         .env("DISCORD_BOT_TOKEN", "t.est.token")
         .current_dir(project.path())
         .args([
-            "adapter",
+            "service",
             "create",
             "discord",
             "--local",
@@ -118,7 +118,7 @@ fn create_local_writes_under_project_slug() {
         .join(".zad")
         .join("projects")
         .join(&slug)
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     let body = fs::read_to_string(&local_creds).unwrap();
@@ -127,7 +127,7 @@ fn create_local_writes_under_project_slug() {
     let global = home
         .path()
         .join(".zad")
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     assert!(!global.exists(), "--local must not touch global config");
@@ -143,7 +143,7 @@ fn enable_uses_global_creds() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success()
         .stdout(contains("enabled"))
@@ -157,7 +157,7 @@ fn enable_uses_global_creds() {
         .join(&slug)
         .join("config.toml");
     let body = fs::read_to_string(&project_path).unwrap();
-    assert!(body.contains("[adapter.discord]"), "got:\n{body}");
+    assert!(body.contains("[service.discord]"), "got:\n{body}");
     assert!(body.contains("enabled = true"));
     assert!(!body.contains("application_id"));
 }
@@ -176,7 +176,7 @@ fn enable_prefers_local_creds_when_present() {
         .join(".zad")
         .join("projects")
         .join(&slug)
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     std::fs::create_dir_all(local.parent().unwrap()).unwrap();
@@ -185,7 +185,7 @@ fn enable_prefers_local_creds_when_present() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success()
         .stdout(contains("local"));
@@ -200,7 +200,7 @@ fn enable_fails_without_any_credentials() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .failure()
         .stderr(contains("no Discord credentials found"));
@@ -216,14 +216,14 @@ fn enable_refuses_to_overwrite_without_force() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .failure()
         .stderr(contains("already configured"));
@@ -231,14 +231,14 @@ fn enable_refuses_to_overwrite_without_force() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord", "--force"])
+        .args(["service", "enable", "discord", "--force"])
         .assert()
         .success();
 }
 
 #[test]
 #[serial]
-fn disable_removes_adapter_from_project_config() {
+fn disable_removes_service_from_project_config() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     seed_global(home.path());
@@ -246,14 +246,14 @@ fn disable_removes_adapter_from_project_config() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "disable", "discord"])
+        .args(["service", "disable", "discord"])
         .assert()
         .success()
         .stdout(contains("disabled"));
@@ -267,21 +267,21 @@ fn disable_removes_adapter_from_project_config() {
         .join("config.toml");
     let body = fs::read_to_string(&project_path).unwrap();
     assert!(
-        !body.contains("[adapter.discord]"),
-        "adapter entry should be gone, got:\n{body}"
+        !body.contains("[service.discord]"),
+        "service entry should be gone, got:\n{body}"
     );
 }
 
 #[test]
 #[serial]
-fn disable_fails_when_adapter_not_enabled() {
+fn disable_fails_when_service_not_enabled() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "disable", "discord"])
+        .args(["service", "disable", "discord"])
         .assert()
         .failure()
         .stderr(contains("not enabled"));
@@ -296,7 +296,7 @@ fn disable_force_succeeds_when_not_enabled() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "disable", "discord", "--force"])
+        .args(["service", "disable", "discord", "--force"])
         .assert()
         .success()
         .stdout(contains("not enabled"));
@@ -312,21 +312,21 @@ fn disable_leaves_credentials_intact() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "disable", "discord"])
+        .args(["service", "disable", "discord"])
         .assert()
         .success();
 
     let global_path = home
         .path()
         .join(".zad")
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     assert!(
@@ -346,7 +346,7 @@ fn create_non_interactive_requires_application_id() {
         .env("DISCORD_BOT_TOKEN", "t.est.token")
         .current_dir(project.path())
         .args([
-            "adapter",
+            "service",
             "create",
             "discord",
             "--bot-token-env",
@@ -369,7 +369,7 @@ fn create_global(home: &std::path::Path, project: &std::path::Path) {
         .env("DISCORD_BOT_TOKEN", "t.est.token")
         .current_dir(project)
         .args([
-            "adapter",
+            "service",
             "create",
             "discord",
             "--application-id",
@@ -391,7 +391,7 @@ fn create_local(home: &std::path::Path, project: &std::path::Path) {
         .env("DISCORD_BOT_TOKEN", "t.est.token")
         .current_dir(project)
         .args([
-            "adapter",
+            "service",
             "create",
             "discord",
             "--local",
@@ -417,12 +417,12 @@ fn list_reports_nothing_when_empty() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "list"])
+        .args(["service", "list"])
         .assert()
         .success()
-        .stdout(contains("ADAPTER"))
+        .stdout(contains("SERVICE"))
         .stdout(contains("discord"))
-        .stdout(contains("No adapters configured"));
+        .stdout(contains("No services configured"));
 }
 
 #[test]
@@ -435,14 +435,14 @@ fn list_reports_global_and_project_state() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "list"])
+        .args(["service", "list"])
         .assert()
         .success()
         .stdout(contains("discord"))
@@ -460,7 +460,7 @@ fn show_reports_effective_source_and_keychain() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "show", "discord"])
+        .args(["service", "show", "discord"])
         .assert()
         .success()
         .stdout(contains("effective : global"))
@@ -482,7 +482,7 @@ fn show_without_credentials_is_not_an_error() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "show", "discord"])
+        .args(["service", "show", "discord"])
         .assert()
         .success()
         .stdout(contains("(none"))
@@ -500,7 +500,7 @@ fn show_prefers_local_over_global() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "show", "discord"])
+        .args(["service", "show", "discord"])
         .assert()
         .success()
         .stdout(contains("effective : local"));
@@ -516,7 +516,7 @@ fn delete_global_removes_file_and_keychain() {
     let global_path = home
         .path()
         .join(".zad")
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     assert!(global_path.exists());
@@ -524,7 +524,7 @@ fn delete_global_removes_file_and_keychain() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "delete", "discord"])
+        .args(["service", "delete", "discord"])
         .assert()
         .success()
         .stdout(contains("deleted"))
@@ -536,7 +536,7 @@ fn delete_global_removes_file_and_keychain() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "show", "discord"])
+        .args(["service", "show", "discord"])
         .assert()
         .success()
         .stdout(contains("not configured"));
@@ -553,7 +553,7 @@ fn delete_local_leaves_global_intact() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "delete", "discord", "--local"])
+        .args(["service", "delete", "discord", "--local"])
         .assert()
         .success()
         .stdout(contains("local"));
@@ -564,13 +564,13 @@ fn delete_local_leaves_global_intact() {
         .join(".zad")
         .join("projects")
         .join(&slug)
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
     let global_path = home
         .path()
         .join(".zad")
-        .join("adapters")
+        .join("services")
         .join("discord")
         .join("config.toml");
 
@@ -587,7 +587,7 @@ fn delete_missing_without_force_errors() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "delete", "discord"])
+        .args(["service", "delete", "discord"])
         .assert()
         .failure()
         .stderr(contains("no discord credentials"));
@@ -595,14 +595,14 @@ fn delete_missing_without_force_errors() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "delete", "discord", "--force"])
+        .args(["service", "delete", "discord", "--force"])
         .assert()
         .success();
 }
 
 #[test]
 #[serial]
-fn delete_warns_when_project_still_references_adapter() {
+fn delete_warns_when_project_still_references_service() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     create_global(home.path(), project.path());
@@ -610,14 +610,14 @@ fn delete_warns_when_project_still_references_adapter() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "delete", "discord"])
+        .args(["service", "delete", "discord"])
         .assert()
         .success()
         .stdout(contains("warning"))
@@ -639,7 +639,7 @@ fn json_output_for_create() {
         .env("DISCORD_BOT_TOKEN", "t.est.token")
         .current_dir(project.path())
         .args([
-            "adapter",
+            "service",
             "create",
             "discord",
             "--application-id",
@@ -654,7 +654,7 @@ fn json_output_for_create() {
         ])
         .assert()
         .success()
-        .stdout(contains("\"command\": \"adapter.create.discord\""))
+        .stdout(contains("\"command\": \"service.create.discord\""))
         .stdout(contains("\"scope\": \"global\""))
         .stdout(contains("\"application_id\": \"1234567890\""))
         .stdout(predicates::str::contains("t.est.token").not());
@@ -670,10 +670,10 @@ fn json_output_for_enable() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord", "--json"])
+        .args(["service", "enable", "discord", "--json"])
         .assert()
         .success()
-        .stdout(contains("\"command\": \"adapter.enable.discord\""))
+        .stdout(contains("\"command\": \"service.enable.discord\""))
         .stdout(contains("\"credentials_scope\": \"global\""));
 }
 
@@ -687,17 +687,17 @@ fn json_output_for_disable() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "enable", "discord"])
+        .args(["service", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "disable", "discord", "--json"])
+        .args(["service", "disable", "discord", "--json"])
         .assert()
         .success()
-        .stdout(contains("\"command\": \"adapter.disable.discord\""))
+        .stdout(contains("\"command\": \"service.disable.discord\""))
         .stdout(contains("\"was_enabled\": true"));
 }
 
@@ -711,10 +711,10 @@ fn json_output_for_list() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "list", "--json"])
+        .args(["service", "list", "--json"])
         .assert()
         .success()
-        .stdout(contains("\"command\": \"adapter.list\""))
+        .stdout(contains("\"command\": \"service.list\""))
         .stdout(contains("\"name\": \"discord\""))
         .stdout(contains("\"global\": true"));
 }
@@ -729,10 +729,10 @@ fn json_output_for_show() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "show", "discord", "--json"])
+        .args(["service", "show", "discord", "--json"])
         .assert()
         .success()
-        .stdout(contains("\"command\": \"adapter.show.discord\""))
+        .stdout(contains("\"command\": \"service.show.discord\""))
         .stdout(contains("\"effective\": \"global\""))
         .stdout(contains("\"application_id\": \"1234567890\""))
         .stdout(predicates::str::contains("t.est.token").not());
@@ -748,10 +748,10 @@ fn json_output_for_delete() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "delete", "discord", "--json"])
+        .args(["service", "delete", "discord", "--json"])
         .assert()
         .success()
-        .stdout(contains("\"command\": \"adapter.delete.discord\""))
+        .stdout(contains("\"command\": \"service.delete.discord\""))
         .stdout(contains("\"scope\": \"global\""))
         .stdout(contains("\"config_removed\": true"));
 }

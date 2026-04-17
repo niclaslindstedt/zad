@@ -1,5 +1,5 @@
 //! zad — A Rust CLI that connects AI agents to external services (Discord,
-//! GitHub, Slack, etc.) via scoped adapter configurations instead of MCP
+//! GitHub, Slack, etc.) via scoped service configurations instead of MCP
 //! servers.
 
 // The `ZadError` variants aggregate third-party error types
@@ -9,12 +9,12 @@
 // of times trades clarity for nothing measurable.
 #![allow(clippy::result_large_err)]
 
-pub mod adapter;
 pub mod cli;
 pub mod config;
 pub mod error;
 pub mod logging;
 pub mod secrets;
+pub mod service;
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

@@ -7,8 +7,8 @@ use serenity::prelude::Client;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::adapter::{ChannelId, Event, Message, MessageId, UserId};
 use crate::error::Result;
+use crate::service::{ChannelId, Event, Message, MessageId, UserId};
 
 struct Forwarder {
     tx: mpsc::UnboundedSender<Event>,

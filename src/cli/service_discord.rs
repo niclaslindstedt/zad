@@ -2,10 +2,10 @@ use clap::Args;
 use dialoguer::{Input, MultiSelect, Password, theme::ColorfulTheme};
 use serde::Serialize;
 
-use crate::adapter::discord::DiscordHttp;
-use crate::config::{self, DiscordAdapterCfg};
+use crate::config::{self, DiscordServiceCfg};
 use crate::error::{Result, ZadError};
 use crate::secrets::{self, Scope};
+use crate::service::discord::DiscordHttp;
 
 const DEFAULT_SCOPES: &[&str] = &["guilds", "messages.read", "messages.send"];
 const ALL_SCOPES: &[&str] = &[
@@ -22,8 +22,8 @@ const ALL_SCOPES: &[&str] = &[
 
 #[derive(Debug, Args)]
 pub struct CreateArgs {
-    /// Write credentials to this project's private adapter directory
-    /// (`~/.zad/projects/<slug>/adapters/discord/config.toml`) instead
+    /// Write credentials to this project's private service directory
+    /// (`~/.zad/projects/<slug>/services/discord/config.toml`) instead
     /// of the shared global location. Local credentials take precedence
     /// over global ones for this project.
     #[arg(long)]
@@ -83,7 +83,7 @@ struct CreateOutput {
 pub async fn run_create(args: CreateArgs) -> Result<()> {
     let (path, scope_label, scope_machine, keychain_scope): (_, _, _, Scope<'_>) = if args.local {
         let slug = config::path::project_slug()?;
-        let p = config::path::project_adapter_config_path_for(&slug, "discord")?;
+        let p = config::path::project_service_config_path_for(&slug, "discord")?;
         (
             p,
             "local (project-scoped)".to_string(),
@@ -92,16 +92,16 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
         )
     } else {
         (
-            config::path::global_adapter_config_path("discord")?,
+            config::path::global_service_config_path("discord")?,
             "global".to_string(),
             "global",
             Scope::Global,
         )
     };
 
-    let existing: Option<DiscordAdapterCfg> = config::load_flat(&path)?;
+    let existing: Option<DiscordServiceCfg> = config::load_flat(&path)?;
     if existing.is_some() && !args.force {
-        return Err(ZadError::AdapterAlreadyConfigured {
+        return Err(ZadError::ServiceAlreadyConfigured {
             name: format!("discord ({scope_label})"),
         });
     }
@@ -134,7 +134,7 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
     let account = secrets::discord_bot_account(keychain_scope);
     secrets::store(&account, &token)?;
 
-    let cfg = DiscordAdapterCfg {
+    let cfg = DiscordServiceCfg {
         application_id: application_id.clone(),
         scopes: scopes.clone(),
         default_guild: default_guild.clone(),
@@ -143,7 +143,7 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
 
     if args.json {
         let out = CreateOutput {
-            command: "adapter.create.discord",
+            command: "service.create.discord",
             scope: scope_machine,
             config_path: path.display().to_string(),
             application_id,
@@ -164,18 +164,18 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
         }
         println!("  token  : OS keychain (service=\"zad\", account=\"{account}\")");
         println!();
-        println!("Next: run `zad adapter enable discord` in each project that should use Discord.");
+        println!("Next: run `zad service enable discord` in each project that should use Discord.");
     }
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// enable — enables the adapter in the current project
+// enable — enables the service in the current project
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
 pub struct EnableArgs {
-    /// Overwrite an existing `[adapter.discord]` entry in the project
+    /// Overwrite an existing `[service.discord]` entry in the project
     /// config.
     #[arg(long)]
     pub force: bool,
@@ -199,8 +199,8 @@ struct EnableOutput {
 
 pub fn run_enable(args: EnableArgs) -> Result<()> {
     let slug = config::path::project_slug()?;
-    let local_creds = config::path::project_adapter_config_path_for(&slug, "discord")?;
-    let global_creds = config::path::global_adapter_config_path("discord")?;
+    let local_creds = config::path::project_service_config_path_for(&slug, "discord")?;
+    let global_creds = config::path::global_service_config_path("discord")?;
 
     let (creds_path, scope_label) = if local_creds.exists() {
         (local_creds.clone(), "local")
@@ -208,7 +208,7 @@ pub fn run_enable(args: EnableArgs) -> Result<()> {
         (global_creds.clone(), "global")
     } else {
         return Err(ZadError::Invalid(format!(
-            "no Discord credentials found. Run `zad adapter create discord` \
+            "no Discord credentials found. Run `zad service create discord` \
              (or with `--local`) to register credentials first.\n\
              looked in:\n  {}\n  {}",
             local_creds.display(),
@@ -218,8 +218,8 @@ pub fn run_enable(args: EnableArgs) -> Result<()> {
 
     let project_path = config::path::project_config_path()?;
     let mut project_cfg = config::load_from(&project_path)?;
-    if project_cfg.has_adapter("discord") && !args.force {
-        return Err(ZadError::AdapterAlreadyConfigured {
+    if project_cfg.has_service("discord") && !args.force {
+        return Err(ZadError::ServiceAlreadyConfigured {
             name: "discord".to_string(),
         });
     }
@@ -229,14 +229,14 @@ pub fn run_enable(args: EnableArgs) -> Result<()> {
 
     if args.json {
         let out = EnableOutput {
-            command: "adapter.enable.discord",
+            command: "service.enable.discord",
             project_config: project_path.display().to_string(),
             credentials_path: creds_path.display().to_string(),
             credentials_scope: scope_label,
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("Discord adapter enabled for this project.");
+        println!("Discord service enabled for this project.");
         println!("  project config : {}", project_path.display());
         println!(
             "  credentials    : {} ({scope_label})",
@@ -247,12 +247,12 @@ pub fn run_enable(args: EnableArgs) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// disable — removes the adapter entry from the project config
+// disable — removes the service entry from the project config
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
 pub struct DisableArgs {
-    /// Succeed silently even if the adapter is not currently enabled in
+    /// Succeed silently even if the service is not currently enabled in
     /// this project.
     #[arg(long)]
     pub force: bool,
@@ -272,11 +272,11 @@ struct DisableOutput {
 pub fn run_disable(args: DisableArgs) -> Result<()> {
     let project_path = config::path::project_config_path()?;
     let mut project_cfg = config::load_from(&project_path)?;
-    let was_enabled = project_cfg.has_adapter("discord");
+    let was_enabled = project_cfg.has_service("discord");
 
     if !was_enabled && !args.force {
         return Err(ZadError::Invalid(format!(
-            "discord adapter is not enabled for this project ({}). \
+            "discord service is not enabled for this project ({}). \
              Pass --force to ignore.",
             project_path.display()
         )));
@@ -289,16 +289,16 @@ pub fn run_disable(args: DisableArgs) -> Result<()> {
 
     if args.json {
         let out = DisableOutput {
-            command: "adapter.disable.discord",
+            command: "service.disable.discord",
             project_config: project_path.display().to_string(),
             was_enabled,
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else if was_enabled {
-        println!("Discord adapter disabled for this project.");
+        println!("Discord service disabled for this project.");
         println!("  project config : {}", project_path.display());
     } else {
-        println!("Discord adapter was not enabled for this project (nothing to do).");
+        println!("Discord service was not enabled for this project (nothing to do).");
         println!("  project config : {}", project_path.display());
     }
     Ok(())
@@ -318,7 +318,7 @@ pub struct ShowArgs {
 #[derive(Debug, Serialize)]
 struct ShowOutput {
     command: &'static str,
-    adapter: &'static str,
+    service: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     effective: Option<&'static str>,
     global: ScopeBlock,
@@ -350,11 +350,11 @@ struct ProjectBlock {
 
 pub fn run_show(args: ShowArgs) -> Result<()> {
     let slug = config::path::project_slug()?;
-    let global_path = config::path::global_adapter_config_path("discord")?;
-    let local_path = config::path::project_adapter_config_path_for(&slug, "discord")?;
+    let global_path = config::path::global_service_config_path("discord")?;
+    let local_path = config::path::project_service_config_path_for(&slug, "discord")?;
 
-    let global_cfg: Option<DiscordAdapterCfg> = config::load_flat(&global_path)?;
-    let local_cfg: Option<DiscordAdapterCfg> = config::load_flat(&local_path)?;
+    let global_cfg: Option<DiscordServiceCfg> = config::load_flat(&global_path)?;
+    let local_cfg: Option<DiscordServiceCfg> = config::load_flat(&local_path)?;
 
     let effective = if local_cfg.is_some() {
         Some("local")
@@ -366,12 +366,12 @@ pub fn run_show(args: ShowArgs) -> Result<()> {
 
     let project_path = config::path::project_config_path()?;
     let project_cfg = config::load_from(&project_path)?;
-    let project_enabled = project_cfg.has_adapter("discord");
+    let project_enabled = project_cfg.has_service("discord");
 
     if args.json {
         let out = ShowOutput {
-            command: "adapter.show.discord",
-            adapter: "discord",
+            command: "service.show.discord",
+            service: "discord",
             effective,
             global: scope_block(&global_path, global_cfg.as_ref(), Scope::Global)?,
             local: scope_block(&local_path, local_cfg.as_ref(), Scope::Project(&slug))?,
@@ -384,13 +384,13 @@ pub fn run_show(args: ShowArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("Adapter: discord");
+    println!("Service: discord");
     println!();
     println!("## Credentials");
     if let Some(label) = effective {
         println!("  effective : {label}");
     } else {
-        println!("  effective : (none — run `zad adapter create discord`)");
+        println!("  effective : (none — run `zad service create discord`)");
     }
 
     print_scope_block("global", &global_path, global_cfg.as_ref(), Scope::Global)?;
@@ -415,7 +415,7 @@ pub fn run_show(args: ShowArgs) -> Result<()> {
 
 fn scope_block(
     path: &std::path::Path,
-    cfg: Option<&DiscordAdapterCfg>,
+    cfg: Option<&DiscordServiceCfg>,
     scope: Scope<'_>,
 ) -> Result<ScopeBlock> {
     let mut block = ScopeBlock {
@@ -442,7 +442,7 @@ fn scope_block(
 fn print_scope_block(
     label: &str,
     path: &std::path::Path,
-    cfg: Option<&DiscordAdapterCfg>,
+    cfg: Option<&DiscordServiceCfg>,
     scope: Scope<'_>,
 ) -> Result<()> {
     println!();
@@ -505,7 +505,7 @@ struct DeleteOutput {
 pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let (path, scope_label, scope_machine, keychain_scope): (_, _, _, Scope<'_>) = if args.local {
         let slug = config::path::project_slug()?;
-        let p = config::path::project_adapter_config_path_for(&slug, "discord")?;
+        let p = config::path::project_service_config_path_for(&slug, "discord")?;
         (
             p,
             "local (project-scoped)".to_string(),
@@ -514,7 +514,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
         )
     } else {
         (
-            config::path::global_adapter_config_path("discord")?,
+            config::path::global_service_config_path("discord")?,
             "global".to_string(),
             "global",
             Scope::Global,
@@ -558,11 +558,11 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
 
     let project_path = config::path::project_config_path()?;
     let project_cfg = config::load_from(&project_path)?;
-    let project_still_references = project_cfg.has_adapter("discord");
+    let project_still_references = project_cfg.has_service("discord");
 
     if args.json {
         let out = DeleteOutput {
-            command: "adapter.delete.discord",
+            command: "service.delete.discord",
             scope: scope_machine,
             config_path: path.display().to_string(),
             config_removed: existed,
@@ -584,11 +584,11 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     if project_still_references {
         println!();
         println!(
-            "warning: this project still references the discord adapter ({}).",
+            "warning: this project still references the discord service ({}).",
             project_path.display()
         );
         println!(
-            "         Run `zad adapter disable discord` to remove the `[adapter.discord]` entry."
+            "         Run `zad service disable discord` to remove the `[service.discord]` entry."
         );
     }
 

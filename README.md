@@ -1,6 +1,6 @@
 # zad
 
-A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped adapter configurations instead of MCP servers.
+A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers.
 
 [![CI](https://github.com/niclaslindstedt/zad/actions/workflows/ci.yml/badge.svg)](https://github.com/niclaslindstedt/zad/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -8,9 +8,9 @@ A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack,
 
 ## Why?
 
-- Adapters replace per-agent MCP server setup — one config file wires a service to any agent
+- Services replace per-agent MCP server setup — one config file wires a service to any agent
 - Permission files enforce fine-grained scopes (time windows, content filters) beyond what the upstream API offers
-- `--help-agent` flag emits machine-readable docs so an LLM can configure adapters on the user's behalf
+- `--help-agent` flag emits machine-readable docs so an LLM can configure services on the user's behalf
 - Global (~/.zad/) and project-local configs let teams share defaults while overriding per-repo
 - Extending zad with a new provider is a single Rust trait implementation; hooking up services is pure TOML config
 
@@ -29,34 +29,34 @@ cargo install --path .
 
 ## Quick start
 
-Two steps: register credentials once, then enable the adapter per project.
+Two steps: register credentials once, then enable the service per project.
 
 ```sh
 # 1. Register global Discord credentials (one-time).
 export DISCORD_BOT_TOKEN=...   # from https://discord.com/developers
-zad adapter create discord \
+zad service create discord \
     --application-id 1234567890 \
     --bot-token-env DISCORD_BOT_TOKEN \
     --scopes guilds,messages.send
 
-# 2. Enable the adapter inside each project that should use it.
+# 2. Enable the service inside each project that should use it.
 cd ~/code/my-project
-zad adapter enable discord
+zad service enable discord
 ```
 
 Use `--local` on `create` to store credentials only for the current
-project (under `~/.zad/projects/<slug>/adapters/discord/`). Omit the
+project (under `~/.zad/projects/<slug>/services/discord/`). Omit the
 credential flags to run the interactive walkthrough instead.
 
 ## Usage
 
 ```
-zad adapter <ACTION> <ADAPTER>
+zad service <ACTION> <SERVICE>
 ```
 
 Actions today: `create` (register credentials), `enable` / `disable`
 (toggle for this project), `list`, `show`, and `delete`. Every action
-takes `--json` for machine-readable output. Today the only adapter is
+takes `--json` for machine-readable output. Today the only service is
 `discord`. See [`man/main.md`](man/main.md) for the full reference —
 every command and subcommand is in that single manpage.
 
@@ -79,7 +79,7 @@ See [`examples/`](examples/) for runnable demos.
 If you see `Error: keychain access denied`, open Keychain Access, find the
 `zad` entry, and grant access; or re-run with `sudo` once to seed the entry.
 
-**Missing `DISCORD_BOT_TOKEN`** — `zad adapter create discord` reads this
+**Missing `DISCORD_BOT_TOKEN`** — `zad service create discord` reads this
 variable from the environment. Export it before running the command:
 ```sh
 export DISCORD_BOT_TOKEN=<your-bot-token>

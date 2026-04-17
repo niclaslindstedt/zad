@@ -1,6 +1,6 @@
 # Configuration
 
-zad stores per-project adapter configuration in a TOML file under the
+zad stores per-project service configuration in a TOML file under the
 user's home directory:
 
 ```
@@ -22,13 +22,13 @@ live in the OS keychain under the `zad` service.
 | `ZAD_HOME_OVERRIDE` | Replaces `~/` when computing `~/.zad/`. Tests only. |
 | `ZAD_SECRETS_MEMORY=1` | Swaps the OS keyring for a process-local in-memory store. Tests only. |
 
-## Discord adapter
+## Discord service
 
 Commands that drive it (documented in [`man/main.md`](../man/main.md)):
 
-- `zad adapter create discord [--local]` — register credentials.
-- `zad adapter enable discord` — enable the adapter in the current project.
-- `zad adapter disable discord` — disable it again (leaves credentials intact).
+- `zad service create discord [--local]` — register credentials.
+- `zad service enable discord` — enable the service in the current project.
+- `zad service disable discord` — disable it again (leaves credentials intact).
 
 Every command accepts `--json` for script-friendly structured output.
 
@@ -36,12 +36,12 @@ Every command accepts `--json` for script-friendly structured output.
 
 Stored at **one** of:
 
-- Global: `~/.zad/adapters/discord/config.toml`
-- Local:  `~/.zad/projects/<slug>/adapters/discord/config.toml`
+- Global: `~/.zad/services/discord/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/discord/config.toml`
 
 The project-local file wins over the global one for that project. The
-format is flat (no `[adapter.discord]` wrapper — the path already
-identifies the adapter):
+format is flat (no `[service.discord]` wrapper — the path already
+identifies the service):
 
 ```toml
 application_id = "1234567890"
@@ -52,16 +52,16 @@ default_guild  = "987654321"   # optional
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `application_id` | string | — | Discord application (bot) ID. Numeric snowflake. |
-| `scopes` | `[string]` | `["guilds", "messages.read", "messages.send"]` | Capabilities the adapter is permitted to use. |
+| `scopes` | `[string]` | `["guilds", "messages.read", "messages.send"]` | Capabilities the service is permitted to use. |
 | `default_guild` | string? | — | Optional default guild (server) ID. |
 
 ### Project file
 
-`~/.zad/projects/<slug>/config.toml` records which adapters are enabled
+`~/.zad/projects/<slug>/config.toml` records which services are enabled
 for the project. It never contains credentials.
 
 ```toml
-[adapter.discord]
+[service.discord]
 enabled = true
 ```
 
@@ -72,7 +72,7 @@ The bot token is stored in the OS keychain at:
 - **service:** `zad`
 - **account:** `discord-bot:global` (global creds) or `discord-bot:<slug>` (local creds).
 
-Rotate a token by re-running `zad adapter create discord --force` (add
+Rotate a token by re-running `zad service create discord --force` (add
 `--local` to target project-local credentials).
 
 ### Privileged intents

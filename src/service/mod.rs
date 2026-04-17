@@ -42,7 +42,7 @@ pub enum ManageCmd {
 }
 
 #[async_trait]
-pub trait Adapter: Send + Sync {
+pub trait Service: Send + Sync {
     fn name(&self) -> &'static str;
     async fn send_message(&self, target: Target, body: &str) -> Result<MessageId>;
     async fn read_messages(&self, channel: ChannelId, limit: usize) -> Result<Vec<Message>>;

@@ -4,7 +4,7 @@ use serde::Serialize;
 use crate::config;
 use crate::error::Result;
 
-const KNOWN_ADAPTERS: &[&str] = &["discord"];
+const KNOWN_SERVICES: &[&str] = &["discord"];
 
 #[derive(Debug, Args)]
 pub struct ListArgs {
@@ -16,11 +16,11 @@ pub struct ListArgs {
 #[derive(Debug, Serialize)]
 struct ListOutput {
     command: &'static str,
-    adapters: Vec<AdapterRow>,
+    services: Vec<ServiceRow>,
 }
 
 #[derive(Debug, Serialize)]
-struct AdapterRow {
+struct ServiceRow {
     name: &'static str,
     global: bool,
     local: bool,
@@ -32,16 +32,16 @@ pub fn run(args: ListArgs) -> Result<()> {
     let project_path = config::path::project_config_path()?;
     let project_cfg = config::load_from(&project_path)?;
 
-    let mut rows = Vec::with_capacity(KNOWN_ADAPTERS.len());
+    let mut rows = Vec::with_capacity(KNOWN_SERVICES.len());
     let mut any_configured = false;
-    for name in KNOWN_ADAPTERS {
-        let global = config::path::global_adapter_config_path(name)?.exists();
-        let local = config::path::project_adapter_config_path_for(&slug, name)?.exists();
-        let enabled = project_cfg.has_adapter(name);
+    for name in KNOWN_SERVICES {
+        let global = config::path::global_service_config_path(name)?.exists();
+        let local = config::path::project_service_config_path_for(&slug, name)?.exists();
+        let enabled = project_cfg.has_service(name);
         if global || local || enabled {
             any_configured = true;
         }
-        rows.push(AdapterRow {
+        rows.push(ServiceRow {
             name,
             global,
             local,
@@ -51,8 +51,8 @@ pub fn run(args: ListArgs) -> Result<()> {
 
     if args.json {
         let out = ListOutput {
-            command: "adapter.list",
-            adapters: rows,
+            command: "service.list",
+            services: rows,
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
         return Ok(());
@@ -61,7 +61,7 @@ pub fn run(args: ListArgs) -> Result<()> {
     let name_w = rows
         .iter()
         .map(|r| r.name.len())
-        .chain(std::iter::once("ADAPTER".len()))
+        .chain(std::iter::once("SERVICE".len()))
         .max()
         .unwrap_or(0);
     let global_w = "GLOBAL".len();
@@ -69,7 +69,7 @@ pub fn run(args: ListArgs) -> Result<()> {
 
     println!(
         "{:name_w$}  {:global_w$}  {:local_w$}  PROJECT",
-        "ADAPTER", "GLOBAL", "LOCAL"
+        "SERVICE", "GLOBAL", "LOCAL"
     );
     for row in &rows {
         println!(
@@ -83,7 +83,7 @@ pub fn run(args: ListArgs) -> Result<()> {
 
     if !any_configured {
         println!();
-        println!("No adapters configured. Run `zad adapter create <adapter>` to start.");
+        println!("No services configured. Run `zad service create <service>` to start.");
     }
 
     Ok(())

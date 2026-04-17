@@ -1,7 +1,7 @@
-use zad::config::{self, DiscordAdapterCfg, ProjectConfig};
+use zad::config::{self, DiscordServiceCfg, ProjectConfig};
 
 #[test]
-fn project_config_roundtrips_an_enabled_discord_adapter() {
+fn project_config_roundtrips_an_enabled_discord_service() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("config.toml");
 
@@ -10,7 +10,7 @@ fn project_config_roundtrips_an_enabled_discord_adapter() {
 
     config::save_to(&path, &cfg).unwrap();
     let body = std::fs::read_to_string(&path).unwrap();
-    assert!(body.contains("[adapter.discord]"), "body was:\n{body}");
+    assert!(body.contains("[service.discord]"), "body was:\n{body}");
     assert!(body.contains("enabled = true"), "body was:\n{body}");
     assert!(
         !body.contains("application_id"),
@@ -26,7 +26,7 @@ fn global_discord_config_serializes_flat() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("global.toml");
 
-    let cfg = DiscordAdapterCfg {
+    let cfg = DiscordServiceCfg {
         application_id: "1234".to_string(),
         scopes: vec!["guilds".into()],
         default_guild: Some("987".into()),
@@ -35,12 +35,12 @@ fn global_discord_config_serializes_flat() {
     config::save_flat(&path, &cfg).unwrap();
     let body = std::fs::read_to_string(&path).unwrap();
     assert!(
-        !body.contains("[adapter"),
+        !body.contains("[service"),
         "global config should be flat, got:\n{body}"
     );
     assert!(body.contains("application_id = \"1234\""));
 
-    let reloaded: DiscordAdapterCfg = config::load_flat(&path).unwrap().unwrap();
+    let reloaded: DiscordServiceCfg = config::load_flat(&path).unwrap().unwrap();
     assert_eq!(reloaded, cfg);
 }
 
@@ -49,20 +49,20 @@ fn missing_project_file_loads_as_default() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("does-not-exist.toml");
     let cfg = config::load_from(&path).unwrap();
-    assert!(!cfg.has_adapter("discord"));
+    assert!(!cfg.has_service("discord"));
 }
 
 #[test]
 fn missing_global_file_loads_as_none() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("missing.toml");
-    let v: Option<DiscordAdapterCfg> = config::load_flat(&path).unwrap();
+    let v: Option<DiscordServiceCfg> = config::load_flat(&path).unwrap();
     assert!(v.is_none());
 }
 
 #[test]
-fn has_adapter_returns_false_when_empty() {
+fn has_service_returns_false_when_empty() {
     let cfg = ProjectConfig::default();
-    assert!(!cfg.has_adapter("discord"));
+    assert!(!cfg.has_service("discord"));
     assert!(cfg.discord().is_none());
 }

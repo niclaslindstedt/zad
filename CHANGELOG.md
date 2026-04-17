@@ -14,16 +14,16 @@ do not edit manually.
 
 ### Added
 
-- `zad adapter create <adapter>` — register global or project-local adapter
+- `zad service create <service>` — register global or project-local service
   credentials (stored in the OS keychain, never in TOML).
-- `zad adapter add <adapter>` — enable a registered adapter for the current
+- `zad service add <service>` — enable a registered service for the current
   project directory.
-- Discord adapter (`--application-id`, `--bot-token-env`, `--scopes`) as the
+- Discord service (`--application-id`, `--bot-token-env`, `--scopes`) as the
   first bundled integration.
 - Global (`~/.zad/`) and project-local (`~/.zad/projects/<slug>/`) config
   directories with TOML schema validation.
 - `ZAD_HOME_OVERRIDE` environment variable for hermetic testing.
-- `--help-agent` flag that emits machine-readable adapter documentation for
+- `--help-agent` flag that emits machine-readable service documentation for
   LLM consumption.
 
 [v0.1.0]: https://github.com/niclaslindstedt/zad/releases/tag/v0.1.0

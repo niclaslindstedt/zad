@@ -12,28 +12,28 @@ src/
   logging.rs      — tracing subscriber + always-on rolling file appender
   cli/
     mod.rs        — clap root + `run()` dispatcher
-    adapter.rs    — `zad adapter <action> <adapter>` group
-    adapter_discord.rs — Discord handlers for `create` / `add`
+    service.rs    — `zad service <action> <service>` group
+    service_discord.rs — Discord handlers for `create` / `add`
   config/
     path.rs       — project-slug + `~/.zad/` path resolution
-    schema.rs     — serde types: `ProjectConfig`, `AdapterConfig`, `DiscordAdapterCfg`
+    schema.rs     — serde types: `ProjectConfig`, `ServiceRef`, `DiscordServiceCfg`
     mod.rs        — TOML read/write
   secrets/
     mod.rs        — keyring wrapper, with test-only in-memory backend
-  adapter/
-    mod.rs        — `Adapter` trait + domain types (Target, Message, Event, ManageCmd)
+  service/
+    mod.rs        — `Service` trait + domain types (Target, Message, Event, ManageCmd)
     discord/
-      mod.rs      — `DiscordAdapter` impl of `Adapter`
+      mod.rs      — `DiscordService` impl of `Service`
       client.rs   — thin wrapper around `serenity::http::Http`
       gateway.rs  — gateway listener → `BoxStream<Event>`
 ```
 
 ## Dependency direction
 
-`cli` depends on `config`, `secrets`, and `adapter`. `adapter` depends on
-`error`. `config` depends on `error`. `adapter::discord` is the only
+`cli` depends on `config`, `secrets`, and `service`. `service` depends on
+`error`. `config` depends on `error`. `service::discord` is the only
 module that links against serenity; every other module is transport-
-agnostic. This keeps the `Adapter` trait reusable when more services are
+agnostic. This keeps the `Service` trait reusable when more services are
 added (Slack, GitHub, …).
 
 ## Command metadata
@@ -52,4 +52,4 @@ Per-project configuration lives at
 `~/.zad/projects/<slug>/config.toml`; see `docs/configuration.md`.
 Long-lived secrets (bot tokens, API keys) never land in the TOML — they
 go to the OS keychain via the `secrets` module, keyed by
-`service="zad"` and an adapter-specific account string.
+`service="zad"` and a service-specific account string.
