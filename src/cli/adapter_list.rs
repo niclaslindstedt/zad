@@ -1,9 +1,33 @@
+use clap::Args;
+use serde::Serialize;
+
 use crate::config;
 use crate::error::Result;
 
 const KNOWN_ADAPTERS: &[&str] = &["discord"];
 
-pub fn run() -> Result<()> {
+#[derive(Debug, Args)]
+pub struct ListArgs {
+    /// Emit machine-readable JSON instead of the human-readable table.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ListOutput {
+    command: &'static str,
+    adapters: Vec<AdapterRow>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdapterRow {
+    name: &'static str,
+    global: bool,
+    local: bool,
+    enabled: bool,
+}
+
+pub fn run(args: ListArgs) -> Result<()> {
     let slug = config::path::project_slug()?;
     let project_path = config::path::project_config_path()?;
     let project_cfg = config::load_from(&project_path)?;
@@ -17,17 +41,26 @@ pub fn run() -> Result<()> {
         if global || local || enabled {
             any_configured = true;
         }
-        rows.push((
-            *name,
-            yes_no(global),
-            yes_no(local),
-            if enabled { "enabled" } else { "disabled" },
-        ));
+        rows.push(AdapterRow {
+            name,
+            global,
+            local,
+            enabled,
+        });
+    }
+
+    if args.json {
+        let out = ListOutput {
+            command: "adapter.list",
+            adapters: rows,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
     }
 
     let name_w = rows
         .iter()
-        .map(|r| r.0.len())
+        .map(|r| r.name.len())
         .chain(std::iter::once("ADAPTER".len()))
         .max()
         .unwrap_or(0);
@@ -38,8 +71,14 @@ pub fn run() -> Result<()> {
         "{:name_w$}  {:global_w$}  {:local_w$}  PROJECT",
         "ADAPTER", "GLOBAL", "LOCAL"
     );
-    for (name, global, local, project) in &rows {
-        println!("{name:name_w$}  {global:global_w$}  {local:local_w$}  {project}");
+    for row in &rows {
+        println!(
+            "{:name_w$}  {:global_w$}  {:local_w$}  {}",
+            row.name,
+            yes_no(row.global),
+            yes_no(row.local),
+            if row.enabled { "enabled" } else { "disabled" },
+        );
     }
 
     if !any_configured {

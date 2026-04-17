@@ -41,7 +41,7 @@ zad adapter create discord \
 
 # 2. Enable the adapter inside each project that should use it.
 cd ~/code/my-project
-zad adapter add discord
+zad adapter enable discord
 ```
 
 Use `--local` on `create` to store credentials only for the current
@@ -54,10 +54,11 @@ credential flags to run the interactive walkthrough instead.
 zad adapter <ACTION> <ADAPTER>
 ```
 
-Actions today: `create` (register credentials) and `add` (enable for
-this project). Today the only adapter is `discord`. See
-[`man/main.md`](man/main.md) for the full reference — every command and
-subcommand is in that single manpage.
+Actions today: `create` (register credentials), `enable` / `disable`
+(toggle for this project), `list`, `show`, and `delete`. Every action
+takes `--json` for machine-readable output. Today the only adapter is
+`discord`. See [`man/main.md`](man/main.md) for the full reference —
+every command and subcommand is in that single manpage.
 
 ## Configuration
 

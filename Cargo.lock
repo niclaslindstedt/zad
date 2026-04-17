@@ -2867,6 +2867,7 @@ dependencies = [
  "keyring",
  "predicates",
  "serde",
+ "serde_json",
  "serenity",
  "serial_test",
  "tempfile",

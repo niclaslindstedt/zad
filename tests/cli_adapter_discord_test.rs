@@ -135,7 +135,7 @@ fn create_local_writes_under_project_slug() {
 
 #[test]
 #[serial]
-fn add_enables_adapter_using_global_creds() {
+fn enable_uses_global_creds() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     seed_global(home.path());
@@ -143,7 +143,7 @@ fn add_enables_adapter_using_global_creds() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .success()
         .stdout(contains("enabled"))
@@ -164,7 +164,7 @@ fn add_enables_adapter_using_global_creds() {
 
 #[test]
 #[serial]
-fn add_prefers_local_creds_when_present() {
+fn enable_prefers_local_creds_when_present() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     seed_global(home.path());
@@ -185,7 +185,7 @@ fn add_prefers_local_creds_when_present() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .success()
         .stdout(contains("local"));
@@ -193,14 +193,14 @@ fn add_prefers_local_creds_when_present() {
 
 #[test]
 #[serial]
-fn add_fails_without_any_credentials() {
+fn enable_fails_without_any_credentials() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .failure()
         .stderr(contains("no Discord credentials found"));
@@ -208,7 +208,7 @@ fn add_fails_without_any_credentials() {
 
 #[test]
 #[serial]
-fn add_refuses_to_overwrite_without_force() {
+fn enable_refuses_to_overwrite_without_force() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     seed_global(home.path());
@@ -216,14 +216,14 @@ fn add_refuses_to_overwrite_without_force() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .success();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .failure()
         .stderr(contains("already configured"));
@@ -231,9 +231,108 @@ fn add_refuses_to_overwrite_without_force() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord", "--force"])
+        .args(["adapter", "enable", "discord", "--force"])
         .assert()
         .success();
+}
+
+#[test]
+#[serial]
+fn disable_removes_adapter_from_project_config() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "enable", "discord"])
+        .assert()
+        .success();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "disable", "discord"])
+        .assert()
+        .success()
+        .stdout(contains("disabled"));
+
+    let slug = slugify(project.path());
+    let project_path = home
+        .path()
+        .join(".zad")
+        .join("projects")
+        .join(&slug)
+        .join("config.toml");
+    let body = fs::read_to_string(&project_path).unwrap();
+    assert!(
+        !body.contains("[adapter.discord]"),
+        "adapter entry should be gone, got:\n{body}"
+    );
+}
+
+#[test]
+#[serial]
+fn disable_fails_when_adapter_not_enabled() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "disable", "discord"])
+        .assert()
+        .failure()
+        .stderr(contains("not enabled"));
+}
+
+#[test]
+#[serial]
+fn disable_force_succeeds_when_not_enabled() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "disable", "discord", "--force"])
+        .assert()
+        .success()
+        .stdout(contains("not enabled"));
+}
+
+#[test]
+#[serial]
+fn disable_leaves_credentials_intact() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "enable", "discord"])
+        .assert()
+        .success();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "disable", "discord"])
+        .assert()
+        .success();
+
+    let global_path = home
+        .path()
+        .join(".zad")
+        .join("adapters")
+        .join("discord")
+        .join("config.toml");
+    assert!(
+        global_path.exists(),
+        "global creds must remain after disable"
+    );
 }
 
 #[test]
@@ -336,7 +435,7 @@ fn list_reports_global_and_project_state() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .success();
 
@@ -511,7 +610,7 @@ fn delete_warns_when_project_still_references_adapter() {
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
         .current_dir(project.path())
-        .args(["adapter", "add", "discord"])
+        .args(["adapter", "enable", "discord"])
         .assert()
         .success();
 
@@ -523,6 +622,138 @@ fn delete_warns_when_project_still_references_adapter() {
         .success()
         .stdout(contains("warning"))
         .stdout(contains("still references"));
+}
+
+// ---------------------------------------------------------------------------
+// --json output
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial]
+fn json_output_for_create() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .env("DISCORD_BOT_TOKEN", "t.est.token")
+        .current_dir(project.path())
+        .args([
+            "adapter",
+            "create",
+            "discord",
+            "--application-id",
+            "1234567890",
+            "--bot-token-env",
+            "DISCORD_BOT_TOKEN",
+            "--scopes",
+            "guilds",
+            "--non-interactive",
+            "--no-validate",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("\"command\": \"adapter.create.discord\""))
+        .stdout(contains("\"scope\": \"global\""))
+        .stdout(contains("\"application_id\": \"1234567890\""))
+        .stdout(predicates::str::contains("t.est.token").not());
+}
+
+#[test]
+#[serial]
+fn json_output_for_enable() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "enable", "discord", "--json"])
+        .assert()
+        .success()
+        .stdout(contains("\"command\": \"adapter.enable.discord\""))
+        .stdout(contains("\"credentials_scope\": \"global\""));
+}
+
+#[test]
+#[serial]
+fn json_output_for_disable() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "enable", "discord"])
+        .assert()
+        .success();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "disable", "discord", "--json"])
+        .assert()
+        .success()
+        .stdout(contains("\"command\": \"adapter.disable.discord\""))
+        .stdout(contains("\"was_enabled\": true"));
+}
+
+#[test]
+#[serial]
+fn json_output_for_list() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "list", "--json"])
+        .assert()
+        .success()
+        .stdout(contains("\"command\": \"adapter.list\""))
+        .stdout(contains("\"name\": \"discord\""))
+        .stdout(contains("\"global\": true"));
+}
+
+#[test]
+#[serial]
+fn json_output_for_show() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    create_global(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "show", "discord", "--json"])
+        .assert()
+        .success()
+        .stdout(contains("\"command\": \"adapter.show.discord\""))
+        .stdout(contains("\"effective\": \"global\""))
+        .stdout(contains("\"application_id\": \"1234567890\""))
+        .stdout(predicates::str::contains("t.est.token").not());
+}
+
+#[test]
+#[serial]
+fn json_output_for_delete() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    create_global(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["adapter", "delete", "discord", "--json"])
+        .assert()
+        .success()
+        .stdout(contains("\"command\": \"adapter.delete.discord\""))
+        .stdout(contains("\"scope\": \"global\""))
+        .stdout(contains("\"config_removed\": true"));
 }
 
 fn slugify(p: &std::path::Path) -> String {
