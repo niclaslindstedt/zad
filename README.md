@@ -143,6 +143,12 @@ profile and reload it.
 - [Architecture](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
+## Community
+
+- **Bugs and feature requests** — [GitHub issues](https://github.com/niclaslindstedt/zad/issues).
+- **Questions, ideas, show-and-tell** — [GitHub Discussions](https://github.com/niclaslindstedt/zad/discussions).
+- **Security reports** — private, via the channel in [SECURITY.md](SECURITY.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

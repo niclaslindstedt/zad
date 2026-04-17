@@ -685,7 +685,7 @@ async fn run_discover(args: DiscoverArgs) -> Result<()> {
             "Wrote directory: {guilds_n} guilds, {channels_n} channel entries, {users_n} users."
         );
         for w in &warnings {
-            eprintln!("warning: {w}");
+            crate::output::warn(w);
         }
     }
     Ok(())

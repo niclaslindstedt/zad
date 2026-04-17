@@ -88,6 +88,9 @@ project can only add further restrictions, never loosen the global
 rule. An absent file contributes no restrictions; when both are absent,
 scope is the only gate.
 
+A complete worked example lives at
+[`examples/discord-permissions/`](../examples/discord-permissions/).
+
 The schema is a small TOML file with top-level defaults plus one block
 per function:
 
