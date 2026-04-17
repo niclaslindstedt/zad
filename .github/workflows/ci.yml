@@ -58,9 +58,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # Invoke cargo-audit directly instead of rustsec/audit-check@v2
+      # so the advisory report is always visible in the job log — the
+      # action publishes via the Check API, which is unavailable on PRs
+      # from forks, hiding the reason for the failure. Waivers live in
+      # `.cargo/audit.toml` (see OSS_SPEC.md §14).
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: cargo audit
+        run: cargo audit
 
   # Website staleness check (OSS_SPEC §11.2). Builds the CLI, runs the
   # website extractor, and fails if the extractor exits non-zero — the
