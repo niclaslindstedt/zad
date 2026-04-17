@@ -42,6 +42,15 @@ zad service create discord \
 # 2. Enable the service inside each project that should use it.
 cd ~/code/my-project
 zad service enable discord
+
+# 3. Populate the name -> snowflake directory so you can use channel
+#    and user names instead of pasting 19-digit IDs.
+zad discord discover
+
+# 4. Drive the service at runtime.
+zad discord send --channel general "deploy finished"
+zad discord read --channel general --limit 20
+zad discord channels --json
 ```
 
 Use `--local` on `create` to store credentials only for the current
@@ -51,14 +60,24 @@ credential flags to run the interactive walkthrough instead.
 ## Usage
 
 ```
-zad service <ACTION> <SERVICE>
+zad service <ACTION> <SERVICE>   # configuration (create / enable / list / …)
+zad <SERVICE> <VERB>             # runtime operations (service-specific verbs)
 ```
 
-Actions today: `create` (register credentials), `enable` / `disable`
-(toggle for this project), `list`, `show`, and `delete`. Every action
+Configuration actions: `create` (register credentials), `enable` /
+`disable` (toggle for this project), `list`, `show`, and `delete`.
+
+Runtime verbs are chosen per service. For `discord`: `send`, `read`,
+`channels`, `join`, `leave`, plus `discover` (best-effort walk that
+caches a name → snowflake map at
+`~/.zad/projects/<slug>/services/discord/directory.toml`) and
+`directory` (list / set / remove entries by hand). After `discover`,
+the destination flags accept names — `--channel general`, `--dm @alice`
+— with a numeric snowflake still working as a fallback. Every command
 takes `--json` for machine-readable output. Today the only service is
-`discord`. See [`man/main.md`](man/main.md) for the full reference —
-every command and subcommand is in that single manpage.
+`discord`. See [`man/main.md`](man/main.md) for the top-level overview
+and [`man/service.md`](man/service.md) / [`man/discord.md`](man/discord.md)
+for the full per-command reference.
 
 ## Configuration
 

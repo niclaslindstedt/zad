@@ -5,6 +5,8 @@ use predicates::prelude::*;
 use predicates::str::contains;
 use serial_test::serial;
 
+mod common;
+
 fn bin() -> Command {
     let mut c = Command::cargo_bin("zad").expect("zad binary built");
     c.env("ZAD_SECRETS_MEMORY", "1");
@@ -757,25 +759,5 @@ fn json_output_for_delete() {
 }
 
 fn slugify(p: &std::path::Path) -> String {
-    // On macOS tempfile hands out paths under `/var/`, a symlink to
-    // `/private/var/`, and `getcwd(3)` inside the spawned child
-    // resolves the symlink — so the slug must match the canonical form.
-    // On Windows `std::fs::canonicalize` returns a `\\?\`-prefixed
-    // extended-length path that (a) the child's `current_dir()` does
-    // *not* return, and (b) slugifies to a filename with `?` in it,
-    // which Windows rejects. So canonicalize macOS only.
-    let effective = if cfg!(target_os = "macos") {
-        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
-    } else {
-        p.to_path_buf()
-    };
-    effective
-        .to_str()
-        .unwrap()
-        .chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' => '-',
-            _ => c,
-        })
-        .collect()
+    common::project_slug(p)
 }

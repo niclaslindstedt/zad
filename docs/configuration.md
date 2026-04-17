@@ -24,7 +24,7 @@ live in the OS keychain under the `zad` service.
 
 ## Discord service
 
-Commands that drive it (documented in [`man/main.md`](../man/main.md)):
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/discord.md`](../man/discord.md)):
 
 - `zad service create discord [--local]` — register credentials.
 - `zad service enable discord` — enable the service in the current project.
@@ -74,6 +74,52 @@ The bot token is stored in the OS keychain at:
 
 Rotate a token by re-running `zad service create discord --force` (add
 `--local` to target project-local credentials).
+
+### Directory (name -> snowflake)
+
+`zad discord discover` walks the bot's visible guilds/channels/members
+and writes a local directory file at:
+
+```
+~/.zad/projects/<slug>/services/discord/directory.toml
+```
+
+The file is plain TOML and is the canonical source for ergonomic names
+used by `--channel`, `--dm`, and `--guild` on every runtime verb. It is
+safe to hand-edit; `discover` upserts on top of existing entries rather
+than overwriting the file.
+
+```toml
+generated_at_unix = 1713364920   # optional; set by `discover`
+
+[guilds]
+"main-server" = "999000000000000000"
+
+[channels]
+# "guild/channel" wins over "channel" when both exist and a guild
+# context is known. A bare `general` still resolves when the caller
+# doesn't pass a guild.
+"main-server/general"   = "111000000000000000"
+"main-server/announce"  = "112000000000000000"
+"general"               = "111000000000000000"
+
+[users]
+"alice" = "1001000000000000000"
+```
+
+Manage it from the CLI:
+
+- `zad discord directory` — list every entry.
+- `zad discord directory set <kind> <name> <id>` — upsert, where
+  `<kind>` is `guild`, `channel`, or `user`.
+- `zad discord directory remove <kind> <name>` — idempotent delete.
+- `zad discord directory clear --force` — wipe the file.
+
+Member discovery uses the Discord `GET /guilds/{id}/members` endpoint,
+which requires the **GUILD_MEMBERS** privileged intent to be enabled for
+the bot in the developer portal. Without it, `discover` skips the
+members phase and emits a one-line warning — it is explicitly
+best-effort and never aborts the walk.
 
 ### Privileged intents
 

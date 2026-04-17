@@ -12,11 +12,14 @@ src/
   logging.rs      — tracing subscriber + always-on rolling file appender
   cli/
     mod.rs        — clap root + `run()` dispatcher
-    service.rs    — `zad service <action> <service>` group
-    service_discord.rs — Discord handlers for `create` / `add`
+    service.rs    — `zad service <action> <service>` group (configuration)
+    service_discord.rs — Discord handlers for `create` / `enable` / `show` / …
+    discord.rs    — `zad discord <verb>` runtime handlers (send, read, channels, join, leave)
+    help_agent.rs — renders the compact, prompt-injectable `--help-agent` text
   config/
     path.rs       — project-slug + `~/.zad/` path resolution
     schema.rs     — serde types: `ProjectConfig`, `ServiceRef`, `DiscordServiceCfg`
+    directory.rs  — per-project `directory.toml` (name -> snowflake cache)
     mod.rs        — TOML read/write
   secrets/
     mod.rs        — keyring wrapper, with test-only in-memory backend
@@ -39,12 +42,12 @@ added (Slack, GitHub, …).
 ## Command metadata
 
 `clap` is the single source of truth for command names, usage, flag
-specifications, defaults, and descriptions. The `--help-agent`,
-`--debug-agent`, `zad commands`, `zad man`, and `zad docs` surfaces
-mandated by `OSS_SPEC.md` §12 are not yet implemented project-wide;
-when they are, they should introspect the clap command tree at runtime
-(`Cli::command().get_subcommands()`, etc.) rather than duplicating the
-metadata in a parallel registry.
+specifications, defaults, and descriptions. `--help-agent`
+(`src/cli/help_agent.rs`) introspects the clap command tree at runtime
+(`Cli::command().get_subcommands()`) to enumerate commands, so it
+cannot drift from `--help`. The remaining §12 surfaces — `--debug-agent`,
+`zad commands`, `zad man`, `zad docs` — are not yet implemented and
+should follow the same introspection pattern when they are.
 
 ## Config + secrets split
 

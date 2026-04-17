@@ -78,9 +78,11 @@ config keys| `docs/configuration.md`
 
 - Every new service (`src/service/<name>/`) must have a matching manpage at
   `man/<name>.md` and at least one runnable example under `examples/`.
-- The `man/main.md` command reference must stay in sync with every clap
-  subcommand defined in `src/cli/`. Update it whenever commands, flags, or
-  subcommands are added, removed, or renamed.
+- Each top-level `zad` command gets its own `man/<command>.md`
+  (`main.md`, `service.md`, `discord.md`, …); `main.md` is the thin
+  overview and the rest are per-command references. Keep them in sync
+  with every clap subcommand and flag defined in `src/cli/` whenever
+  commands, flags, or subcommands are added, removed, or renamed.
 
 ## Website staleness policy
 
