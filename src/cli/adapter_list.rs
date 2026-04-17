@@ -36,24 +36,10 @@ pub fn run() -> Result<()> {
 
     println!(
         "{:name_w$}  {:global_w$}  {:local_w$}  PROJECT",
-        "ADAPTER",
-        "GLOBAL",
-        "LOCAL",
-        name_w = name_w,
-        global_w = global_w,
-        local_w = local_w,
+        "ADAPTER", "GLOBAL", "LOCAL"
     );
     for (name, global, local, project) in &rows {
-        println!(
-            "{:name_w$}  {:global_w$}  {:local_w$}  {}",
-            name,
-            global,
-            local,
-            project,
-            name_w = name_w,
-            global_w = global_w,
-            local_w = local_w,
-        );
+        println!("{name:name_w$}  {global:global_w$}  {local:local_w$}  {project}");
     }
 
     if !any_configured {
