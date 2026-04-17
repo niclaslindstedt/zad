@@ -184,6 +184,183 @@ pub fn run_add(args: AddArgs) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// show — prints the effective config and both scopes' details
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct ShowArgs {}
+
+pub fn run_show(_args: ShowArgs) -> Result<()> {
+    let slug = config::path::project_slug()?;
+    let global_path = config::path::global_adapter_config_path("discord")?;
+    let local_path = config::path::project_adapter_config_path_for(&slug, "discord")?;
+
+    let global_cfg: Option<DiscordAdapterCfg> = config::load_flat(&global_path)?;
+    let local_cfg: Option<DiscordAdapterCfg> = config::load_flat(&local_path)?;
+
+    let effective = if local_cfg.is_some() {
+        Some("local")
+    } else if global_cfg.is_some() {
+        Some("global")
+    } else {
+        None
+    };
+
+    println!("Adapter: discord");
+    println!();
+    println!("## Credentials");
+    if let Some(label) = effective {
+        println!("  effective : {label}");
+    } else {
+        println!("  effective : (none — run `zad adapter create discord`)");
+    }
+
+    print_scope_block("global", &global_path, global_cfg.as_ref(), Scope::Global)?;
+    print_scope_block(
+        "local",
+        &local_path,
+        local_cfg.as_ref(),
+        Scope::Project(&slug),
+    )?;
+
+    println!();
+    println!("## Project");
+    let project_path = config::path::project_config_path()?;
+    let project_cfg = config::load_from(&project_path)?;
+    if project_cfg.has_adapter("discord") {
+        println!("  enabled : yes");
+    } else {
+        println!("  enabled : no");
+    }
+    println!("  config  : {}", project_path.display());
+
+    Ok(())
+}
+
+fn print_scope_block(
+    label: &str,
+    path: &std::path::Path,
+    cfg: Option<&DiscordAdapterCfg>,
+    scope: Scope<'_>,
+) -> Result<()> {
+    println!();
+    println!("  [{label}] {}", path.display());
+    match cfg {
+        None => println!("    status : not configured"),
+        Some(c) => {
+            println!("    app id : {}", c.application_id);
+            println!(
+                "    scopes : {}",
+                if c.scopes.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    c.scopes.join(", ")
+                }
+            );
+            if let Some(g) = &c.default_guild {
+                println!("    guild  : {g}");
+            }
+            let account = secrets::discord_bot_account(scope);
+            let present = secrets::load(&account)?.is_some();
+            println!(
+                "    token  : {} (service=\"zad\", account=\"{account}\")",
+                if present { "stored" } else { "missing" }
+            );
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// delete — removes credentials at the chosen scope (inverse of `create`)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct DeleteArgs {
+    /// Delete the project-scoped credentials instead of the global ones.
+    #[arg(long)]
+    pub local: bool,
+
+    /// Succeed silently even if no config file exists at the chosen scope.
+    #[arg(long)]
+    pub force: bool,
+}
+
+pub fn run_delete(args: DeleteArgs) -> Result<()> {
+    let (path, scope_label, keychain_scope): (_, _, Scope<'_>) = if args.local {
+        let slug = config::path::project_slug()?;
+        let p = config::path::project_adapter_config_path_for(&slug, "discord")?;
+        (
+            p,
+            "local (project-scoped)".to_string(),
+            Scope::Project(leak(slug)),
+        )
+    } else {
+        (
+            config::path::global_adapter_config_path("discord")?,
+            "global".to_string(),
+            Scope::Global,
+        )
+    };
+
+    let existed = path.exists();
+    if !existed && !args.force {
+        return Err(ZadError::Invalid(format!(
+            "no discord credentials at {scope_label} scope ({}). \
+             Pass --force to ignore.",
+            path.display()
+        )));
+    }
+
+    if existed {
+        std::fs::remove_file(&path).map_err(|e| ZadError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+        if let Some(parent) = path.parent() {
+            match std::fs::remove_dir(parent) {
+                Ok(()) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::DirectoryNotEmpty | std::io::ErrorKind::NotFound
+                    ) => {}
+                Err(e) => {
+                    return Err(ZadError::Io {
+                        path: parent.to_owned(),
+                        source: e,
+                    });
+                }
+            }
+        }
+    }
+
+    let account = secrets::discord_bot_account(keychain_scope);
+    secrets::delete(&account)?;
+
+    println!("Discord credentials deleted ({scope_label}).");
+    println!(
+        "  config : {} ({})",
+        path.display(),
+        if existed { "removed" } else { "not present" }
+    );
+    println!("  token  : OS keychain entry `{account}` cleared");
+
+    let project_path = config::path::project_config_path()?;
+    let project_cfg = config::load_from(&project_path)?;
+    if project_cfg.has_adapter("discord") {
+        println!();
+        println!(
+            "warning: this project still references the discord adapter ({}).",
+            project_path.display()
+        );
+        println!("         Remove the `[adapter.discord]` entry manually if desired.");
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // prompt helpers (shared by `create`)
 // ---------------------------------------------------------------------------
 
