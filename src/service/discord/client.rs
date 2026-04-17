@@ -8,7 +8,9 @@ use serenity::builder::CreateChannel;
 use serenity::http::Http;
 
 use crate::error::Result;
-use crate::service::{ChannelId, ChannelInfo, Message, MessageId, Target, UserId};
+use crate::service::{
+    ChannelId, ChannelInfo, GuildInfo, MemberInfo, Message, MessageId, Target, UserId,
+};
 
 /// Thin wrapper around `serenity::http::Http` that translates between the
 /// service's domain types and serenity's.
@@ -109,6 +111,58 @@ impl DiscordHttp {
             .leave_thread_channel(SerenityChannelId::new(channel.0))
             .await?;
         Ok(())
+    }
+
+    /// List every guild the bot currently has access to. Used by the
+    /// discovery surface to seed the directory.
+    pub async fn list_guilds(&self) -> Result<Vec<GuildInfo>> {
+        let mut out: Vec<GuildInfo> = vec![];
+        let mut after: Option<serenity::all::GuildId> = None;
+        // Discord caps the `limit` query at 200. Paginate so operators
+        // running the bot in more than 200 guilds aren't silently
+        // truncated.
+        loop {
+            let page = self
+                .http
+                .get_guilds(after.map(serenity::all::GuildPagination::After), Some(200))
+                .await?;
+            if page.is_empty() {
+                break;
+            }
+            let last = page.last().map(|g| g.id);
+            out.extend(page.into_iter().map(|g| GuildInfo {
+                id: g.id.get(),
+                name: g.name,
+            }));
+            match last {
+                Some(id) => after = Some(id),
+                None => break,
+            }
+        }
+        Ok(out)
+    }
+
+    /// List up to `limit` members of `guild`. Requires the bot to have
+    /// the `GUILD_MEMBERS` privileged intent enabled in the developer
+    /// portal; otherwise Discord 4xx's and the caller should fall back
+    /// to a warning rather than aborting discovery.
+    pub async fn list_members(&self, guild: u64, limit: u64) -> Result<Vec<MemberInfo>> {
+        let members = self
+            .http
+            .get_guild_members(SerenityGuildId::new(guild), Some(limit.min(1000)), None)
+            .await?;
+        Ok(members
+            .into_iter()
+            .map(|m| MemberInfo {
+                id: UserId(m.user.id.get()),
+                display_name: m
+                    .nick
+                    .clone()
+                    .or_else(|| m.user.global_name.clone())
+                    .unwrap_or_else(|| m.user.name.clone()),
+                username: m.user.name,
+            })
+            .collect())
     }
 }
 

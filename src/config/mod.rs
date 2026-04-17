@@ -1,8 +1,10 @@
+pub mod directory;
 pub mod path;
 pub mod schema;
 
 use std::path::Path;
 
+pub use directory::Directory;
 pub use schema::{DiscordProjectRef, DiscordServiceCfg, ProjectConfig, ServiceRef};
 
 use crate::error::{Result, ZadError};

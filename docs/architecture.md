@@ -19,6 +19,7 @@ src/
   config/
     path.rs       — project-slug + `~/.zad/` path resolution
     schema.rs     — serde types: `ProjectConfig`, `ServiceRef`, `DiscordServiceCfg`
+    directory.rs  — per-project `directory.toml` (name -> snowflake cache)
     mod.rs        — TOML read/write
   secrets/
     mod.rs        — keyring wrapper, with test-only in-memory backend

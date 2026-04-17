@@ -166,7 +166,9 @@ fn send_rejects_non_numeric_channel() {
         .args(["discord", "send", "--channel", "not-a-snowflake", "hi"])
         .assert()
         .failure()
-        .stderr(contains("numeric Discord snowflake"));
+        .stderr(contains(
+            "is neither a numeric snowflake nor a known directory entry",
+        ));
 }
 
 #[test]
@@ -247,7 +249,9 @@ fn join_rejects_non_numeric_channel() {
         .args(["discord", "join", "--channel", "not-a-snowflake"])
         .assert()
         .failure()
-        .stderr(contains("numeric Discord snowflake"));
+        .stderr(contains(
+            "is neither a numeric snowflake nor a known directory entry",
+        ));
 }
 
 #[test]
@@ -264,7 +268,9 @@ fn leave_rejects_non_numeric_channel() {
         .args(["discord", "leave", "--channel", "not-a-snowflake"])
         .assert()
         .failure()
-        .stderr(contains("numeric Discord snowflake"));
+        .stderr(contains(
+            "is neither a numeric snowflake nor a known directory entry",
+        ));
 }
 
 // ---------------------------------------------------------------------------
