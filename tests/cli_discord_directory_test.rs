@@ -38,7 +38,17 @@ fn enable_discord(home: &std::path::Path, project: &std::path::Path) {
 }
 
 fn directory_path(home: &std::path::Path, project: &std::path::Path) -> std::path::PathBuf {
-    let slug: String = project
+    // On macOS tempfile hands out paths under `/var/`, a symlink to
+    // `/private/var/`, and `getcwd(3)` inside the spawned child resolves
+    // the symlink — so the slug must match the canonical form. Windows
+    // canonicalization yields `\\?\`-prefixed paths the child won't
+    // return, so we skip canonicalization there.
+    let effective = if cfg!(target_os = "macos") {
+        std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf())
+    } else {
+        project.to_path_buf()
+    };
+    let slug: String = effective
         .to_str()
         .unwrap()
         .chars()
