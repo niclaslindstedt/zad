@@ -67,7 +67,14 @@ jobs:
       - name: Install cargo-audit
         run: cargo install --locked cargo-audit
       - name: cargo audit
-        run: cargo audit -c .cargo/audit.toml
+        # Waivers are documented in `.cargo/audit.toml`; the flags here
+        # are the authoritative list cargo-audit acts on. Keep the two
+        # in sync. Each ID has a rationale in the TOML file.
+        run: |
+          cargo audit \
+            --ignore RUSTSEC-2026-0049 \
+            --ignore RUSTSEC-2026-0098 \
+            --ignore RUSTSEC-2026-0099
 
   # Website staleness check (OSS_SPEC §11.2). Builds the CLI, runs the
   # website extractor, and fails if the extractor exits non-zero — the
