@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod adapter_discord;
+pub mod adapter_list;
 
 use clap::{Parser, Subcommand};
 

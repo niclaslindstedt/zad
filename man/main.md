@@ -22,7 +22,7 @@ replaced by `-` — the same scheme Claude Code uses.
 Bot tokens, API keys, and other secrets always live in the OS keychain
 and are **never** written to the TOML.
 
-Two actions operate on adapters:
+Five actions operate on adapters:
 
 - `zad adapter create <adapter>` — stores credentials for the adapter.
   Defaults to the global location; pass `--local` to store them only
@@ -30,6 +30,15 @@ Two actions operate on adapters:
 - `zad adapter add <adapter>` — enables the adapter in the current
   project, using whichever credentials `create` registered (local wins
   over global).
+- `zad adapter list` — prints a table of known adapters with the state
+  of global credentials, project-local credentials, and project
+  enablement.
+- `zad adapter show <adapter>` — prints the effective configuration
+  and both scopes' details (paths, application id, scopes, token
+  presence, project enablement) without ever revealing the token.
+- `zad adapter delete <adapter>` — removes the stored credentials at
+  the chosen scope (global by default, `--local` for project-scoped)
+  and clears the matching OS-keychain entry. Inverse of `create`.
 
 This manpage documents every command the binary ships. Nested
 subcommands are folded into the same page rather than split across
@@ -64,6 +73,9 @@ Configure or inspect external-service adapters. Actions:
 |---|---|
 | `create <adapter>` | Create credentials for the adapter. |
 | `add <adapter>` | Enable the adapter in the current project. |
+| `list` | List all adapters with credential and project-enablement status. |
+| `show <adapter>` | Show the effective configuration and both scopes' details. |
+| `delete <adapter>` | Delete credentials for the adapter (inverse of `create`). |
 
 | Adapter | Description |
 |---|---|
@@ -134,6 +146,62 @@ credentials.
   gateway `MessageCreated` events to contain text; without it Discord
   delivers empty content for guild messages.
 
+### `zad adapter list`
+
+```
+zad adapter list
+```
+
+Prints a table showing, for every known adapter, whether global
+credentials exist (`~/.zad/adapters/<adapter>/config.toml`), whether
+local credentials exist for the current project's slug
+(`~/.zad/projects/<slug>/adapters/<adapter>/config.toml`), and whether
+the adapter is enabled in the current project's `config.toml`.
+
+Output columns:
+
+| Column | Values |
+|---|---|
+| `ADAPTER` | Adapter name. |
+| `GLOBAL`  | `yes` / `no`. |
+| `LOCAL`   | `yes` / `no` (always relative to the current working directory's slug). |
+| `PROJECT` | `enabled` / `disabled`. |
+
+If nothing is configured anywhere, an explanatory hint is printed
+after the table.
+
+### `zad adapter show discord`
+
+```
+zad adapter show discord
+```
+
+Prints the effective Discord configuration (local wins over global)
+plus a per-scope block with the config-file path, application ID,
+selected scopes, optional default guild, and token presence in the OS
+keychain. The bot token itself is **never** printed. Exits 0 even
+when nothing is configured — output simply reports "no credentials".
+
+### `zad adapter delete discord`
+
+```
+zad adapter delete discord [OPTIONS]
+```
+
+Removes the Discord adapter's credentials at the chosen scope (global
+by default, `--local` for project-scoped) and clears the matching OS
+keychain entry (`discord-bot:global` or `discord-bot:<slug>`). This
+is the inverse of `zad adapter create discord`. It does **not**
+disable the adapter in the project's `config.toml`; if the project
+still references the adapter a warning is printed.
+
+#### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--local` | bool | `false` | Delete the project-scoped credentials under `~/.zad/projects/<slug>/adapters/discord/` instead of the global ones. |
+| `--force` | bool | `false` | Succeed silently when no config file exists at the chosen scope. Keychain deletion is always idempotent. |
+
 ---
 
 ## Environment variables
@@ -171,6 +239,12 @@ zad adapter add discord
 
 # Rotate the global token in place
 zad adapter create discord --force --bot-token-env DISCORD_BOT_TOKEN_NEW
+
+# Inspect and clean up
+zad adapter list                       # see which adapters have creds / are enabled
+zad adapter show discord               # show the effective config + both scopes
+zad adapter delete discord --local     # remove this project's local creds only
+zad adapter delete discord             # remove the global creds (keychain too)
 ```
 
 ## See also
