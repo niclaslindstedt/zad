@@ -106,6 +106,7 @@ are rejected locally (no round-trip).
 | `--dm <id\|name>` | snowflake \| directory name | — | Destination user for a DM. Mutually exclusive with `--channel`. |
 | `--stdin` | bool | `false` | Read the body from standard input instead of a positional argument. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+| `--dry-run` | bool | `false` | Preview the outgoing call without contacting Discord — prints the payload as JSON on stdout and makes no network request. Scope and permission checks still run; no bot token is loaded (so the flag works before a bot is configured). The trailing `Sent message …` line is suppressed. |
 
 ## `zad discord read`
 
@@ -156,6 +157,7 @@ permissions, so the commands error for non-thread channel IDs.
 |---|---|---|---|
 | `--channel <id\|name>` | snowflake \| directory name | — | Thread channel to join or leave. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+| `--dry-run` | bool | `false` | Preview the outgoing call without contacting Discord. Scope and permission checks still run; no bot token is loaded. |
 
 ## `zad discord discover`
 
@@ -285,6 +287,12 @@ zad discord channels --json
 # Join and leave a thread channel
 zad discord join --channel 3333333333333333
 zad discord leave --channel 3333333333333333
+
+# Preview what would be sent without actually contacting Discord.
+# `--dry-run` enforces scope + permissions, skips the keychain read,
+# and prints the outgoing payload as JSON. Works for send / join / leave.
+zad discord send --channel general --dry-run "dry-run preview"
+zad discord join  --channel 3333333333333333 --dry-run
 ```
 
 ## See also

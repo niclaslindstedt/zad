@@ -13,9 +13,9 @@ use crate::config::directory::{self as dir, Directory};
 use crate::config::{self, DiscordServiceCfg};
 use crate::error::{Result, ZadError};
 use crate::secrets::{self, Scope};
-use crate::service::discord::DiscordHttp;
 use crate::service::discord::permissions::{self as perms, DiscordFunction};
-use crate::service::{ChannelId, Target, UserId};
+use crate::service::discord::{DiscordHttp, DiscordTransport, DryRunDiscordTransport};
+use crate::service::{ChannelId, Target, UserId, default_dry_run_sink};
 
 // ---------------------------------------------------------------------------
 // subcommand plumbing
@@ -92,6 +92,12 @@ pub struct SendArgs {
     /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
     pub json: bool,
+
+    /// Preview the outgoing call without contacting Discord. Scope and
+    /// permission checks still run; no bot token is loaded. Prints what
+    /// would have been sent as JSON on stdout.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -136,8 +142,16 @@ async fn run_send(args: SendArgs) -> Result<()> {
         )));
     }
     permissions.check_send_body(&body)?;
-    let http = discord_http_for("messages.send")?;
+    let http = discord_http_for("messages.send", args.dry_run)?;
     let msg_id = http.send(target.clone(), &body).await?;
+
+    // When --dry-run is active the transport already emitted a preview
+    // record (human summary via `tracing::info!`, JSON payload on
+    // stdout). Skip the trailing "Sent …" / SendOutput print so we
+    // never claim success for an operation we didn't actually perform.
+    if args.dry_run {
+        return Ok(());
+    }
 
     let (kind, tid) = match &target {
         Target::Channel(ChannelId(id)) => ("channel", id.to_string()),
@@ -206,7 +220,7 @@ async fn run_read(args: ReadArgs) -> Result<()> {
     let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
     permissions.check_read_channel(&args.channel, id, &directory)?;
     let channel_id = ChannelId(id);
-    let http = discord_http_for("messages.read")?;
+    let http = discord_http_for("messages.read", false)?;
     let msgs = http.history(channel_id.clone(), args.limit).await?;
 
     if args.json {
@@ -289,7 +303,7 @@ async fn run_channels(args: ChannelsArgs) -> Result<()> {
         .or_else(|| cfg.default_guild.clone())
         .unwrap_or_else(|| guild.to_string());
     permissions.check_channels_guild(&guild_input, guild, &directory)?;
-    let http = discord_http_for("guilds")?;
+    let http = discord_http_for("guilds", false)?;
     let channels = http.list_channels(guild).await?;
 
     if args.json {
@@ -337,6 +351,11 @@ pub struct JoinArgs {
     /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
     pub json: bool,
+
+    /// Preview the outgoing call without contacting Discord. Scope and
+    /// permission checks still run; no bot token is loaded.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
@@ -348,6 +367,11 @@ pub struct LeaveArgs {
     /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
     pub json: bool,
+
+    /// Preview the outgoing call without contacting Discord. Scope and
+    /// permission checks still run; no bot token is loaded.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -365,8 +389,11 @@ async fn run_join(args: JoinArgs) -> Result<()> {
     let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
     permissions.check_join_channel(&args.channel, id, &directory)?;
     let channel = ChannelId(id);
-    let http = discord_http_for("guilds")?;
+    let http = discord_http_for("guilds", args.dry_run)?;
     http.join_channel(channel.clone()).await?;
+    if args.dry_run {
+        return Ok(());
+    }
     if args.json {
         let out = MembershipOutput {
             command: "discord.join",
@@ -388,8 +415,11 @@ async fn run_leave(args: LeaveArgs) -> Result<()> {
     let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
     permissions.check_leave_channel(&args.channel, id, &directory)?;
     let channel = ChannelId(id);
-    let http = discord_http_for("guilds")?;
+    let http = discord_http_for("guilds", args.dry_run)?;
     http.leave_channel(channel.clone()).await?;
+    if args.dry_run {
+        return Ok(());
+    }
     if args.json {
         let out = MembershipOutput {
             command: "discord.leave",
@@ -458,7 +488,14 @@ fn load_token(scope: &EffectiveScope) -> Result<String> {
 /// denied op never touches secrets; [`DiscordHttp`] still guards the
 /// same scope internally, which covers library callers (`DiscordService`)
 /// that bypass this helper.
-fn discord_http_for(required: &'static str) -> Result<DiscordHttp> {
+///
+/// When `dry_run` is `true` the scope check still runs (so preview
+/// respects the caller's policy boundary), but the keychain read is
+/// skipped and a [`DryRunDiscordTransport`] is returned instead of a
+/// live client. That lets `--dry-run` work before the operator has
+/// configured a bot, and guarantees no token is ever loaded into memory
+/// for a preview.
+fn discord_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn DiscordTransport>> {
     let (cfg, scope) = effective_config()?;
     let config_path = match &scope {
         EffectiveScope::Local(slug) => {
@@ -473,8 +510,13 @@ fn discord_http_for(required: &'static str) -> Result<DiscordHttp> {
             config_path,
         });
     }
+    if dry_run {
+        return Ok(Box::new(
+            DryRunDiscordTransport::new(default_dry_run_sink()),
+        ));
+    }
     let token = load_token(&scope)?;
-    Ok(DiscordHttp::new(&token, scopes, config_path))
+    Ok(Box::new(DiscordHttp::new(&token, scopes, config_path)))
 }
 
 fn resolve_guild_arg(
@@ -574,7 +616,7 @@ struct DiscoverOutput {
 async fn run_discover(args: DiscoverArgs) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(DiscordFunction::Discover)?;
-    let http = discord_http_for("guilds")?;
+    let http = discord_http_for("guilds", false)?;
     let mut directory = dir::load().unwrap_or_default();
     let mut warnings: Vec<String> = vec![];
 

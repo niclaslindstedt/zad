@@ -75,8 +75,11 @@ caches a name → snowflake map at
 (inspect, scaffold, or dry-run the per-project permissions policy).
 After `discover`, the destination flags accept names — `--channel general`,
 `--dm @alice` — with a numeric snowflake still working as a fallback.
-Every command takes `--json` for machine-readable output. Today the
-only service is `discord`. See [`man/main.md`](man/main.md) for the
+Every command takes `--json` for machine-readable output. Mutating
+verbs (`send`, `join`, `leave`) also take `--dry-run`, which previews
+the outgoing call — scope and permission checks still fire, but no
+bot token is loaded and no network request is made. Today the only
+service is `discord`. See [`man/main.md`](man/main.md) for the
 top-level overview and [`man/service.md`](man/service.md) /
 [`man/discord.md`](man/discord.md) for the full per-command reference.
 

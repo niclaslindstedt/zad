@@ -395,3 +395,182 @@ fn discord_without_subcommand_errors() {
         .failure()
         .stderr(contains("missing subcommand"));
 }
+
+// ---------------------------------------------------------------------------
+// --dry-run (mutating verbs only: send, join, leave)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn send_help_lists_dry_run_flag() {
+    bin()
+        .args(["discord", "send", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--dry-run"));
+}
+
+#[test]
+fn join_help_lists_dry_run_flag() {
+    bin()
+        .args(["discord", "join", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--dry-run"));
+}
+
+#[test]
+fn leave_help_lists_dry_run_flag() {
+    bin()
+        .args(["discord", "leave", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--dry-run"));
+}
+
+#[test]
+#[serial]
+fn send_dry_run_previews_without_token() {
+    // Dry-run must succeed without any bot token in the keychain. The
+    // memory keyring is per-process and no prior step populated it; a
+    // passing exit here proves `discord_http_for` skips `load_token`
+    // when --dry-run is active.
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args([
+            "discord",
+            "send",
+            "--channel",
+            "12345",
+            "--dry-run",
+            "hello world",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("discord.send"))
+        .stdout(contains("\"body\": \"hello world\""))
+        .stdout(contains("\"target_id\": \"12345\""));
+}
+
+#[test]
+#[serial]
+fn send_dry_run_still_enforces_scope() {
+    // Scope check fires before the dry-run short-circuit, so preview
+    // respects the policy boundary.
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global_with_scopes(home.path(), &["messages.read", "guilds"]);
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args([
+            "discord",
+            "send",
+            "--channel",
+            "12345",
+            "--dry-run",
+            "hello",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("scope `messages.send` is not enabled"));
+}
+
+#[test]
+#[serial]
+fn send_dry_run_still_rejects_oversized_body() {
+    // Pre-flight validation runs regardless of --dry-run.
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    let body = "x".repeat(2001);
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "send", "--channel", "12345", "--dry-run", &body])
+        .assert()
+        .failure()
+        .stderr(contains("2001 characters").and(contains("hard limit is 2000")));
+}
+
+#[test]
+#[serial]
+fn send_dm_dry_run_reports_user_target() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "send", "--dm", "67890", "--dry-run", "hey"])
+        .assert()
+        .success()
+        .stdout(contains("\"target\": \"dm\""))
+        .stdout(contains("\"target_id\": \"67890\""));
+}
+
+#[test]
+#[serial]
+fn join_dry_run_previews_without_token() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "join", "--channel", "55555", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(contains("discord.join"))
+        .stdout(contains("\"channel\": \"55555\""));
+}
+
+#[test]
+#[serial]
+fn leave_dry_run_previews_without_token() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "leave", "--channel", "55555", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(contains("discord.leave"))
+        .stdout(contains("\"channel\": \"55555\""));
+}
+
+#[test]
+#[serial]
+fn send_dry_run_does_not_print_sent_line() {
+    // The live-path trailing "Sent message X to …" line would be a
+    // lie in dry-run mode; assert it's suppressed.
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_discord(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["discord", "send", "--channel", "12345", "--dry-run", "hi"])
+        .assert()
+        .success()
+        .stdout(contains("Sent message").not());
+}
