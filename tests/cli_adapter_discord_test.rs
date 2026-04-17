@@ -260,8 +260,19 @@ fn create_non_interactive_requires_application_id() {
 }
 
 fn slugify(p: &std::path::Path) -> String {
-    let canonical = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    canonical
+    // On macOS tempfile hands out paths under `/var/`, a symlink to
+    // `/private/var/`, and `getcwd(3)` inside the spawned child
+    // resolves the symlink — so the slug must match the canonical form.
+    // On Windows `std::fs::canonicalize` returns a `\\?\`-prefixed
+    // extended-length path that (a) the child's `current_dir()` does
+    // *not* return, and (b) slugifies to a filename with `?` in it,
+    // which Windows rejects. So canonicalize macOS only.
+    let effective = if cfg!(target_os = "macos") {
+        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+    } else {
+        p.to_path_buf()
+    };
+    effective
         .to_str()
         .unwrap()
         .chars()
