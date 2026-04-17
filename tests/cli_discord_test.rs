@@ -342,7 +342,10 @@ fn send_denied_when_scope_missing() {
         .failure()
         .stderr(
             contains("scope `messages.send` is not enabled")
-                .and(contains("services/discord/config.toml")),
+                // Assert only on the filename — the separator in the
+                // rendered path is OS-specific (`/` on Unix, `\` on
+                // Windows).
+                .and(contains("config.toml")),
         );
 }
 
