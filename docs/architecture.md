@@ -25,9 +25,11 @@ src/
     mod.rs        — keyring wrapper, with test-only in-memory backend
   service/
     mod.rs        — `Service` trait + domain types (Target, Message, Event, ManageCmd)
+                  + cross-service `DryRunOp` / `DryRunSink` / `StderrTracingSink`
     discord/
       mod.rs      — `DiscordService` impl of `Service`
       client.rs   — thin wrapper around `serenity::http::Http`
+      transport.rs — `DiscordTransport` trait + live/dry-run impls for `--dry-run` preview
       gateway.rs  — gateway listener → `BoxStream<Event>`
 ```
 

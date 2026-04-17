@@ -42,6 +42,7 @@ credentials can back many projects.
 src/service/<name>/
   mod.rs          — struct implementing `Service` (send_message / read_messages / listen / manage)
   client.rs       — HTTP wrapper; translates domain types ↔ SDK types; enforces scopes locally
+  transport.rs    — (optional) runtime-verb trait + live/dry-run impls for `--dry-run` preview
   gateway.rs      — (optional) event listener that produces a `BoxStream<Event>`
   permissions.rs  — per-service schema composed from the generic primitives under `src/permissions/`
 ```
@@ -143,6 +144,40 @@ constraint", not "deny all". Violations surface as
 `ZadError::PermissionDenied { function, reason, config_path }` —
 same shape as the scope error, and again the message names the file
 to edit.
+
+## Dry-run preview (optional, per mutating verb)
+
+Mutating runtime verbs may expose a `--dry-run` flag that short-circuits
+the network call and prints what *would* have been sent. Dry-run is
+intentionally **orthogonal** to the three access-control layers: scope
+and permission checks still fire, so a preview respects the same policy
+boundary as a live call. The keychain read is skipped, so `--dry-run`
+works before a bot is even configured — a common agent workflow is
+"preview the shape of my call, then register credentials and re-run
+without the flag".
+
+The interception layer is trait-based and reusable across services:
+
+| Primitive | Lives in | Purpose |
+|---|---|---|
+| `DryRunOp`, `DryRunSink`, `StderrTracingSink` | `src/service/mod.rs` | Cross-service record + default sink (a summary via `tracing::info!` plus the JSON payload on stdout). Every service wrapper emits to the same sink type. |
+| `<Name>Transport` | `src/service/<name>/transport.rs` | Service-specific trait over the runtime verbs the CLI layer calls. One method per verb, typed in zad's domain types (no SDK leakage). |
+| Live impl for the HTTP client | same file | Blanket `impl <Name>Transport for <Name>Http` that delegates to the inherent methods — the live path is unchanged, the trait is a thin façade. |
+| `DryRun<Name>Transport` | same file | Preview impl. Mutating verbs emit a `DryRunOp` and return a stub (`MessageId(0)` for sends, `Ok(())` for joins/leaves/channel creates). Read verbs return empty vectors — they're not dry-run-eligible by convention. |
+
+The CLI factory that materialises a client (`discord_http_for` for
+Discord) takes a `dry_run: bool`, runs the scope check unconditionally,
+and then returns either `Box::new(<Name>Http::new(&token, …))` or
+`Box::new(DryRun<Name>Transport::new(default_dry_run_sink()))` as a
+`Box<dyn <Name>Transport>`. The per-verb handlers stay oblivious — they
+call `transport.send(…)` and check `args.dry_run` only to suppress the
+trailing `"Sent …"` line that would otherwise falsely claim success.
+
+Convention: **`--dry-run` belongs only on mutating verbs** (writes
+visible to the remote service). Reads have no side effect to preview,
+and making them dry-run-capable forces the sink to invent data. Local
+mutations (e.g. Discord's `discover` writing the directory cache) are
+out of scope — dry-run is about external side effects, not local state.
 
 ## Standard file layout
 
@@ -251,11 +286,18 @@ Checklist for a new provider:
 5. **Wire the runtime verbs** under `src/cli/<name>.rs` (the group
    entrypoint used by `zad <name> <verb>`). Include the mandatory
    `permissions` subgroup with `show` / `path` / `init` / `check`.
-6. **Write `man/<name>.md`** — one per-command manpage, kept in sync
+6. **Optional: add `--dry-run` for mutating verbs.** Define a
+   `<Name>Transport` trait in `src/service/<name>/transport.rs`,
+   implement it for the live client, and ship a
+   `DryRun<Name>Transport` that emits `DryRunOp` records to the shared
+   sink. Have the client-factory return `Box<dyn <Name>Transport>` and
+   switch on `args.dry_run`. Reuse `default_dry_run_sink()` from
+   `src/service/mod.rs`; don't reinvent the sink.
+7. **Write `man/<name>.md`** — one per-command manpage, kept in sync
    with the clap definitions.
-7. **Ship `examples/<name>-permissions.toml`** and a runnable
+8. **Ship `examples/<name>-permissions.toml`** and a runnable
    example under `examples/` demonstrating the happy path.
-8. **Update `docs/configuration.md`** with the credentials schema,
+9. **Update `docs/configuration.md`** with the credentials schema,
    the scope list, and any service-specific files (directory
    caches, etc.).
 
