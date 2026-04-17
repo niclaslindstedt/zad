@@ -17,3 +17,24 @@ name = "zad"
 path = "src/lib.rs"
 
 [dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+dialoguer = { version = "0.11", default-features = false, features = ["password"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "http"] }
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+directories = "5"
+async-trait = "0.1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+futures = "0.3"
+tokio-stream = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+serial_test = "3"

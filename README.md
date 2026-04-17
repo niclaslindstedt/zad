@@ -16,27 +16,56 @@ A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack,
 
 ## Prerequisites
 
-- _List runtime and dev dependencies with explicit version bounds._
+- Rust **1.88+** (edition 2024) with `cargo`.
+- An OS keychain zad can write to: macOS Keychain, Linux Secret Service
+  (gnome-keyring, KWallet, …), or Windows Credential Manager.
 
 ## Install
 
 ```sh
-# end-to-end install command goes here
+cargo install --path .
 ```
 
 ## Quick start
 
+Two steps: register credentials once, then enable the adapter per project.
+
 ```sh
-# minimal runnable example
+# 1. Register global Discord credentials (one-time).
+export DISCORD_BOT_TOKEN=...   # from https://discord.com/developers
+zad adapter create discord \
+    --application-id 1234567890 \
+    --bot-token-env DISCORD_BOT_TOKEN \
+    --scopes guilds,messages.send
+
+# 2. Enable the adapter inside each project that should use it.
+cd ~/code/my-project
+zad adapter add discord
 ```
+
+Use `--local` on `create` to store credentials only for the current
+project (under `~/.zad/projects/<slug>/adapters/discord/`). Omit the
+credential flags to run the interactive walkthrough instead.
 
 ## Usage
 
-_Reference surface — commands, flags, API entry points._
+```
+zad adapter <ACTION> <ADAPTER>
+```
+
+Actions today: `create` (register credentials) and `add` (enable for
+this project). Today the only adapter is `discord`. See
+[`man/main.md`](man/main.md) for the full reference — every command and
+subcommand is in that single manpage.
 
 ## Configuration
 
-_Config file paths and key names._
+See [`docs/configuration.md`](docs/configuration.md) for the full list of
+config keys and secret-storage details. The short version:
+
+- Config lives at `~/.zad/projects/<slug>/config.toml`.
+- Bot tokens and other secrets live in the OS keychain, never in TOML.
+- Override `~/` with `ZAD_HOME_OVERRIDE` for tests.
 
 ## Examples
 
