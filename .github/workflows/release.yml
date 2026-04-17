@@ -1,0 +1,64 @@
+name: release
+
+# Triggered by the `v*` tag push that version-bump performs. The tag
+# push must be authenticated with RELEASE_TOKEN (a PAT or GitHub App
+# token) — the default GITHUB_TOKEN deliberately suppresses downstream
+# workflow triggers, so a tag pushed with it would not fire this
+# workflow. See OSS_SPEC §10.3.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Default to no permissions; every job declares its own
+# least-privilege `permissions:` block (see OSS_SPEC §10.3).
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # contents: write — this job pushes the release commit and
+    #                   force-pushes the rewritten tag to `main`.
+    # id-token: write — required for OIDC-based trusted publishing
+    #                   to the target registries (see steps below).
+    # For a cleaner setup, split repo-rewrite and publish into
+    # separate jobs so the publish job only needs `contents: read`.
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+      - name: Resolve tag
+        id: tag
+        run: echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+      - name: Generate changelog
+        run: ./scripts/generate-changelog.sh ${{ steps.tag.outputs.tag }}
+      - name: Update versions
+        run: ./scripts/update-versions.sh ${{ steps.tag.outputs.tag }}
+      - name: Commit + retag
+        run: |
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "chore(release): update changelog and versions for ${{ steps.tag.outputs.tag }}"
+          git tag -f "${{ steps.tag.outputs.tag }}" HEAD
+          git push origin HEAD:main
+          git push origin "${{ steps.tag.outputs.tag }}" --force
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - run: cargo build --release
+      - run: cargo test
+      # Publishing MUST use crates.io trusted publishing (OIDC).
+      # Configure the crate on crates.io first, then uncomment:
+      # - uses: rust-lang/crates-io-auth-action@v1
+      #   id: auth
+      # - run: cargo publish
+      #   env:
+      #     CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true

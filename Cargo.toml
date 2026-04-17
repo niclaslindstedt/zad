@@ -1,0 +1,19 @@
+[package]
+name = "zad"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped adapter configurations instead of MCP servers."
+repository = "https://github.com/niclaslindstedt/zad"
+readme = "README.md"
+
+[[bin]]
+name = "zad"
+path = "src/main.rs"
+
+[lib]
+name = "zad"
+path = "src/lib.rs"
+
+[dependencies]
