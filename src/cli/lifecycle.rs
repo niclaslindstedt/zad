@@ -418,28 +418,24 @@ pub async fn run_create<T: LifecycleService>(args: T::CreateArgs) -> Result<()> 
         let width = label_width(&lines, T::scopes_of(&cfg), &secrets_refs);
         println!();
         println!("{} credentials created ({scope_label}).", T::DISPLAY);
-        println!("  {:width$} : {}", "config", path.display(), width = width);
+        let config_label = "config";
+        let config_value = path.display().to_string();
+        println!("  {config_label:width$} : {config_value}");
         for (label, value) in &lines {
-            println!("  {:width$} : {}", label, value, width = width);
+            println!("  {label:width$} : {value}");
         }
         let scopes = T::scopes_of(&cfg);
-        println!(
-            "  {:width$} : {}",
-            "scopes",
-            if scopes.is_empty() {
-                "(none)".to_string()
-            } else {
-                scopes.join(", ")
-            },
-            width = width
-        );
+        let scopes_label = "scopes";
+        let scopes_value = if scopes.is_empty() {
+            "(none)".to_string()
+        } else {
+            scopes.join(", ")
+        };
+        println!("  {scopes_label:width$} : {scopes_value}");
         for s in &secrets_refs {
-            println!(
-                "  {:width$} : OS keychain (service=\"zad\", account=\"{}\")",
-                s.label,
-                s.account,
-                width = width
-            );
+            let label = s.label;
+            let account = &s.account;
+            println!("  {label:width$} : OS keychain (service=\"zad\", account=\"{account}\")");
         }
         println!();
         println!(
@@ -657,26 +653,20 @@ fn print_scope_block<T: LifecycleService>(
             let secrets_refs = T::inspect_secrets(scope)?;
             let width = label_width(&lines, scopes, &secrets_refs);
             for (label, value) in &lines {
-                println!("    {:width$} : {}", label, value, width = width);
+                println!("    {label:width$} : {value}");
             }
-            println!(
-                "    {:width$} : {}",
-                "scopes",
-                if scopes.is_empty() {
-                    "(none)".to_string()
-                } else {
-                    scopes.join(", ")
-                },
-                width = width
-            );
+            let scopes_label = "scopes";
+            let scopes_value = if scopes.is_empty() {
+                "(none)".to_string()
+            } else {
+                scopes.join(", ")
+            };
+            println!("    {scopes_label:width$} : {scopes_value}");
             for s in &secrets_refs {
-                println!(
-                    "    {:width$} : {} (service=\"zad\", account=\"{}\")",
-                    s.label,
-                    if s.present { "stored" } else { "missing" },
-                    s.account,
-                    width = width
-                );
+                let label = s.label;
+                let state = if s.present { "stored" } else { "missing" };
+                let account = &s.account;
+                println!("    {label:width$} : {state} (service=\"zad\", account=\"{account}\")");
             }
         }
     }
