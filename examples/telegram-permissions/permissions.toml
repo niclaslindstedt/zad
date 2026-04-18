@@ -1,0 +1,74 @@
+# Example Telegram permissions policy.
+#
+# Drop this at one of:
+#   ~/.zad/services/telegram/permissions.toml                       (global)
+#   ~/.zad/projects/<slug>/services/telegram/permissions.toml       (local, per project)
+#
+# When both files exist they INTERSECT: a call must pass every file
+# that is present. Missing files contribute no restrictions, so scope
+# is the only gate when neither file exists.
+#
+# Pattern grammar (used anywhere an allow/deny list appears):
+#
+#   "team-room"          exact name match
+#   "bot-*", "re:^ops"   glob (`*` and `?` wildcards; other regex
+#                        metacharacters are escaped)
+#   "re:^-100[0-9]+$"    full Rust regex (anchor it yourself)
+#   "-1001234567890"     signed integer — matches the resolved chat_id
+#
+# Evaluation order:
+#   1. Any deny match -> denied (deny always wins).
+#   2. Empty allow list -> no positive constraint on this front.
+#   3. Otherwise the call must match at least one allow pattern.
+#
+# Every rule is evaluated against every alias of the target: the raw
+# input (with `@` stripped), the resolved chat_id, and every name the
+# local directory.toml maps to that chat_id. So a deny on `*admin*`
+# fires even when the agent pastes the raw ID, as long as the
+# directory knows the ID under an admin-like name.
+
+# -----------------------------------------------------------------
+# Shared defaults. Each per-function block inherits from these and
+# can narrow them further (never loosen).
+# -----------------------------------------------------------------
+[content]
+# Case-insensitive substring match. Any hit in the outbound body
+# denies the send.
+deny_words = ["password", "api_key", "secret", "token"]
+# Regex match. Great for catching credential shapes.
+deny_patterns = [
+    "(?i)bearer\\s+[a-z0-9._-]+",
+    "(?i)AKIA[0-9A-Z]{16}",
+]
+# Codepoints. Only *tightens* Telegram's 4096-char hard cap.
+max_length = 3500
+
+[time]
+# UTC. An empty `days` list admits every day; an empty `windows`
+# list admits the whole day. Windows may cross midnight ("22:00-02:00").
+days    = ["mon", "tue", "wed", "thu", "fri"]
+windows = ["09:00-18:00"]
+
+# -----------------------------------------------------------------
+# Per-function blocks
+# -----------------------------------------------------------------
+
+[send]
+# Only team-prefixed chats and public coordination rooms.
+chats.allow = ["team-room", "bot-*", "@team_notifications"]
+# Nothing admin-like, no ops channels, no direct ops noise.
+chats.deny  = ["*admin*", "mod-*", "ops-*"]
+
+[read]
+# Reading is broader than writing, but still skip anything marked
+# private.
+chats.deny = ["*private*", "*admin*"]
+
+[chats]
+# Listing is unrestricted — the output already respects any deny
+# rules that fire on specific chats.
+
+[discover]
+# Keep the discovery walk confined to known team chats. The walk
+# silently skips denied chats rather than failing the whole call.
+chats.allow = ["team-*", "bot-*"]
