@@ -31,11 +31,25 @@ fn delete_missing_is_ok() {
 #[test]
 fn account_name_covers_both_scopes() {
     assert_eq!(
-        secrets::discord_bot_account(Scope::Project("-Users-foo-bar")),
+        secrets::account("discord", "bot", Scope::Project("-Users-foo-bar")),
         "discord-bot:-Users-foo-bar"
     );
     assert_eq!(
-        secrets::discord_bot_account(Scope::Global),
+        secrets::account("discord", "bot", Scope::Global),
         "discord-bot:global"
+    );
+}
+
+#[test]
+fn account_name_supports_multi_secret_services() {
+    // Services with multiple keychain entries (OAuth client_secret +
+    // refresh token, or GitHub App PEM) name each via `kind`.
+    assert_eq!(
+        secrets::account("reddit", "client-secret", Scope::Global),
+        "reddit-client-secret:global"
+    );
+    assert_eq!(
+        secrets::account("github", "pem", Scope::Project("-tmp-repo")),
+        "github-pem:-tmp-repo"
     );
 }

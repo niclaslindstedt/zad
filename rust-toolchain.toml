@@ -1,0 +1,12 @@
+# Pin the toolchain so `make lint` locally runs the exact clippy that
+# CI enforces. CI's `dtolnay/rust-toolchain@1.88.0` installs the same
+# version — changing one without the other will reintroduce the local-
+# vs-CI drift that motivated this file (e.g. `uninlined_format_args`
+# defaults shift between releases and new warnings surface only in CI).
+#
+# Bump this in lock-step with `.github/workflows/ci.yml`'s
+# `dtolnay/rust-toolchain@<version>` reference — OSS_SPEC §9/§10.1
+# require local `make lint` and CI to enforce the same rules.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]

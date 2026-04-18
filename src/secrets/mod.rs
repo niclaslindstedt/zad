@@ -98,7 +98,14 @@ impl<'a> Scope<'a> {
     }
 }
 
-/// Account key for a Discord bot token at the given scope.
-pub fn discord_bot_account(scope: Scope<'_>) -> String {
-    format!("discord-bot:{}", scope.suffix())
+/// Build the OS-keychain account name for a secret belonging to
+/// `service`. `kind` names the specific piece of secret material —
+/// `"bot"` for a single bot token (Discord, Telegram, Slack bots),
+/// `"client-secret"` / `"refresh"` for OAuth services (Reddit,
+/// Google), `"pem"` for keypair services (GitHub Apps), etc. The
+/// resulting account string is user-visible (shown in `zad service
+/// show` and in any future keychain UI), so treat it as a stable
+/// identifier — renaming it would orphan every existing stored token.
+pub fn account(service: &str, kind: &str, scope: Scope<'_>) -> String {
+    format!("{service}-{kind}:{}", scope.suffix())
 }

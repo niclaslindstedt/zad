@@ -471,8 +471,8 @@ fn effective_config() -> Result<(DiscordServiceCfg, EffectiveScope)> {
 
 fn load_token(scope: &EffectiveScope) -> Result<String> {
     let account = match scope {
-        EffectiveScope::Global => secrets::discord_bot_account(Scope::Global),
-        EffectiveScope::Local(slug) => secrets::discord_bot_account(Scope::Project(slug)),
+        EffectiveScope::Global => secrets::account("discord", "bot", Scope::Global),
+        EffectiveScope::Local(slug) => secrets::account("discord", "bot", Scope::Project(slug)),
     };
     secrets::load(&account)?.ok_or_else(|| {
         ZadError::Invalid(format!(
@@ -506,6 +506,7 @@ fn discord_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn Dis
     let scopes: std::collections::BTreeSet<String> = cfg.scopes.iter().cloned().collect();
     if !scopes.contains(required) {
         return Err(ZadError::ScopeDenied {
+            service: "discord",
             scope: required,
             config_path,
         });

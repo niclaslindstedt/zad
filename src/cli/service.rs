@@ -1,8 +1,18 @@
+//! Dispatch for `zad service <action> <name>`.
+//!
+//! Each action is a thin clap enum: one variant per service that
+//! routes to the generic `lifecycle::run_*::<T>()` driver with the
+//! service's `LifecycleService` impl as the type parameter. Adding a
+//! new service means adding one variant to each enum below plus one
+//! dispatch arm in `run()` — about 10 lines total.
+
 use clap::{Args, Subcommand};
 
+use crate::cli::lifecycle::{self, DeleteArgs, DisableArgs, EnableArgs, ShowArgs};
 use crate::error::Result;
 
 use super::{service_discord, service_list};
+use service_discord::DiscordLifecycle;
 
 #[derive(Debug, Args)]
 pub struct ServiceArgs {
@@ -15,15 +25,15 @@ pub enum Action {
     /// Create credentials for a service.
     Create(CreateArgs),
     /// Enable a service in the current project (using existing credentials).
-    Enable(EnableArgs),
+    Enable(EnableAction),
     /// Disable a service in the current project (inverse of `enable`).
-    Disable(DisableArgs),
+    Disable(DisableAction),
     /// List all services with credential and project-enablement status.
     List(service_list::ListArgs),
     /// Show details for a configured service.
-    Show(ShowArgs),
+    Show(ShowAction),
     /// Delete credentials for a service (inverse of `create`).
-    Delete(DeleteArgs),
+    Delete(DeleteAction),
 }
 
 #[derive(Debug, Args)]
@@ -40,7 +50,7 @@ pub enum CreateService {
 }
 
 #[derive(Debug, Args)]
-pub struct EnableArgs {
+pub struct EnableAction {
     #[command(subcommand)]
     pub service: EnableService,
 }
@@ -48,11 +58,11 @@ pub struct EnableArgs {
 #[derive(Debug, Subcommand)]
 pub enum EnableService {
     /// Enable the Discord service in the current project.
-    Discord(service_discord::EnableArgs),
+    Discord(EnableArgs),
 }
 
 #[derive(Debug, Args)]
-pub struct DisableArgs {
+pub struct DisableAction {
     #[command(subcommand)]
     pub service: DisableService,
 }
@@ -60,11 +70,11 @@ pub struct DisableArgs {
 #[derive(Debug, Subcommand)]
 pub enum DisableService {
     /// Disable the Discord service in the current project.
-    Discord(service_discord::DisableArgs),
+    Discord(DisableArgs),
 }
 
 #[derive(Debug, Args)]
-pub struct ShowArgs {
+pub struct ShowAction {
     #[command(subcommand)]
     pub service: ShowService,
 }
@@ -72,11 +82,11 @@ pub struct ShowArgs {
 #[derive(Debug, Subcommand)]
 pub enum ShowService {
     /// Show the Discord service's effective configuration.
-    Discord(service_discord::ShowArgs),
+    Discord(ShowArgs),
 }
 
 #[derive(Debug, Args)]
-pub struct DeleteArgs {
+pub struct DeleteAction {
     #[command(subcommand)]
     pub service: DeleteService,
 }
@@ -85,26 +95,26 @@ pub struct DeleteArgs {
 pub enum DeleteService {
     /// Delete Discord credentials (global by default, `--local` for
     /// project-scoped).
-    Discord(service_discord::DeleteArgs),
+    Discord(DeleteArgs),
 }
 
 pub async fn run(args: ServiceArgs) -> Result<()> {
     match args.action {
         Action::Create(c) => match c.service {
-            CreateService::Discord(a) => service_discord::run_create(a).await,
+            CreateService::Discord(a) => lifecycle::run_create::<DiscordLifecycle>(a).await,
         },
         Action::Enable(a) => match a.service {
-            EnableService::Discord(a) => service_discord::run_enable(a),
+            EnableService::Discord(a) => lifecycle::run_enable::<DiscordLifecycle>(a),
         },
         Action::Disable(d) => match d.service {
-            DisableService::Discord(a) => service_discord::run_disable(a),
+            DisableService::Discord(a) => lifecycle::run_disable::<DiscordLifecycle>(a),
         },
         Action::List(a) => service_list::run(a),
         Action::Show(s) => match s.service {
-            ShowService::Discord(a) => service_discord::run_show(a),
+            ShowService::Discord(a) => lifecycle::run_show::<DiscordLifecycle>(a),
         },
         Action::Delete(d) => match d.service {
-            DeleteService::Discord(a) => service_discord::run_delete(a),
+            DeleteService::Discord(a) => lifecycle::run_delete::<DiscordLifecycle>(a),
         },
     }
 }
