@@ -61,6 +61,7 @@ impl DiscordHttp {
             return Ok(());
         }
         Err(ZadError::ScopeDenied {
+            service: "discord",
             scope,
             config_path: self.config_path.clone(),
         })
@@ -285,7 +286,10 @@ pub(crate) fn map_http(err: serenity::Error, ctx: HttpCtx) -> ZadError {
     {
         return mapped;
     }
-    ZadError::Discord(err.to_string())
+    ZadError::Service {
+        name: "discord",
+        message: err.to_string(),
+    }
 }
 
 fn channel_kind_name(kind: ChannelType) -> &'static str {

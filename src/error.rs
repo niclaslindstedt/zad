@@ -39,13 +39,20 @@ pub enum ZadError {
     #[error("environment variable '{0}' is not set")]
     MissingEnv(String),
 
-    #[error("discord API error: {0}")]
-    Discord(String),
+    /// Generic service error surface. Every service reports provider-
+    /// side problems through this variant (`name` is the service,
+    /// `message` is the provider's text). Adding a new service never
+    /// needs a new `ZadError` variant — keep per-service variants only
+    /// for *structured* failures whose callers need to match on them
+    /// (e.g. `DiscordChannelNotFound`).
+    #[error("{name} API error: {message}")]
+    Service { name: &'static str, message: String },
 
     #[error(
-        "discord: scope `{scope}` is not enabled for this project\n  config: {config_path}\n  tip: add `{scope}` to `scopes` in that file (or re-run `zad service create discord --force`)"
+        "{service}: scope `{scope}` is not enabled for this project\n  config: {config_path}\n  tip: add `{scope}` to `scopes` in that file (or re-run `zad service create {service} --force`)"
     )]
     ScopeDenied {
+        service: &'static str,
         scope: &'static str,
         config_path: PathBuf,
     },
@@ -79,6 +86,9 @@ pub enum ZadError {
 
 impl From<serenity::Error> for ZadError {
     fn from(e: serenity::Error) -> Self {
-        ZadError::Discord(e.to_string())
+        ZadError::Service {
+            name: "discord",
+            message: e.to_string(),
+        }
     }
 }

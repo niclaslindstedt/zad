@@ -9,20 +9,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub service: BTreeMap<String, ServiceRef>,
+    pub service: BTreeMap<String, ServiceProjectRef>,
 }
 
+/// Project-level reference to a service. All services share the same
+/// on-disk shape here — the map key (`"discord"`, `"telegram"`, …) is
+/// authoritative, and service-specific credentials live elsewhere
+/// (`~/.zad/services/<name>/config.toml` + the OS keychain). Keeping
+/// one struct avoids the `#[serde(untagged)]` ambiguity that would
+/// bite if multiple services had identically-shaped project refs.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum ServiceRef {
-    Discord(DiscordProjectRef),
-}
-
-/// Project-level reference to the Discord service. Credentials live in
-/// the global service config; this struct only records that the project
-/// has opted in.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DiscordProjectRef {
+pub struct ServiceProjectRef {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -45,17 +42,13 @@ pub struct DiscordServiceCfg {
 }
 
 impl ProjectConfig {
-    pub fn discord(&self) -> Option<&DiscordProjectRef> {
-        self.service.get("discord").map(|a| match a {
-            ServiceRef::Discord(d) => d,
-        })
+    pub fn discord(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("discord")
     }
 
     pub fn enable_discord(&mut self) {
-        self.service.insert(
-            "discord".to_string(),
-            ServiceRef::Discord(DiscordProjectRef { enabled: true }),
-        );
+        self.service
+            .insert("discord".to_string(), ServiceProjectRef { enabled: true });
     }
 
     pub fn disable_discord(&mut self) {

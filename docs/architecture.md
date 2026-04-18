@@ -12,13 +12,14 @@ src/
   logging.rs      — tracing subscriber + always-on rolling file appender
   cli/
     mod.rs        — clap root + `run()` dispatcher
-    service.rs    — `zad service <action> <service>` group (configuration)
-    service_discord.rs — Discord handlers for `create` / `enable` / `show` / …
+    lifecycle.rs  — `LifecycleService` trait + generic `run_{create,enable,disable,show,delete}<T>` driver shared by every service
+    service.rs    — `zad service <action> <service>` group (clap enums + dispatch to the generic driver)
+    service_discord.rs — `DiscordLifecycle` impl of `LifecycleService`; Discord-specific prompts and token validation
     discord.rs    — `zad discord <verb>` runtime handlers (send, read, channels, join, leave)
     help_agent.rs — renders the compact, prompt-injectable `--help-agent` text
   config/
     path.rs       — project-slug + `~/.zad/` path resolution
-    schema.rs     — serde types: `ProjectConfig`, `ServiceRef`, `DiscordServiceCfg`
+    schema.rs     — serde types: `ProjectConfig`, `ServiceProjectRef`, `DiscordServiceCfg`
     directory.rs  — per-project `directory.toml` (name -> snowflake cache)
     mod.rs        — TOML read/write
   secrets/
@@ -26,6 +27,7 @@ src/
   service/
     mod.rs        — `Service` trait + domain types (Target, Message, Event, ManageCmd)
                   + cross-service `DryRunOp` / `DryRunSink` / `StderrTracingSink`
+    registry.rs   — `SERVICES: &[&str]` canonical list of services this build ships
     discord/
       mod.rs      — `DiscordService` impl of `Service`
       client.rs   — thin wrapper around `serenity::http::Http`

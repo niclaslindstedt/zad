@@ -1,4 +1,5 @@
 pub mod discord;
+pub mod registry;
 
 use std::sync::Arc;
 

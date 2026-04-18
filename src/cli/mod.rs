@@ -3,6 +3,7 @@ pub mod debug_agent;
 pub mod discord;
 pub mod docs;
 pub mod help_agent;
+pub mod lifecycle;
 pub mod man;
 pub mod service;
 pub mod service_discord;

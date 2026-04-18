@@ -46,15 +46,23 @@ is split into four top-level modules: `cli` (argument parsing via clap),
 Dependency direction is strictly layered: `cli` → `service` + `config` →
 `secrets`. Services never import from `cli`; `config` never imports from
 `service`. `src/error.rs` and `src/logging.rs` are leaf utilities imported
-by all layers. Adding a new service means adding a sub-module under
-`src/service/`, implementing the shared service trait defined in
-`src/service/mod.rs`, and wiring a new subcommand in `src/cli/`.
+by all layers.
+
+The lifecycle commands (`zad service {create,enable,disable,show,delete}
+<name>`) are driven by a single generic driver in `src/cli/lifecycle.rs`:
+each service implements the `LifecycleService` trait in its own
+`src/cli/service_<name>.rs` (~80 lines) and the driver handles the
+plumbing. The canonical list of services ships in `src/service/registry.rs`.
+See `docs/services.md#adding-a-new-service` for the full recipe — adding a
+service (Telegram, Slack, Reddit, GitHub App, Matrix, IRC, …) is a
+checklist-driven task, not a copy-paste of Discord.
 
 ## Where new code goes
 
 | Change type | Goes in |
 |---|---|
 | New feature | `src/...` |
+| New service | Follow `docs/services.md#adding-a-new-service` — implement `LifecycleService`, add a row to `src/service/registry.rs`, wire clap dispatch in `src/cli/service.rs` |
 | Tests       | `tests/...` |
 | Docs update | `docs/...` |
 | Examples    | `examples/...` |

@@ -41,6 +41,10 @@ The `docs/` directory contains conceptual documentation for zad. Unlike the READ
 | Configuration keys / env vars | `docs/configuration.md` |
 | Error messages and exit codes | `docs/troubleshooting.md` |
 | Deployment / install mechanics | `docs/getting-started.md` |
+| `src/cli/lifecycle.rs` — `LifecycleService` trait, helper arg groups, or generic driver output | `docs/services.md` §"Adding a new service" (recipe + paste-ready skeleton must match the trait exactly) |
+| `src/service/registry.rs` — a service added or removed | `docs/services.md`, `docs/architecture.md` module tree, any per-service doc |
+| `src/config/schema.rs` — `ProjectConfig` / service-cfg structs | `docs/configuration.md`, `docs/services.md` credential shape table |
+| `src/secrets/mod.rs` — `secrets::account` shape change | `docs/services.md` credentials section (the `<name>-<kind>:<scope>` format) |
 
 Extend this table every time you find a new source file that feeds the docs.
 
