@@ -41,6 +41,24 @@ pub struct DiscordServiceCfg {
     pub default_guild: Option<String>,
 }
 
+/// Global Telegram service config stored at
+/// `~/.zad/services/telegram/config.toml`. Telegram bots carry their
+/// identity inside the bot token itself (no separate app ID), and
+/// address every target — private chat, group, supergroup, channel —
+/// through a single `chat_id`. So the config only needs the declared
+/// scopes plus an optional `default_chat` for verbs that omit the
+/// flag.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelegramServiceCfg {
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional default chat for commands that omit `--chat`. Can be a
+    /// numeric chat ID (groups/supergroups are negative), a `@username`
+    /// for public channels, or a directory alias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_chat: Option<String>,
+}
+
 impl ProjectConfig {
     pub fn discord(&self) -> Option<&ServiceProjectRef> {
         self.service.get("discord")
@@ -53,6 +71,19 @@ impl ProjectConfig {
 
     pub fn disable_discord(&mut self) {
         self.service.remove("discord");
+    }
+
+    pub fn telegram(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("telegram")
+    }
+
+    pub fn enable_telegram(&mut self) {
+        self.service
+            .insert("telegram".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_telegram(&mut self) {
+        self.service.remove("telegram");
     }
 
     pub fn has_service(&self, name: &str) -> bool {
