@@ -78,21 +78,32 @@ zad <SERVICE> <VERB>             # runtime operations (service-specific verbs)
 Configuration actions: `create` (register credentials), `enable` /
 `disable` (toggle for this project), `list`, `show`, and `delete`.
 
-Runtime verbs are chosen per service. For `discord`: `send`, `read`,
-`channels`, `join`, `leave`, plus `discover` (best-effort walk that
-caches a name → snowflake map at
-`~/.zad/projects/<slug>/services/discord/directory.toml`),
-`directory` (list / set / remove entries by hand), and `permissions`
-(inspect, scaffold, or dry-run the per-project permissions policy).
-After `discover`, the destination flags accept names — `--channel general`,
-`--dm @alice` — with a numeric snowflake still working as a fallback.
-Every command takes `--json` for machine-readable output. Mutating
-verbs (`send`, `join`, `leave`) also take `--dry-run`, which previews
-the outgoing call — scope and permission checks still fire, but no
-bot token is loaded and no network request is made. Today the only
-service is `discord`. See [`man/main.md`](man/main.md) for the
-top-level overview and [`man/service.md`](man/service.md) /
-[`man/discord.md`](man/discord.md) for the full per-command reference.
+Runtime verbs are chosen per service.
+
+- **`discord`**: `send`, `read`, `channels`, `join`, `leave`, plus
+  `discover` (best-effort walk that caches a name → snowflake map at
+  `~/.zad/projects/<slug>/services/discord/directory.toml`),
+  `directory` (list / set / remove entries by hand), and `permissions`
+  (inspect, scaffold, or dry-run the per-project permissions policy).
+  After `discover`, the destination flags accept names —
+  `--channel general`, `--dm @alice` — with a numeric snowflake still
+  working as a fallback. Mutating verbs (`send`, `join`, `leave`) take
+  `--dry-run`, which previews the outgoing call — scope and permission
+  checks still fire, but no bot token is loaded and no network
+  request is made.
+- **`telegram`**: `send`, `read`, `chats`, `discover`, `directory`,
+  and `permissions`. `--chat` accepts a signed `chat_id`
+  (negative for groups/supergroups), a `@username` for public
+  channels, or a directory alias seeded by `discover`. `send` takes
+  `--dry-run` with the same semantics as Discord's.
+
+Every command takes `--json` for machine-readable output.
+
+Today the shipped services are `discord` and `telegram`. See
+[`man/main.md`](man/main.md) for the top-level overview and
+[`man/service.md`](man/service.md), [`man/discord.md`](man/discord.md),
+and [`man/telegram.md`](man/telegram.md) for the full per-command
+reference.
 
 ### Permissions (optional second layer)
 

@@ -38,6 +38,7 @@ Recognised services:
 | Service | Description |
 |---|---|
 | `discord` | Discord bot-token service. See `zad man discord` for the runtime verbs. |
+| `telegram` | Telegram bot-token service. See `zad man telegram` for the runtime verbs. |
 
 Every command supports `--json` to emit machine-readable output
 instead of the human-readable default.
@@ -96,6 +97,52 @@ can add the bot to a guild.
 - `channels.manage` — create and delete channels.
 - `gateway.listen` — subscribe to the real-time gateway.
 
+## `zad service create telegram`
+
+```
+zad service create telegram [--local] [OPTIONS]
+```
+
+Interactively (or via flags) collects the Telegram bot token,
+optional default chat, and capability scopes; validates the token
+against Telegram's `getMe` endpoint; stores the token in the OS
+keychain; and writes a flat config file to either
+`~/.zad/services/telegram/config.toml` (global, the default) or
+`~/.zad/projects/<slug>/services/telegram/config.toml` (with
+`--local`).
+
+The token is stored at keychain `service="zad"`,
+`account="telegram-bot:global"` for global credentials and
+`"telegram-bot:<slug>"` for local ones. Telegram bots carry their
+identity inside the bot token itself, so there is no separate
+`application_id` field.
+
+Bot tokens come from a chat with `@BotFather` on Telegram, not a web
+page, so `create telegram` uses a plain password prompt instead of the
+browser-deep-link flow `create discord` uses.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--local` | bool | `false` | Store credentials under the project slug instead of the shared global location. |
+| `--bot-token <token>` | string | — | Bot token. Stored in the OS keychain, not the TOML. |
+| `--bot-token-env <VAR>` | string | — | Read the bot token from the named environment variable. Mutually exclusive with `--bot-token`. |
+| `--default-chat <ref>` | string | — | Optional default chat. Accepts a signed chat_id (negative for groups/supergroups), a `@username` (public channels/supergroups), or a directory alias. |
+| `--scopes <list>` | CSV | `chats,messages.read,messages.send` | Capabilities to enable. |
+| `--force` | bool | `false` | Overwrite any existing credentials at the chosen scope. |
+| `--non-interactive` | bool | `false` | Fail instead of prompting for any missing value. |
+| `--no-validate` | bool | `false` | Skip the `getMe` token validation step. |
+| `--no-browser` | bool | `false` | Reserved — Telegram's `create` never opens a browser, so the flag is a no-op for this service. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+### Recognised scopes
+
+- `chats` — list and discover chats the bot has seen.
+- `messages.read` — read buffered chat history.
+- `messages.send` — post messages to chats.
+- `gateway.listen` — subscribe to the update stream (library-level only).
+
 ## `zad service enable discord`
 
 ```
@@ -124,6 +171,26 @@ credentials.
   gateway `MessageCreated` events to contain text; without it Discord
   delivers empty content for guild messages.
 
+## `zad service enable telegram`
+
+```
+zad service enable telegram [OPTIONS]
+```
+
+Enables the Telegram service in the current project by writing
+`[service.telegram] enabled = true` to
+`~/.zad/projects/<slug>/config.toml`. Requires credentials registered
+via `zad service create telegram` (local wins over global). The
+project config **never** contains credentials.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--force` | bool | `false` | Overwrite an existing `[service.telegram]` entry in the project config. |
+| `--non-interactive` | bool | `false` | Reserved: `enable` has no prompts today. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
 ## `zad service disable discord`
 
 ```
@@ -134,6 +201,22 @@ Disables the Discord service in the current project by removing the
 `[service.discord]` entry from `~/.zad/projects/<slug>/config.toml`.
 This is the inverse of `zad service enable discord`. It does **not**
 delete credentials — use `zad service delete discord` for that.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--force` | bool | `false` | Succeed silently when the service is not currently enabled in this project. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+## `zad service disable telegram`
+
+```
+zad service disable telegram [OPTIONS]
+```
+
+Inverse of `zad service enable telegram`. Leaves credentials intact —
+use `zad service delete telegram` to remove them as well.
 
 ### Flags
 
@@ -190,6 +273,22 @@ when nothing is configured — output simply reports "no credentials".
 |---|---|---|---|
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
+## `zad service show telegram`
+
+```
+zad service show telegram [OPTIONS]
+```
+
+Same shape as `show discord`, reporting the Telegram config's selected
+scopes, optional `default_chat`, and token presence in the OS
+keychain. The bot token itself is **never** printed.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
 ## `zad service delete discord`
 
 ```
@@ -209,6 +308,26 @@ still references the service a warning is printed (run
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--local` | bool | `false` | Delete the project-scoped credentials under `~/.zad/projects/<slug>/services/discord/` instead of the global ones. |
+| `--force` | bool | `false` | Succeed silently when no config file exists at the chosen scope. Keychain deletion is always idempotent. |
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+## `zad service delete telegram`
+
+```
+zad service delete telegram [OPTIONS]
+```
+
+Inverse of `zad service create telegram`. Removes the config file at
+the chosen scope and clears the matching OS keychain entry
+(`telegram-bot:global` or `telegram-bot:<slug>`). Does **not** disable
+the service in the project's `config.toml` — run `zad service disable
+telegram` to clear that as well.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--local` | bool | `false` | Delete the project-scoped credentials under `~/.zad/projects/<slug>/services/telegram/` instead of the global ones. |
 | `--force` | bool | `false` | Succeed silently when no config file exists at the chosen scope. Keychain deletion is always idempotent. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
@@ -264,5 +383,6 @@ zad service list --json | jq '.services[] | select(.enabled)'
 ## See also
 
 - [`zad man discord`](discord.md) — runtime verbs for the Discord service.
+- [`zad man telegram`](telegram.md) — runtime verbs for the Telegram service.
 - [`zad man main`](main.md) — top-level CLI overview.
 - [`docs/configuration.md`](../docs/configuration.md) — config file reference.
