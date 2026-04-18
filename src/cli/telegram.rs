@@ -66,9 +66,9 @@ pub enum Action {
 }
 
 pub async fn run(args: TelegramArgs) -> Result<()> {
-    let action = args
-        .action
-        .ok_or_else(|| ZadError::Invalid("missing subcommand. Run `zad telegram --help`.".into()))?;
+    let action = args.action.ok_or_else(|| {
+        ZadError::Invalid("missing subcommand. Run `zad telegram --help`.".into())
+    })?;
 
     // Every runtime verb requires the project to have enabled Telegram,
     // the same way `zad discord …` requires discord enablement. This

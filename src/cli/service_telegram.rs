@@ -153,7 +153,9 @@ pub async fn run_create(args: CreateArgs) -> Result<()> {
         }
         println!("  token  : OS keychain (service=\"zad\", account=\"{account}\")");
         println!();
-        println!("Next: run `zad service enable telegram` in each project that should use Telegram.");
+        println!(
+            "Next: run `zad service enable telegram` in each project that should use Telegram."
+        );
     }
     Ok(())
 }
