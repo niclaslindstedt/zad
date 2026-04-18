@@ -17,19 +17,14 @@ valid credentials registered in either scope — runtime commands
 resolve the effective configuration with local winning over global,
 then load the matching bot token from the OS keychain.
 
-| Verb | Status | Description |
-|---|---|---|
-| `send`        | **planned** | Send a message to a chat (private/group/supergroup/channel). |
-| `read`        | **planned** | Fetch recent messages from a chat via the Bot API's update stream. |
-| `chats`       | **planned** | List chats the bot has seen. |
-| `discover`    | **planned** | Poll the Bot API for recent updates and cache chat aliases. |
-| `directory`   | implemented | Inspect or hand-edit the name → chat_id directory. |
-| `permissions` | implemented | Inspect, scaffold, or dry-run the per-project permissions policy. |
-
-The runtime verbs advertise their flags today (so `zad --help` and
-`zad man telegram` stay accurate) but return a "not yet implemented"
-error when invoked. `directory` and `permissions` are end-to-end live
-since they're local-state operations.
+| Verb | Description |
+|---|---|
+| `send`        | Send a message to a chat (private/group/supergroup/channel). |
+| `read`        | Fetch recent messages the bot has buffered for a chat. |
+| `chats`       | List chats the bot has seen (local directory plus recent updates). |
+| `discover`    | Poll the Bot API for recent updates and cache chat aliases. |
+| `directory`   | Inspect or hand-edit the name → chat_id directory. |
+| `permissions` | Inspect, scaffold, or dry-run the per-project permissions policy. |
 
 Every verb supports `--json` to emit machine-readable output instead
 of the human-readable default.
@@ -100,16 +95,16 @@ same shape as the scope-denied error.
 `--chat` accepts any of:
 
 - a numeric `chat_id` (positive or negative),
-- a public `@username` (sent verbatim to the Bot API),
+- a public `@username` (looked up as a directory key after stripping the `@`),
 - a name from this project's directory.
 
 When the name is unknown, the error message prints the exact
 `zad telegram directory set …` command that would map it.
 
-## `zad telegram send` *(planned)*
+## `zad telegram send`
 
 ```
-zad telegram send --chat <ID|@USERNAME|NAME> [--stdin] [BODY]
+zad telegram send [--chat <ID|@USERNAME|NAME>] [--stdin] [BODY]
 ```
 
 Post a message. The body is taken from the positional argument, or
@@ -124,25 +119,26 @@ round-trip).
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 | `--dry-run` | bool | `false` | Preview the outgoing call without contacting the Bot API — prints the payload as JSON on stdout and makes no network request. Scope and permission checks still run; no bot token is loaded. |
 
-## `zad telegram read` *(planned)*
+## `zad telegram read`
 
 ```
 zad telegram read --chat <ID|@USERNAME|NAME> [--limit N]
 ```
 
-Fetch up to `--limit` recent messages addressed to the bot from
+Fetch up to `--limit` recent messages the bot has buffered for
 `--chat`. The Bot API's update stream is **forward-only** — only
-messages observed since the last `getUpdates` call are returned, so
-`read` is best used in a long-lived workflow where updates accumulate
-between invocations.
+messages observed since the bot's previous `getUpdates` call are
+returned, so `read` is best used in a long-lived workflow where
+updates accumulate between invocations. The empty case prints a hint
+that points to the caveat instead of silently succeeding.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--chat <id\|@username\|name>` | chat_id \| `@username` \| directory name | — | Chat to filter updates by. |
-| `--limit <n>` | integer | `20` | Maximum number of messages to return. |
+| `--limit <n>` | integer | `20` | Maximum number of messages to return (1–100). |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
-## `zad telegram chats` *(planned)*
+## `zad telegram chats`
 
 ```
 zad telegram chats [--json]
@@ -151,9 +147,11 @@ zad telegram chats [--json]
 List chats the bot has learned about: the project's directory cache
 plus any chats observed in a short `getUpdates` poll. Telegram has no
 "list every chat I'm in" endpoint, so this is a **best-effort**
-surface by design.
+surface by design. The `SOURCE` column marks each row as
+`directory` (only in the local cache) or `observed` (seen in the
+recent updates batch).
 
-## `zad telegram discover` *(planned)*
+## `zad telegram discover`
 
 ```
 zad telegram discover [--json]
@@ -161,9 +159,11 @@ zad telegram discover [--json]
 
 Poll the Bot API for recent updates and upsert every chat seen into
 this project's `directory.toml`. Hand-authored entries are preserved.
+Chats that the `[discover]` permission block denies are silently
+skipped, mirroring the best-effort shape of every `discover` verb.
 Safe to re-run.
 
-## `zad telegram directory` *(implemented)*
+## `zad telegram directory`
 
 ```
 zad telegram directory                        # list
@@ -180,7 +180,7 @@ negative IDs). `remove` is idempotent.
 | `--force` | bool | `false` | Required by `clear` to confirm wiping the directory. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
-## `zad telegram permissions` *(implemented)*
+## `zad telegram permissions`
 
 ```
 zad telegram permissions                         # show (same as `show`)
@@ -230,11 +230,34 @@ zad telegram permissions check --function <name> [--chat <id|name>] [--body <tex
 # Map a friendly name to a supergroup id.
 zad telegram directory set team-room -1001234567890
 
+# Post a message — by alias, not raw chat_id.
+zad telegram send --chat team-room "deploy finished"
+
+# Or by @username (channels / public supergroups).
+zad telegram send --chat @team_notifications "deploy finished"
+
+# Send a multi-line body via stdin (handy for CI logs).
+tail -n 20 deploy.log | zad telegram send --chat team-room --stdin
+
+# Fetch recent updates the bot has buffered (forward-only).
+zad telegram read --chat team-room --limit 50 --json | jq '.messages[].body'
+
+# List every chat zad knows about (directory cache + observed updates).
+zad telegram chats --json
+
+# Refresh the directory from the bot's current update batch.
+zad telegram discover
+
 # Scaffold a project-local permissions policy.
 zad telegram permissions init --local
 
 # Dry-run a send against the policy (exits 1 if denied).
 zad telegram permissions check --function send --chat team-room --body "hi"
+
+# Preview what would be sent without contacting the Bot API.
+# `--dry-run` enforces scope + permissions, skips the keychain read,
+# and prints the outgoing payload as JSON.
+zad telegram send --chat team-room --dry-run "dry-run preview"
 ```
 
 ## See also

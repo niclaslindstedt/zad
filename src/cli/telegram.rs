@@ -5,31 +5,20 @@
 //! project-local config wins over the global one, and the matching
 //! keychain entry holds the bot token. The project must already have
 //! enabled the Telegram service.
-//!
-//! ## Implementation status
-//!
-//! The **clap surface** here is complete — subcommand names, flags,
-//! help text, and the manpage are all real so `zad --help`, `zad man
-//! telegram`, and `zad commands` advertise the planned interface
-//! today. The **runtime bodies** (`run_send`, `run_read`, …) are
-//! stubbed: each returns `ZadError::Invalid("... not yet implemented
-//! ...")` and carries a block-comment describing the Bot API call it
-//! should make. The stub shape is grep-friendly: search for
-//! `not_yet_implemented(` to find every gap.
-//!
-//! The three exceptions are `directory` and `permissions` — those are
-//! local-state operations (no network I/O) and are implemented
-//! end-to-end. An operator can scaffold a permissions policy and
-//! hand-populate chat aliases today, before the send/read verbs
-//! land.
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
 use serde::Serialize;
 
-use crate::config;
+use crate::config::{self, TelegramServiceCfg};
 use crate::error::{Result, ZadError};
+use crate::secrets::{self, Scope};
+use crate::service::default_dry_run_sink;
+use crate::service::telegram::client::TELEGRAM_MAX_MESSAGE_LEN;
 use crate::service::telegram::directory::{self as dir, Directory};
 use crate::service::telegram::permissions::{self as perms, TelegramFunction};
+use crate::service::telegram::{DryRunTelegramTransport, TelegramHttp, TelegramTransport};
 
 // ---------------------------------------------------------------------------
 // subcommand plumbing
@@ -43,19 +32,19 @@ pub struct TelegramArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum Action {
-    /// Send a message to a chat. [PLANNED — clap surface only]
+    /// Send a message to a chat (private, group, supergroup, or channel).
     Send(SendArgs),
-    /// Fetch recent messages from a chat. [PLANNED — clap surface only]
+    /// Fetch recent messages the bot has buffered for a chat.
     Read(ReadArgs),
-    /// List chats the bot has seen. [PLANNED — clap surface only]
+    /// List chats the bot has seen (local directory + recent updates).
     Chats(ChatsArgs),
-    /// Poll the Bot API for recent updates and cache chat aliases.
-    /// [PLANNED — clap surface only]
+    /// Poll the Bot API for recent updates and upsert chat aliases
+    /// into this project's `directory.toml`.
     Discover(DiscoverArgs),
-    /// Inspect or hand-edit the name -> chat_id directory. [IMPLEMENTED]
+    /// Inspect or hand-edit the name -> chat_id directory.
     Directory(DirectoryArgs),
-    /// Inspect, scaffold, or dry-run the permissions policy.
-    /// [IMPLEMENTED]
+    /// Inspect, scaffold, or dry-run the permissions policy that
+    /// narrows what this service may actually do.
     Permissions(PermissionsArgs),
 }
 
@@ -73,19 +62,8 @@ pub async fn run(args: TelegramArgs) -> Result<()> {
     }
 }
 
-/// Stub error shape shared by every runtime verb that's still to be
-/// implemented. Grep for call-sites (`not_yet_implemented(`) to find
-/// every gap.
-fn not_yet_implemented(verb: &str) -> ZadError {
-    ZadError::Invalid(format!(
-        "`zad telegram {verb}` is not yet implemented; \
-         see the TODO block in src/cli/telegram.rs::run_{verb} \
-         and src/service/telegram/transport.rs"
-    ))
-}
-
 // ---------------------------------------------------------------------------
-// send [stub]
+// send
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
@@ -114,25 +92,61 @@ pub struct SendArgs {
     pub dry_run: bool,
 }
 
-async fn run_send(_args: SendArgs) -> Result<()> {
-    // TODO: end-to-end outline (mirror `src/cli/discord.rs::run_send`):
-    //   1. `effective_config()` → TelegramServiceCfg + scope
-    //   2. Load directory + permissions
-    //   3. `permissions.check_time(TelegramFunction::Send)`
-    //   4. Resolve `--chat` (or default_chat) to a signed chat_id
-    //   5. `permissions.check_send_chat(input, id, &directory)`
-    //   6. Resolve the body (positional / stdin), enforce
-    //      `TELEGRAM_MAX_MESSAGE_LEN`
-    //   7. `permissions.check_send_body(&body)`
-    //   8. `telegram_http_for("messages.send", args.dry_run)`
-    //   9. `transport.send(chat_id, &body).await`
-    //  10. Print human / JSON output, suppress "sent …" under
-    //      `--dry-run` (the sink already emitted the preview record).
-    Err(not_yet_implemented("send"))
+#[derive(Debug, Serialize)]
+struct SendOutput {
+    command: &'static str,
+    chat_id: String,
+    message_id: String,
+}
+
+async fn run_send(args: SendArgs) -> Result<()> {
+    let (cfg, _scope) = effective_config()?;
+    let directory = dir::load().unwrap_or_default();
+    let permissions = perms::load_effective()?;
+    permissions.check_time(TelegramFunction::Send)?;
+
+    let (chat_input, chat_id) = resolve_chat_arg(
+        args.chat.as_deref(),
+        cfg.default_chat.as_deref(),
+        &directory,
+    )?;
+    permissions.check_send_chat(&chat_input, chat_id, &directory)?;
+
+    let body = resolve_body(args.body.as_deref(), args.stdin)?;
+    let len = body.chars().count();
+    if len > TELEGRAM_MAX_MESSAGE_LEN {
+        return Err(ZadError::Invalid(format!(
+            "message body is {len} characters; Telegram's hard limit is {TELEGRAM_MAX_MESSAGE_LEN}"
+        )));
+    }
+    permissions.check_send_body(&body)?;
+
+    let http = telegram_http_for("messages.send", args.dry_run)?;
+    let message_id = http.send(chat_id, &body).await?;
+
+    // When --dry-run is active the transport already emitted a preview
+    // record (human summary via `tracing::info!`, JSON payload on
+    // stdout). Skip the trailing "Sent …" / SendOutput print so we
+    // never claim success for an operation we didn't actually perform.
+    if args.dry_run {
+        return Ok(());
+    }
+
+    if args.json {
+        let out = SendOutput {
+            command: "telegram.send",
+            chat_id: chat_id.to_string(),
+            message_id: message_id.to_string(),
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("Sent message {message_id} to chat {chat_id}.");
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// read [stub]
+// read
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
@@ -141,7 +155,7 @@ pub struct ReadArgs {
     #[arg(long)]
     pub chat: String,
 
-    /// Maximum number of messages to fetch. Defaults to 20.
+    /// Maximum number of messages to fetch (1–100). Defaults to 20.
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
 
@@ -150,18 +164,70 @@ pub struct ReadArgs {
     pub json: bool,
 }
 
-async fn run_read(_args: ReadArgs) -> Result<()> {
-    // TODO: The Bot API's `getUpdates` is long-poll and forward-only
-    // — it returns new updates since the last call, never historical
-    // backfill. First cut will call `getUpdates` with a short timeout
-    // and filter client-side to messages matching `--chat`. Document
-    // the "new messages only" caveat in the manpage. Scope:
-    // `messages.read`.
-    Err(not_yet_implemented("read"))
+#[derive(Debug, Serialize)]
+struct ReadOutput {
+    command: &'static str,
+    chat_id: String,
+    count: usize,
+    messages: Vec<ReadMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReadMessage {
+    id: String,
+    author: String,
+    body: String,
+}
+
+async fn run_read(args: ReadArgs) -> Result<()> {
+    if args.limit == 0 || args.limit > 100 {
+        return Err(ZadError::Invalid(
+            "--limit must be between 1 and 100".into(),
+        ));
+    }
+    let (_cfg, _scope) = effective_config()?;
+    let directory = dir::load().unwrap_or_default();
+    let permissions = perms::load_effective()?;
+    permissions.check_time(TelegramFunction::Read)?;
+
+    let (chat_input, chat_id) = resolve_chat_arg(Some(&args.chat), None, &directory)?;
+    permissions.check_read_chat(&chat_input, chat_id, &directory)?;
+
+    let http = telegram_http_for("messages.read", false)?;
+    let msgs = http.history(chat_id, args.limit).await?;
+
+    if args.json {
+        let out = ReadOutput {
+            command: "telegram.read",
+            chat_id: chat_id.to_string(),
+            count: msgs.len(),
+            messages: msgs
+                .iter()
+                .map(|m| ReadMessage {
+                    id: m.id.to_string(),
+                    author: m.author.clone(),
+                    body: m.body.clone(),
+                })
+                .collect(),
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+
+    if msgs.is_empty() {
+        println!("(no messages — `getUpdates` is forward-only; see `zad man telegram`)");
+        return Ok(());
+    }
+    // Print oldest-first so a human reads top-to-bottom in chronological
+    // order. `history` returned newest-first.
+    for m in msgs.iter().rev() {
+        println!("[{}] <{}> {}", m.id, m.author, m.body);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// chats [stub]
+// chats
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
@@ -171,16 +237,89 @@ pub struct ChatsArgs {
     pub json: bool,
 }
 
-async fn run_chats(_args: ChatsArgs) -> Result<()> {
-    // TODO: no "list every chat the bot is in" endpoint exists. First
-    // cut reads from the local directory (`dir::load()`), optionally
-    // supplemented with chats observed in a short `getUpdates` poll.
-    // Scope: `chats`.
-    Err(not_yet_implemented("chats"))
+#[derive(Debug, Serialize)]
+struct ChatsOutput {
+    command: &'static str,
+    count: usize,
+    chats: Vec<ChatRow>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatRow {
+    id: String,
+    title: String,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+    source: &'static str,
+}
+
+async fn run_chats(args: ChatsArgs) -> Result<()> {
+    let (_cfg, _scope) = effective_config()?;
+    let directory = dir::load().unwrap_or_default();
+    let permissions = perms::load_effective()?;
+    permissions.check_time(TelegramFunction::Chats)?;
+
+    let http = telegram_http_for("chats", false)?;
+    let observed = http.list_chats().await?;
+
+    // Merge observed chats with the local directory cache so an
+    // operator sees every chat zad knows about, not just the ones
+    // whose updates happen to be buffered right now. Observed entries
+    // override directory rows when they share an id so kind/username
+    // come from the live data where possible.
+    let mut by_id: std::collections::BTreeMap<i64, ChatRow> = std::collections::BTreeMap::new();
+    for (name, id_s) in &directory.chats {
+        if let Ok(id) = id_s.parse::<i64>() {
+            by_id.entry(id).or_insert_with(|| ChatRow {
+                id: id.to_string(),
+                title: name.clone(),
+                kind: "unknown".into(),
+                username: None,
+                source: "directory",
+            });
+        }
+    }
+    for c in &observed {
+        by_id.insert(
+            c.id,
+            ChatRow {
+                id: c.id.to_string(),
+                title: c.title.clone(),
+                kind: c.kind.clone(),
+                username: c.username.clone(),
+                source: "observed",
+            },
+        );
+    }
+    let rows: Vec<ChatRow> = by_id.into_values().collect();
+
+    if args.json {
+        let out = ChatsOutput {
+            command: "telegram.chats",
+            count: rows.len(),
+            chats: rows,
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!("(no chats — run `zad telegram discover` once the bot has seen traffic)");
+        return Ok(());
+    }
+    println!("{:<20}  {:<10}  {:<10}  TITLE", "ID", "KIND", "SOURCE");
+    for r in &rows {
+        println!(
+            "{:<20}  {:<10}  {:<10}  {}",
+            r.id, r.kind, r.source, r.title
+        );
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// discover [stub]
+// discover
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
@@ -190,19 +329,84 @@ pub struct DiscoverArgs {
     pub json: bool,
 }
 
-async fn run_discover(_args: DiscoverArgs) -> Result<()> {
-    // TODO: call `getUpdates` once with a short timeout, extract every
-    // `Chat` from the envelope's `message.chat`, `my_chat_member.chat`,
-    // `channel_post.chat`, etc., and upsert `(title, id)` pairs into
-    // the directory. Hand-authored entries must round-trip untouched.
-    // Scope: `chats`.
-    Err(not_yet_implemented("discover"))
+#[derive(Debug, Serialize)]
+struct DiscoverOutput {
+    command: &'static str,
+    chats: usize,
+    added: usize,
+    skipped: usize,
+    warnings: Vec<String>,
+}
+
+async fn run_discover(args: DiscoverArgs) -> Result<()> {
+    let (_cfg, _scope) = effective_config()?;
+    let permissions = perms::load_effective()?;
+    permissions.check_time(TelegramFunction::Discover)?;
+
+    let http = telegram_http_for("chats", false)?;
+    let observed = http.list_chats().await?;
+
+    let mut directory = dir::load().unwrap_or_default();
+    let mut added = 0usize;
+    let mut skipped = 0usize;
+    let warnings: Vec<String> = vec![];
+
+    for c in &observed {
+        // Silently skip chats the policy denies from discovery — the
+        // walk is best-effort and shouldn't fail the whole call.
+        if permissions
+            .check_discover_chat(&c.title, c.id, &directory)
+            .is_err()
+        {
+            skipped += 1;
+            continue;
+        }
+        let key = c.title.clone();
+        let id_s = c.id.to_string();
+        match directory.chats.get(&key) {
+            Some(existing) if existing == &id_s => {}
+            _ => {
+                directory.chats.insert(key, id_s);
+                added += 1;
+            }
+        }
+    }
+
+    directory.generated_at_unix = Some(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    );
+    dir::save(&directory)?;
+
+    if args.json {
+        let out = DiscoverOutput {
+            command: "telegram.discover",
+            chats: observed.len(),
+            added,
+            skipped,
+            warnings: warnings.clone(),
+        };
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        let total = observed.len();
+        println!("Observed {total} chat(s); added {added}, skipped {skipped} (denied by policy).");
+        for w in &warnings {
+            crate::output::warn(w);
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// credential / config plumbing [partial — only the shape used by the
-// IMPLEMENTED verbs below is live; the runtime stubs will extend it]
+// credential / config plumbing
 // ---------------------------------------------------------------------------
+
+enum EffectiveScope {
+    Global,
+    Local(String),
+}
 
 fn require_telegram_enabled() -> Result<()> {
     let project_path = config::path::project_config_path()?;
@@ -217,17 +421,121 @@ fn require_telegram_enabled() -> Result<()> {
     Ok(())
 }
 
-// TODO: when send/read/chats/discover land, add:
-//   enum EffectiveScope { Global, Local(String) }
-//   fn effective_config() -> Result<(TelegramServiceCfg, EffectiveScope)>
-//   fn load_token(scope: &EffectiveScope) -> Result<String>
-//   fn telegram_http_for(required: &'static str, dry_run: bool)
-//       -> Result<Box<dyn TelegramTransport>>
-// mirroring the Discord helpers. The `telegram` keychain account is
-// `secrets::account("telegram", "bot", scope)`.
+fn effective_config() -> Result<(TelegramServiceCfg, EffectiveScope)> {
+    require_telegram_enabled()?;
+
+    let slug = config::path::project_slug()?;
+    let local_path = config::path::project_service_config_path_for(&slug, "telegram")?;
+    if let Some(cfg) = config::load_flat::<TelegramServiceCfg>(&local_path)? {
+        return Ok((cfg, EffectiveScope::Local(slug)));
+    }
+    let global_path = config::path::global_service_config_path("telegram")?;
+    if let Some(cfg) = config::load_flat::<TelegramServiceCfg>(&global_path)? {
+        return Ok((cfg, EffectiveScope::Global));
+    }
+    Err(ZadError::Invalid(format!(
+        "no Telegram credentials found for this project.\n\
+         looked in:\n  {}\n  {}",
+        local_path.display(),
+        global_path.display()
+    )))
+}
+
+fn load_token(scope: &EffectiveScope) -> Result<String> {
+    let account = match scope {
+        EffectiveScope::Global => secrets::account("telegram", "bot", Scope::Global),
+        EffectiveScope::Local(slug) => secrets::account("telegram", "bot", Scope::Project(slug)),
+    };
+    secrets::load(&account)?.ok_or_else(|| {
+        ZadError::Invalid(format!(
+            "bot token missing from keychain (account `{account}`). \
+             Re-run `zad service create telegram` to reinstall it."
+        ))
+    })
+}
+
+/// Resolve config + token + scope set into a ready-to-call transport,
+/// failing fast with [`ZadError::ScopeDenied`] if `required` isn't
+/// declared. The fail-fast scope check happens *before* the keychain
+/// read, so a denied op never touches secrets; [`TelegramHttp`] also
+/// guards the same scope internally for library-level callers.
+///
+/// When `dry_run` is `true` the scope check still runs (so preview
+/// respects the caller's policy boundary), but the keychain read is
+/// skipped and a [`DryRunTelegramTransport`] is returned instead of a
+/// live client. That lets `--dry-run` work before the operator has
+/// configured a bot, and guarantees no token is ever loaded into
+/// memory for a preview.
+fn telegram_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn TelegramTransport>> {
+    let (cfg, scope) = effective_config()?;
+    let config_path = match &scope {
+        EffectiveScope::Local(slug) => {
+            config::path::project_service_config_path_for(slug, "telegram")?
+        }
+        EffectiveScope::Global => config::path::global_service_config_path("telegram")?,
+    };
+    let scopes: std::collections::BTreeSet<String> = cfg.scopes.iter().cloned().collect();
+    if !scopes.contains(required) {
+        return Err(ZadError::ScopeDenied {
+            service: "telegram",
+            scope: required,
+            config_path,
+        });
+    }
+    if dry_run {
+        return Ok(Box::new(DryRunTelegramTransport::new(
+            default_dry_run_sink(),
+        )));
+    }
+    let token = load_token(&scope)?;
+    Ok(Box::new(TelegramHttp::new(&token, scopes, config_path)))
+}
+
+fn resolve_chat_arg(
+    flag: Option<&str>,
+    default: Option<&str>,
+    directory: &Directory,
+) -> Result<(String, i64)> {
+    let raw = flag.or(default).ok_or_else(|| {
+        ZadError::Invalid(
+            "no chat specified: pass --chat <ID|@username|name> or set `default_chat` in the config"
+                .into(),
+        )
+    })?;
+    let id = directory.resolve_chat(raw).ok_or_else(|| {
+        let key = raw.strip_prefix('@').unwrap_or(raw);
+        ZadError::Invalid(format!(
+            "--chat `{raw}` is neither a chat_id nor a known directory entry. \
+             Run `zad telegram discover` or map it manually with \
+             `zad telegram directory set {key} <id>`."
+        ))
+    })?;
+    Ok((raw.to_string(), id))
+}
+
+fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {
+    if from_stdin {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf).map_err(|e| {
+            ZadError::Invalid(format!("failed to read message body from stdin: {e}"))
+        })?;
+        let trimmed = buf.trim_end_matches(['\n', '\r']).to_string();
+        if trimmed.is_empty() {
+            return Err(ZadError::Invalid("message body is empty (stdin)".into()));
+        }
+        return Ok(trimmed);
+    }
+    match positional {
+        Some(b) if !b.is_empty() => Ok(b.to_string()),
+        _ => Err(ZadError::Invalid(
+            "missing message body: pass it as a positional arg or use --stdin".into(),
+        )),
+    }
+}
 
 // ---------------------------------------------------------------------------
-// directory [implemented]
+// directory
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]
@@ -408,7 +716,7 @@ fn parse_chat_id(v: &str) -> Result<i64> {
 }
 
 // ---------------------------------------------------------------------------
-// permissions [implemented]
+// permissions — inspect / scaffold / dry-run the permissions policy
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Args)]

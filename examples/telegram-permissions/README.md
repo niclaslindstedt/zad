@@ -37,10 +37,5 @@ zad telegram permissions check --function send \
     --chat team-room --body "deploy ok"
 ```
 
-Note: the `send` / `read` / `chats` / `discover` *runtime* verbs are
-still stubbed while the Bot API integration is being written.
-`permissions check` and `directory` are already live, so you can
-author and validate a policy today.
-
 See [`docs/configuration.md`](../../docs/configuration.md#permissions-file)
 for the full schema.
