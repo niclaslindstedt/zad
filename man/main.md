@@ -30,6 +30,7 @@ and are **never** written to the TOML.
 | `--help`    | bool | false | Print help and exit. |
 | `--debug`   | bool | false | Enable debug-level logging on stderr. The on-disk log at `~/.local/state/zad/debug.log` (Linux) or `~/Library/Application Support/zad/debug.log` (macOS) is written regardless. |
 | `--help-agent` | bool | false | Print a compact, prompt-injectable description of the CLI — its commands, most important flags and env vars, and pointers to the `commands`, `man`, and `docs` discovery surfaces. Designed for splicing into an agent prompt via command substitution (`$(zad --help-agent)`). See `OSS_SPEC.md` §12.1. |
+| `--debug-agent` | bool | false | Print a troubleshooting block (log paths, config precedence, env vars, diagnostic commands, version). See `OSS_SPEC.md` §12.2. |
 
 ## Subcommands
 
@@ -38,7 +39,9 @@ and are **never** written to the TOML.
 | `service <ACTION> <SERVICE>` | Configure or inspect external services (credentials, project enablement). | [`zad man service`](service.md) |
 | `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions). | [`zad man discord`](discord.md) |
 | `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions). | [`zad man telegram`](telegram.md) |
-| `help` | Show help text. | — |
+| `commands [NAME]...` | Enumerate every CLI command, flag, and realistic example; also emits a JSON dump consumed by the website extractor. | [`zad man commands`](commands.md) |
+| `docs [TOPIC]` | Print topic documentation (`docs/*.md`) embedded in the binary at build time. | [`zad man docs`](docs.md) |
+| `man [COMMAND]` | Print reference manpages (`man/*.md`) embedded in the binary at build time. | [`zad man man`](man.md) |
 
 Each top-level command has its own manpage with every subcommand, flag,
 example, and exit code. This page only sketches the cross-cutting
