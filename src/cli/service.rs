@@ -8,7 +8,7 @@
 
 use clap::{Args, Subcommand};
 
-use crate::cli::lifecycle::{self, DeleteArgs, DisableArgs, EnableArgs, ShowArgs};
+use crate::cli::lifecycle::{self, DeleteArgs, DisableArgs, EnableArgs, ShowArgs, StatusArgs};
 use crate::error::Result;
 
 use super::{service_discord, service_list, service_telegram};
@@ -33,6 +33,8 @@ pub enum Action {
     List(service_list::ListArgs),
     /// Show details for a configured service.
     Show(ShowAction),
+    /// Check whether a service's credentials work by pinging the provider.
+    Status(StatusAction),
     /// Delete credentials for a service (inverse of `create`).
     Delete(DeleteAction),
 }
@@ -96,6 +98,20 @@ pub enum ShowService {
 }
 
 #[derive(Debug, Args)]
+pub struct StatusAction {
+    #[command(subcommand)]
+    pub service: StatusService,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum StatusService {
+    /// Check whether Discord credentials work (pings `GET /users/@me`).
+    Discord(StatusArgs),
+    /// Check whether Telegram credentials work (pings `getMe`).
+    Telegram(StatusArgs),
+}
+
+#[derive(Debug, Args)]
 pub struct DeleteAction {
     #[command(subcommand)]
     pub service: DeleteService,
@@ -129,6 +145,10 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
         Action::Show(s) => match s.service {
             ShowService::Discord(a) => lifecycle::run_show::<DiscordLifecycle>(a),
             ShowService::Telegram(a) => lifecycle::run_show::<TelegramLifecycle>(a),
+        },
+        Action::Status(s) => match s.service {
+            StatusService::Discord(a) => lifecycle::run_status::<DiscordLifecycle>(a).await,
+            StatusService::Telegram(a) => lifecycle::run_status::<TelegramLifecycle>(a).await,
         },
         Action::Delete(d) => match d.service {
             DeleteService::Discord(a) => lifecycle::run_delete::<DiscordLifecycle>(a),

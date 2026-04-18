@@ -76,7 +76,12 @@ zad <SERVICE> <VERB>             # runtime operations (service-specific verbs)
 ```
 
 Configuration actions: `create` (register credentials), `enable` /
-`disable` (toggle for this project), `list`, `show`, and `delete`.
+`disable` (toggle for this project), `list`, `show`, `status` (ping
+the provider to confirm credentials actually work), and `delete`.
+`zad status` (top-level) runs `status` across every service at once
+and is designed for agents — `--json` emits a stable envelope and the
+exit code reflects whether every configured service pinged
+successfully.
 
 Runtime verbs are chosen per service.
 

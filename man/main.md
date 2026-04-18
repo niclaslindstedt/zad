@@ -39,6 +39,7 @@ and are **never** written to the TOML.
 | `service <ACTION> <SERVICE>` | Configure or inspect external services (credentials, project enablement). | [`zad man service`](service.md) |
 | `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions). | [`zad man discord`](discord.md) |
 | `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions). | [`zad man telegram`](telegram.md) |
+| `status` | Aggregate live-status check of every configured service in one call. | [`zad man status`](status.md) |
 | `commands [NAME]...` | Enumerate every CLI command, flag, and realistic example; also emits a JSON dump consumed by the website extractor. | [`zad man commands`](commands.md) |
 | `docs [TOPIC]` | Print topic documentation (`docs/*.md`) embedded in the binary at build time. | [`zad man docs`](docs.md) |
 | `man [COMMAND]` | Print reference manpages (`man/*.md`) embedded in the binary at build time. | [`zad man man`](man.md) |
