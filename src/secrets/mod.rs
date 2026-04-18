@@ -102,3 +102,10 @@ impl<'a> Scope<'a> {
 pub fn discord_bot_account(scope: Scope<'_>) -> String {
     format!("discord-bot:{}", scope.suffix())
 }
+
+/// Account key for a Telegram bot token at the given scope. The token
+/// is the single secret a Telegram bot needs (the numeric bot ID is a
+/// prefix of the token itself and can be recovered by calling `getMe`).
+pub fn telegram_bot_account(scope: Scope<'_>) -> String {
+    format!("telegram-bot:{}", scope.suffix())
+}

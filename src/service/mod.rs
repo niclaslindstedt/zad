@@ -1,4 +1,5 @@
 pub mod discord;
+pub mod telegram;
 
 use std::sync::Arc;
 

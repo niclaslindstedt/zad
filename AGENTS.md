@@ -38,8 +38,9 @@ make fmt-check     # verify formatting (CI)
 
 `zad` is a single Rust crate whose entry point is `src/main.rs`. The crate
 is split into four top-level modules: `cli` (argument parsing via clap),
-`service` (one sub-module per integration, e.g. `service::discord`),
-`config` (TOML schema and path helpers), and `secrets` (OS-keychain I/O).
+`service` (one sub-module per integration, e.g. `service::discord`,
+`service::telegram`), `config` (TOML schema and path helpers), and
+`secrets` (OS-keychain I/O).
 `src/lib.rs` re-exports the public surface so that integration tests under
 `tests/` can reach it without going through the binary.
 
@@ -80,10 +81,23 @@ config keys| `docs/configuration.md`
 - Every new service (`src/service/<name>/`) must have a matching manpage at
   `man/<name>.md` and at least one runnable example under `examples/`.
 - Each top-level `zad` command gets its own `man/<command>.md`
-  (`main.md`, `service.md`, `discord.md`, …); `main.md` is the thin
-  overview and the rest are per-command references. Keep them in sync
-  with every clap subcommand and flag defined in `src/cli/` whenever
-  commands, flags, or subcommands are added, removed, or renamed.
+  (`main.md`, `service.md`, `discord.md`, `telegram.md`, …); `main.md`
+  is the thin overview and the rest are per-command references. Keep
+  them in sync with every clap subcommand and flag defined in
+  `src/cli/` whenever commands, flags, or subcommands are added,
+  removed, or renamed.
+- The target audience is **coding agents**, not humans at a terminal.
+  Every verb must have `--json`, machine-parseable errors that name
+  the file to edit, and enough structure that an LLM can learn the
+  surface from `--help-agent` + `zad commands --examples` without
+  side-channel context.
+
+## Service status
+
+| Service | State |
+|---|---|
+| `discord`  | Lifecycle + runtime fully implemented. |
+| `telegram` | Lifecycle (`zad service {create,enable,disable,show,delete} telegram`) fully implemented. Runtime verbs (`zad telegram send`, `read`, `chats`, `join`, `leave`, `discover`, `directory`, `permissions`) have CLI shape only — bodies live behind TODO markers in `src/cli/telegram.rs` and `src/service/telegram/mod.rs`, and each verb currently returns `ZadError::Unsupported`. The follow-up change adds `TelegramHttp` (reqwest client against `https://api.telegram.org/bot<TOKEN>/`), a dry-run transport, a long-poll gateway, and a Telegram-specialised permissions module. |
 
 ## Permissions pattern (cross-service)
 

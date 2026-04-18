@@ -1,0 +1,20 @@
+# Sample `config.toml` written by
+# `zad service create telegram` (global scope). Drop this at
+# `~/.zad/services/telegram/config.toml` to seed a machine-wide
+# Telegram configuration; per-project credentials go to
+# `~/.zad/projects/<slug>/services/telegram/config.toml` instead.
+#
+# NOTE: the bot token itself is NEVER written here. zad stores it in
+# the OS keychain under service="zad", account="telegram-bot:global"
+# (or "telegram-bot:<slug>" for local credentials).
+
+# Declared capabilities. Runtime verbs refuse to call any Bot API
+# endpoint whose scope is not listed here, so this is the first line of
+# defence before the permissions file narrows things further.
+scopes = ["messages.read", "messages.send"]
+
+# Optional default chat. Accepts a numeric Telegram chat ID (negative
+# for groups and channels, positive for private chats with users) or an
+# @username handle for public chats, channels, and bots. Used when a
+# runtime verb does not pass an explicit --chat.
+default_chat = "@my_channel"

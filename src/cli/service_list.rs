@@ -4,7 +4,7 @@ use serde::Serialize;
 use crate::config;
 use crate::error::Result;
 
-const KNOWN_SERVICES: &[&str] = &["discord"];
+const KNOWN_SERVICES: &[&str] = &["discord", "telegram"];
 
 #[derive(Debug, Args)]
 pub struct ListArgs {

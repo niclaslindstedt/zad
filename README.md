@@ -78,10 +78,20 @@ After `discover`, the destination flags accept names — `--channel general`,
 Every command takes `--json` for machine-readable output. Mutating
 verbs (`send`, `join`, `leave`) also take `--dry-run`, which previews
 the outgoing call — scope and permission checks still fire, but no
-bot token is loaded and no network request is made. Today the only
-service is `discord`. See [`man/main.md`](man/main.md) for the
-top-level overview and [`man/service.md`](man/service.md) /
-[`man/discord.md`](man/discord.md) for the full per-command reference.
+bot token is loaded and no network request is made.
+
+Supported services:
+
+| Service | Lifecycle | Runtime verbs |
+|---|---|---|
+| `discord`  | `zad service {create,enable,disable,show,delete} discord`  | implemented |
+| `telegram` | `zad service {create,enable,disable,show,delete} telegram` | CLI surface only — Bot API client is TODO; every runtime verb currently returns `operation not supported`. See [`man/telegram.md`](man/telegram.md) for the planned shape |
+
+See [`man/main.md`](man/main.md) for the top-level overview and
+[`man/service.md`](man/service.md) /
+[`man/discord.md`](man/discord.md) /
+[`man/telegram.md`](man/telegram.md) for the full per-command
+reference.
 
 ### Permissions (optional second layer)
 

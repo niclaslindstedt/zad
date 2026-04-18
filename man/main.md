@@ -37,6 +37,7 @@ and are **never** written to the TOML.
 |---|---|---|
 | `service <ACTION> <SERVICE>` | Configure or inspect external services (credentials, project enablement). | [`zad man service`](service.md) |
 | `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions). | [`zad man discord`](discord.md) |
+| `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, join, leave, discover, directory, permissions). Lifecycle fully wired; runtime verbs are still TODO — see `zad man telegram`. | [`zad man telegram`](telegram.md) |
 | `help` | Show help text. | — |
 
 Each top-level command has its own manpage with every subcommand, flag,
