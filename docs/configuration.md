@@ -257,6 +257,125 @@ Reading message *content* from guild channels requires the
 Discord developer portal. Without it, the `body` field on gateway
 `MessageCreated` events is empty for guild messages.
 
+## Telegram service
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/telegram.md`](../man/telegram.md)):
+
+- `zad service create telegram [--local]` — register credentials.
+- `zad service enable telegram` — enable the service in the current project.
+- `zad service disable telegram` — disable it again (leaves credentials intact).
+
+Telegram bots carry their identity inside the bot token itself, so
+the credentials file is shorter than Discord's — no `application_id`.
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/telegram/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/telegram/config.toml`
+
+The project-local file wins over the global one for that project. The
+format is flat:
+
+```toml
+scopes       = ["chats", "messages.read", "messages.send"]
+default_chat = "team-room"   # optional
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scopes` | `[string]` | `["chats", "messages.read", "messages.send"]` | Capabilities the service is permitted to use. |
+| `default_chat` | string? | — | Optional default destination for `send`. Accepts a signed chat_id (negative for groups/supergroups), a public `@username`, or a directory alias. |
+
+Scopes are **enforced at runtime, before any network call**. The
+supported values are:
+
+| Scope | Gates |
+|---|---|
+| `messages.send` | `send` |
+| `messages.read` | `read` |
+| `chats` | `chats`, `discover` (and any future chat-listing verb) |
+| `gateway.listen` | Gateway event listener (library-level only; no CLI verb today) |
+
+When both a global and a project-local credentials file exist, the
+local file **replaces** the global one for that project — scopes are
+not merged.
+
+### Permissions file
+
+The permissions layer has the same shape as Discord's (see above),
+with one per-verb block per runtime verb:
+
+| Block | Narrows |
+|---|---|
+| `[send]`     | `chats` allow/deny for the destination; body against `content` |
+| `[read]`     | `chats` allow/deny for the source |
+| `[chats]`    | `chats` allow/deny for the listing |
+| `[discover]` | `chats` allow/deny — denied chats are silently skipped in the walk |
+
+See [`examples/telegram-permissions/`](../examples/telegram-permissions/)
+for a worked example.
+
+### Project file
+
+The same `~/.zad/projects/<slug>/config.toml` that records Discord
+enablement records Telegram the same way:
+
+```toml
+[service.telegram]
+enabled = true
+```
+
+### Token storage
+
+The bot token is stored in the OS keychain at:
+
+- **service:** `zad`
+- **account:** `telegram-bot:global` (global creds) or `telegram-bot:<slug>` (local creds).
+
+Rotate a token by re-running `zad service create telegram --force`
+(add `--local` to target project-local credentials).
+
+### Directory (name -> chat_id)
+
+`zad telegram discover` polls the Bot API for recent updates and
+upserts a local directory file at:
+
+```
+~/.zad/projects/<slug>/services/telegram/directory.toml
+```
+
+Telegram addresses every target through a single signed `chat_id`
+(negative for groups and supergroups, positive for private chats and
+most channels), so the file has one `chats` map rather than splitting
+by target kind.
+
+```toml
+generated_at_unix = 1713364920   # optional; set by `discover`
+
+[chats]
+"team-room"            = "-1001234567890"
+"announcements"        = "-1009876543210"
+"alice"                = "1001"
+```
+
+Manage it from the CLI:
+
+- `zad telegram directory` — list every entry.
+- `zad telegram directory set <name> <id>` — upsert a mapping.
+- `zad telegram directory remove <name>` — idempotent delete.
+- `zad telegram directory clear --force` — wipe the file.
+
+### Bot API caveats
+
+Telegram's Bot API exposes `getUpdates` as a forward-only stream —
+there is no "give me the last N messages" endpoint. `zad telegram
+read` therefore returns only what the bot has buffered since its
+previous `getUpdates` call, and `zad telegram chats` / `discover`
+likewise see only chats present in the current update batch. The
+manpage documents the "new messages only" shape explicitly.
+
 ## Logging
 
 zad always writes a rolling daily log file at a platform-appropriate

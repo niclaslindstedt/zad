@@ -37,6 +37,7 @@ and are **never** written to the TOML.
 |---|---|---|
 | `service <ACTION> <SERVICE>` | Configure or inspect external services (credentials, project enablement). | [`zad man service`](service.md) |
 | `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions). | [`zad man discord`](discord.md) |
+| `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions). | [`zad man telegram`](telegram.md) |
 | `help` | Show help text. | — |
 
 Each top-level command has its own manpage with every subcommand, flag,
@@ -85,5 +86,6 @@ claude "Help me automate X $(zad --help-agent)"
 
 - [`zad man service`](service.md) — credential management and project enablement.
 - [`zad man discord`](discord.md) — runtime verbs for the Discord service.
+- [`zad man telegram`](telegram.md) — runtime verbs for the Telegram service.
 - [`docs/configuration.md`](../docs/configuration.md) — config file reference.
 - [`docs/architecture.md`](../docs/architecture.md) — module layout.

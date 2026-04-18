@@ -49,8 +49,7 @@ pub enum Command {
     Service(service::ServiceArgs),
     /// Operate the Discord service (send, read, channels, join, leave).
     Discord(discord::DiscordArgs),
-    /// Operate the Telegram service (send, read, chats). Runtime verbs
-    /// are still stubbed — see `src/cli/telegram.rs` for status.
+    /// Operate the Telegram service (send, read, chats, discover).
     Telegram(telegram::TelegramArgs),
     /// Enumerate CLI commands, flags, and realistic examples.
     Commands(commands::CommandsArgs),

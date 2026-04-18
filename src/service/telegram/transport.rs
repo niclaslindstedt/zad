@@ -1,17 +1,10 @@
-//! The side-effectful surface that `zad telegram <verb>` will depend
-//! on once the runtime verbs are wired up.
+//! The side-effectful surface that `zad telegram <verb>` depends on.
 //!
 //! [`TelegramTransport`] is a thin trait over the verb set exposed by
 //! [`TelegramHttp`]. Its purpose is to let the CLI hold a
 //! `Box<dyn TelegramTransport>` and stay oblivious to whether the
 //! underlying implementation is the live Bot-API-backed client or a
 //! `--dry-run` preview that never touches the network.
-//!
-//! The current trait body only reserves the shape — every method is a
-//! `todo!()` until the corresponding verb is implemented. This lets
-//! the CLI factory (`src/cli/telegram.rs::telegram_http_for`) compile
-//! against a stable trait object while the underlying methods are
-//! still being written.
 
 use std::sync::Arc;
 
@@ -27,10 +20,10 @@ use crate::service::{DryRunOp, DryRunSink};
 pub type ChatId = i64;
 
 /// A single message fetched from the Bot API. Shaped to match the
-/// fields the CLI needs for `zad telegram read` — message_id, author
-/// username or first-name fallback, and the text body. Further fields
-/// (reply_to, entities, media) will be added when the verbs that need
-/// them land.
+/// fields the CLI needs for `zad telegram read` — message id, author
+/// username (or first-name fallback), and the text body. Further
+/// fields (reply_to, entities, media) can be added alongside new verbs
+/// that need them.
 #[derive(Debug, Clone)]
 pub struct ChatMessage {
     pub id: i64,
@@ -62,30 +55,52 @@ pub trait TelegramTransport: Send + Sync {
 
 #[async_trait]
 impl TelegramTransport for TelegramHttp {
-    async fn send(&self, _chat: ChatId, _body: &str) -> Result<i64> {
-        // TODO: POST /bot<token>/sendMessage { chat_id, text }.
-        // Return the message_id from the response envelope. Scope:
-        // `messages.send`.
-        todo!("telegram send: not yet implemented")
+    async fn send(&self, chat: ChatId, body: &str) -> Result<i64> {
+        TelegramHttp::send_message(self, chat, body).await
     }
 
-    async fn history(&self, _chat: ChatId, _limit: usize) -> Result<Vec<ChatMessage>> {
-        // TODO: getUpdates is long-poll and forward-only — it only
-        // returns *new* updates, never historical backfill. Options:
-        //   (a) require a webhook setup and serve it locally; or
-        //   (b) accept that `read` only works for updates that have
-        //       accumulated since the last `getUpdates` call.
-        // Pick (b) for the first cut and document the limitation in
-        // the manpage. Scope: `messages.read`.
-        todo!("telegram history: not yet implemented")
+    async fn history(&self, chat: ChatId, limit: usize) -> Result<Vec<ChatMessage>> {
+        // Bot API's `getUpdates` is forward-only: it returns whatever
+        // the bot has buffered since its previous `getUpdates` call.
+        // Filter client-side to messages for `chat`, most recent first,
+        // capped at `limit`. The manpage documents the "new messages
+        // only" caveat.
+        let updates = TelegramHttp::get_updates(self, None).await?;
+        let mut out: Vec<ChatMessage> = Vec::new();
+        for u in &updates {
+            for m in u.messages() {
+                if m.chat.id != chat {
+                    continue;
+                }
+                out.push(ChatMessage {
+                    id: m.message_id,
+                    chat: m.chat.id,
+                    author: m.author(),
+                    body: m.body(),
+                });
+            }
+        }
+        // Most recent first, matching how the CLI surface documents the
+        // ordering before rendering oldest-first for humans.
+        out.sort_by(|a, b| b.id.cmp(&a.id));
+        out.truncate(limit);
+        Ok(out)
     }
 
     async fn list_chats(&self) -> Result<Vec<ChatInfo>> {
-        // TODO: no direct "list all chats the bot is in" endpoint
-        // exists. Source chats from the local directory cache plus
-        // any updates seen in a recent `getUpdates` window.
-        // Scope: `chats`.
-        todo!("telegram list_chats: not yet implemented")
+        let updates = TelegramHttp::get_updates(self, None).await?;
+        let mut seen: std::collections::BTreeMap<i64, ChatInfo> = std::collections::BTreeMap::new();
+        for u in &updates {
+            for c in u.chats() {
+                seen.entry(c.id).or_insert_with(|| ChatInfo {
+                    id: c.id,
+                    title: c.display_title(),
+                    kind: c.kind.clone(),
+                    username: c.username.clone(),
+                });
+            }
+        }
+        Ok(seen.into_values().collect())
     }
 }
 
