@@ -457,6 +457,15 @@ impl LifecycleService for TelegramLifecycle {
     }
 
     fn scopes_of(cfg: &TelegramServiceCfg) -> &[String] { &cfg.scopes }
+
+    // Optional: surface a URL the user should visit after `create`
+    // succeeds (e.g. an install/authorize page). Default impl returns
+    // None. When set, the URL is printed under the create banner and
+    // also opened in the system browser unless `--no-browser` was
+    // passed.
+    // fn post_create_hint(cfg: &TelegramServiceCfg) -> Option<String> {
+    //     Some(format!("https://t.me/{}", cfg.bot_username))
+    // }
 }
 ```
 

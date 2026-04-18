@@ -14,11 +14,11 @@
 
 use async_trait::async_trait;
 use clap::Args;
-use dialoguer::{Input, theme::ColorfulTheme};
+use dialoguer::{Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
     BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
-    resolve_bot_token, resolve_scopes,
+    resolve_scopes,
 };
 use crate::config::{DiscordServiceCfg, ProjectConfig};
 use crate::error::{Result, ZadError};
@@ -106,11 +106,12 @@ impl LifecycleService for DiscordLifecycle {
             ALL_SCOPES,
             non_interactive,
         )?;
-        let bot_token = resolve_bot_token(
+        let bot_token = resolve_discord_bot_token(
             args.token.bot_token.as_deref(),
             args.token.bot_token_env.as_deref(),
+            &application_id,
+            !args.base.no_browser,
             non_interactive,
-            Self::DISPLAY,
         )?;
         Ok((
             DiscordServiceCfg {
@@ -180,6 +181,10 @@ impl LifecycleService for DiscordLifecycle {
     fn scopes_of(cfg: &DiscordServiceCfg) -> &[String] {
         &cfg.scopes
     }
+
+    fn post_create_hint(cfg: &DiscordServiceCfg) -> Option<String> {
+        Some(install_url(&cfg.application_id))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -231,4 +236,53 @@ fn validate_numeric(v: &str, field: &'static str) -> Result<()> {
             "{field} must be a numeric Discord snowflake, got `{v}`"
         )))
     }
+}
+
+/// Discord-specific bot-token prompt: same flag/env contract as
+/// the generic `resolve_bot_token`, but the interactive path also
+/// surfaces (and optionally opens) the developer-portal URL where
+/// the token is actually generated. Discord doesn't issue bot
+/// tokens via OAuth — the portal is the only source — so the best
+/// "easy setup" we can offer is dropping the user on the right
+/// page and asking them to paste once.
+fn resolve_discord_bot_token(
+    flag: Option<&str>,
+    env_flag: Option<&str>,
+    application_id: &str,
+    open_browser: bool,
+    non_interactive: bool,
+) -> Result<String> {
+    if let Some(env) = env_flag {
+        return std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()));
+    }
+    if let Some(v) = flag {
+        return Ok(v.to_string());
+    }
+    if non_interactive {
+        return Err(ZadError::MissingRequired("--bot-token or --bot-token-env"));
+    }
+
+    let url = portal_bot_url(application_id);
+    println!();
+    println!("Your Discord bot token lives at:");
+    println!("  {url}");
+    println!("Click \"Reset Token\" → \"Copy\", then paste it below.");
+    if open_browser {
+        let _ = open::that(&url);
+    }
+
+    let v = Password::with_theme(&theme())
+        .with_prompt("Discord bot token")
+        .interact()?;
+    Ok(v)
+}
+
+fn portal_bot_url(application_id: &str) -> String {
+    format!("https://discord.com/developers/applications/{application_id}/bot")
+}
+
+fn install_url(application_id: &str) -> String {
+    format!(
+        "https://discord.com/api/oauth2/authorize?client_id={application_id}&scope=bot&permissions=0"
+    )
 }

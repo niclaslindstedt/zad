@@ -32,12 +32,13 @@ cargo install --path .
 Two steps: register credentials once, then enable the service per project.
 
 ```sh
-# 1. Register global Discord credentials (one-time).
-export DISCORD_BOT_TOKEN=...   # from https://discord.com/developers
-zad service create discord \
-    --application-id 1234567890 \
-    --bot-token-env DISCORD_BOT_TOKEN \
-    --scopes guilds,messages.send
+# 1. Register global Discord credentials (one-time). Interactive:
+#    zad opens your browser to the Developer Portal bot page,
+#    you hit "Reset Token" → "Copy", paste once.
+zad service create discord --application-id 1234567890
+
+# After create succeeds, zad also opens the OAuth install URL so you
+# can add the bot to a guild.
 
 # 2. Enable the service inside each project that should use it.
 cd ~/code/my-project
@@ -53,9 +54,19 @@ zad discord read --channel general --limit 20
 zad discord channels --json
 ```
 
+For headless / CI setups, pass the token non-interactively:
+
+```sh
+export DISCORD_BOT_TOKEN=...   # from https://discord.com/developers
+zad service create discord \
+    --application-id 1234567890 \
+    --bot-token-env DISCORD_BOT_TOKEN \
+    --scopes guilds,messages.send \
+    --no-browser --non-interactive
+```
+
 Use `--local` on `create` to store credentials only for the current
-project (under `~/.zad/projects/<slug>/services/discord/`). Omit the
-credential flags to run the interactive walkthrough instead.
+project (under `~/.zad/projects/<slug>/services/discord/`).
 
 ## Usage
 
