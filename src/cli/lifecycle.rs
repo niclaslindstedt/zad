@@ -145,6 +145,17 @@ pub trait LifecycleService: Send + Sync + 'static {
     /// `scopes` array. Convenience accessor so the driver can
     /// surface them in `show` without reading `Cfg`.
     fn scopes_of(cfg: &Self::Cfg) -> &[String];
+
+    /// Optional URL to surface immediately after `create` succeeds.
+    /// Typical use is a deep link the user needs to visit next —
+    /// e.g. Discord's OAuth bot-install page so the bot can be added
+    /// to a guild. Returned URL is printed under the human banner
+    /// (and included in the JSON envelope as `hint`); when the user
+    /// did not pass `--no-browser`, the driver also tries to open it
+    /// in the system browser. Default: no hint.
+    fn post_create_hint(_cfg: &Self::Cfg) -> Option<String> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +185,14 @@ pub struct CreateArgsBase {
     /// Skip the provider-side token validation step.
     #[arg(long)]
     pub no_validate: bool,
+
+    /// Don't open URLs in the system browser. By default, services
+    /// that have somewhere useful to send the user (e.g. Discord's
+    /// developer-portal token page) will try to open it
+    /// automatically; this disables that. The URL is still printed
+    /// either way.
+    #[arg(long)]
+    pub no_browser: bool,
 
     /// Emit machine-readable JSON instead of human-readable text.
     #[arg(long)]
@@ -296,6 +315,8 @@ struct CreateOutput {
     secrets: Vec<SecretRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     authenticated_as: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -402,6 +423,8 @@ pub async fn run_create<T: LifecycleService>(args: T::CreateArgs) -> Result<()> 
     let secrets_refs = T::store_secrets(&creds, keychain_scope)?;
     config::save_flat(&path, &cfg)?;
 
+    let hint = T::post_create_hint(&cfg);
+
     if base.json {
         let out = CreateOutput {
             command: format!("service.create.{}", T::NAME),
@@ -411,6 +434,7 @@ pub async fn run_create<T: LifecycleService>(args: T::CreateArgs) -> Result<()> 
             scopes: T::scopes_of(&cfg).to_vec(),
             secrets: secrets_refs,
             authenticated_as,
+            hint: hint.clone(),
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
@@ -443,7 +467,19 @@ pub async fn run_create<T: LifecycleService>(args: T::CreateArgs) -> Result<()> 
             T::NAME,
             T::DISPLAY
         );
+        if let Some(url) = hint.as_deref() {
+            println!();
+            println!("  open: {url}");
+        }
     }
+
+    if let Some(url) = hint.as_deref()
+        && !base.no_browser
+        && !base.non_interactive
+    {
+        let _ = open::that(url);
+    }
+
     Ok(())
 }
 

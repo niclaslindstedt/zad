@@ -761,3 +761,98 @@ fn json_output_for_delete() {
 fn slugify(p: &std::path::Path) -> String {
     common::project_slug(p)
 }
+
+// ---------------------------------------------------------------------------
+// install-URL hint surfaced after create
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial]
+fn create_human_output_prints_oauth_install_url() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .env("DISCORD_BOT_TOKEN", "t.est.token")
+        .current_dir(project.path())
+        .args([
+            "service",
+            "create",
+            "discord",
+            "--application-id",
+            "1234567890",
+            "--bot-token-env",
+            "DISCORD_BOT_TOKEN",
+            "--scopes",
+            "guilds",
+            "--non-interactive",
+            "--no-validate",
+            "--no-browser",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("oauth2/authorize?client_id=1234567890&scope=bot"));
+}
+
+#[test]
+#[serial]
+fn create_json_output_includes_hint_field() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .env("DISCORD_BOT_TOKEN", "t.est.token")
+        .current_dir(project.path())
+        .args([
+            "service",
+            "create",
+            "discord",
+            "--application-id",
+            "1234567890",
+            "--bot-token-env",
+            "DISCORD_BOT_TOKEN",
+            "--scopes",
+            "guilds",
+            "--non-interactive",
+            "--no-validate",
+            "--no-browser",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("\"hint\":"))
+        .stdout(contains("oauth2/authorize?client_id=1234567890&scope=bot"));
+}
+
+#[test]
+#[serial]
+fn create_with_bot_token_flag_does_not_print_portal_url() {
+    // `--bot-token` skips the interactive password prompt entirely,
+    // so the developer-portal token deep-link must not be printed —
+    // it's only useful right before asking the user to paste.
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args([
+            "service",
+            "create",
+            "discord",
+            "--application-id",
+            "1234567890",
+            "--bot-token",
+            "t.est.token",
+            "--scopes",
+            "guilds",
+            "--non-interactive",
+            "--no-validate",
+            "--no-browser",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("developers/applications/1234567890/bot").not());
+}

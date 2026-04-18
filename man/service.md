@@ -58,6 +58,20 @@ keychain; and writes a flat config file to either
 The token is stored at keychain `service="zad"`, `account="discord-bot:global"`
 for global credentials and `"discord-bot:<slug>"` for local ones.
 
+When neither `--bot-token` nor `--bot-token-env` is supplied, the
+interactive prompt prints the deep link to your application's
+developer-portal bot page
+(`https://discord.com/developers/applications/<app_id>/bot`) and opens
+it in your browser so you can hit "Reset Token" → "Copy" and paste
+once. Pass `--no-browser` to skip the browser open (the URL is still
+printed). Discord doesn't issue bot tokens via OAuth — this flow is
+just a convenience around the portal step.
+
+After a successful create, the OAuth bot-install URL
+(`https://discord.com/api/oauth2/authorize?client_id=<app_id>&scope=bot&permissions=0`)
+is printed and (unless `--no-browser`) opened in your browser so you
+can add the bot to a guild.
+
 ### Flags
 
 | Flag | Type | Default | Description |
@@ -71,6 +85,7 @@ for global credentials and `"discord-bot:<slug>"` for local ones.
 | `--force` | bool | `false` | Overwrite any existing credentials at the chosen scope. |
 | `--non-interactive` | bool | `false` | Fail instead of prompting for any missing value. |
 | `--no-validate` | bool | `false` | Skip the `GET /users/@me` token validation step. |
+| `--no-browser` | bool | `false` | Don't auto-open the developer-portal URL or the post-create install URL in the system browser. URLs are still printed. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
 ### Recognised scopes
