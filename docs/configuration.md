@@ -602,6 +602,18 @@ allow = ["Login", "API Credential", "Secure Note"]
 allow = ["agent-managed"]   # every created item must carry this tag
 ```
 
+## Signed permission files
+
+Every `permissions.toml` carries a top-level `[signature]` block
+populated by `zad <svc> permissions init`. Load-time verification
+fails closed — a missing, malformed, or key-mismatched signature
+returns `PermissionDenied`. Do **not** edit the `[signature]` block
+by hand; edit the policy fields and re-sign (for now,
+`zad <svc> permissions init --force` regenerates the signature; PR 2
+adds a dedicated `permissions sign` subcommand). See
+[`docs/permissions.md`](permissions.md) for the trust model, keychain
+entry name (`signing:v1`), and failure modes.
+
 ## Logging
 
 zad always writes a rolling daily log file at a platform-appropriate

@@ -8,11 +8,22 @@ use std::path::PathBuf;
 
 use zad::config::directory::Directory;
 use zad::error::ZadError;
+use zad::permissions::SigningKey;
 use zad::permissions::content::ContentRulesRaw;
 use zad::permissions::pattern::PatternListRaw;
 use zad::service::discord::permissions::{
     self as perms, DiscordFunction, DiscordPermissionsRaw, EffectivePermissions, FunctionBlockRaw,
 };
+
+/// A fresh signing key per test. Keeps the real OS keychain out of
+/// the test path — the secrets layer routes through the in-memory
+/// backend, and since we never store `SIGNING_ACCOUNT`, verify's
+/// keychain cross-check is a no-op and the embedded pubkey is
+/// authoritative.
+fn test_key() -> SigningKey {
+    zad::secrets::use_memory_backend();
+    SigningKey::generate()
+}
 
 fn raw_with_send_allow(allow: Vec<&str>) -> DiscordPermissionsRaw {
     DiscordPermissionsRaw {
@@ -28,7 +39,8 @@ fn raw_with_send_allow(allow: Vec<&str>) -> DiscordPermissionsRaw {
 }
 
 fn write_raw(path: &std::path::Path, raw: &DiscordPermissionsRaw) {
-    perms::save_file(path, raw).unwrap();
+    let key = test_key();
+    perms::save_file(path, raw, &key).unwrap();
 }
 
 fn load(path: &std::path::Path) -> perms::DiscordPermissions {
@@ -62,7 +74,8 @@ fn starter_template_round_trips_through_toml() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
     let raw = perms::starter_template();
-    perms::save_file(&p, &raw).unwrap();
+    let key = test_key();
+    perms::save_file(&p, &raw, &key).unwrap();
 
     let body = std::fs::read_to_string(&p).unwrap();
     assert!(body.contains("deny_words"), "body: {body}");
@@ -76,7 +89,17 @@ fn starter_template_round_trips_through_toml() {
 fn invalid_glob_surfaces_the_file_path() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
-    std::fs::write(&p, "[send]\nchannels.allow = [\"re:(\"]\n").unwrap();
+    let raw = DiscordPermissionsRaw {
+        send: FunctionBlockRaw {
+            channels: PatternListRaw {
+                allow: vec!["re:(".into()],
+                deny: vec![],
+            },
+            ..FunctionBlockRaw::default()
+        },
+        ..DiscordPermissionsRaw::default()
+    };
+    write_raw(&p, &raw);
     let err = perms::load_file(&p).unwrap_err();
     let s = err.to_string();
     assert!(s.contains(&p.display().to_string()), "err: {s}");

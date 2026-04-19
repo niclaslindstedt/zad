@@ -74,6 +74,25 @@ pub enum ZadError {
         config_path: PathBuf,
     },
 
+    #[error(
+        "permission denied for `load`: signature missing\n  config: {path}\n  tip: run `zad <service> permissions sign` to sign the file, or re-init it"
+    )]
+    SignatureMissing { path: PathBuf },
+
+    #[error(
+        "permission denied for `load`: signature invalid ({reason})\n  config: {path}\n  tip: the file was modified after signing; re-sign it with `zad <service> permissions sign` or revert the edit"
+    )]
+    SignatureInvalid { path: PathBuf, reason: String },
+
+    #[error(
+        "permission denied for `load`: signing key mismatch (file signed with {found_fingerprint}, local keychain holds {expected_fingerprint})\n  config: {path}\n  tip: either re-sign the file with the local key or replace the keychain entry with the authoring key"
+    )]
+    SignatureKeyMismatch {
+        path: PathBuf,
+        expected_fingerprint: String,
+        found_fingerprint: String,
+    },
+
     #[error("invalid input: {0}")]
     Invalid(String),
 

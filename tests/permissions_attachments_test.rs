@@ -189,8 +189,14 @@ fn merge_unions_deny_lists() {
 // tests use — global and local files both narrow.
 // ---------------------------------------------------------------------------
 
+fn test_key() -> zad::permissions::SigningKey {
+    zad::secrets::use_memory_backend();
+    zad::permissions::SigningKey::generate()
+}
+
 fn write_perms(path: &std::path::Path, raw: &DiscordPermissionsRaw) {
-    save_file(path, raw).unwrap();
+    let key = test_key();
+    save_file(path, raw, &key).unwrap();
 }
 
 fn eff_with(

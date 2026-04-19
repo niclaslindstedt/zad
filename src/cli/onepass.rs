@@ -597,7 +597,9 @@ fn run_permissions_init(args: PermissionsInitArgs) -> Result<()> {
             path.display()
         )));
     }
-    perms::save_file(&path, &perms::starter_template())?;
+    let key = crate::permissions::signing::load_or_create_from_keychain()?;
+    crate::permissions::signing::write_public_key_cache(&key)?;
+    perms::save_file(&path, &perms::starter_template(), &key)?;
     if args.json {
         let out = PermissionsInitOut {
             command: "1pass.permissions.init",
@@ -612,6 +614,7 @@ fn run_permissions_init(args: PermissionsInitArgs) -> Result<()> {
         "Wrote 1pass permissions starter policy to {} ({scope_label}).",
         path.display()
     );
+    println!("Signed with key {}.", key.fingerprint());
     println!("Edit to narrow further; re-run `zad 1pass permissions show` to inspect.");
     Ok(())
 }

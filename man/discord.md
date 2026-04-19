@@ -234,7 +234,11 @@ zad discord permissions check --function <name> [--channel|--user|--guild <id|na
 - `init` — write a starter policy. Defaults to the global scope; pass
   `--local` to target `~/.zad/projects/<slug>/services/discord/`. The
   template denies admin-like channels and all `channels.manage`
-  operations.
+  operations. On first run `init` also generates a machine-wide
+  Ed25519 signing keypair in your OS keychain (account `signing:v1`)
+  and signs the starter template. Subsequent `init` calls reuse the
+  same keypair. See [`docs/permissions.md`](../docs/permissions.md)
+  for the trust model.
 - `check` — dry-run a proposed action against the effective policy.
   Exits 0 on allow, 1 on deny with the reason and the config path
   printed.

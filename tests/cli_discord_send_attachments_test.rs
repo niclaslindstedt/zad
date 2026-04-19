@@ -220,14 +220,19 @@ fn permissions_deny_by_extension() {
         }
     }
     let perms_path = perms_path.expect("local permissions file created by init");
-    std::fs::write(
-        &perms_path,
-        r#"
+    {
+        use zad::permissions::SigningKey;
+        use zad::service::discord::permissions::{self as perms, DiscordPermissionsRaw};
+        let raw: DiscordPermissionsRaw = toml::from_str(
+            r#"
 [send.attachments]
 extensions = { allow = ["png", "jpg"], deny = [] }
 "#,
-    )
-    .unwrap();
+        )
+        .unwrap();
+        let key = SigningKey::generate();
+        perms::save_file(&perms_path, &raw, &key).unwrap();
+    }
 
     let f = fixture_file(project.path(), "secret.pdf", b"%PDF-1.4");
 

@@ -22,9 +22,13 @@
 pub mod attachments;
 pub mod content;
 pub mod pattern;
+pub mod service;
+pub mod signing;
 pub mod time;
 
 pub use attachments::{AttachmentInfo, AttachmentRules};
 pub use content::ContentRules;
 pub use pattern::{Pattern, PatternList};
+pub use service::{HasSignature, PermissionsService};
+pub use signing::{Signature, SigningKey};
 pub use time::{TimeWindow, Weekday};

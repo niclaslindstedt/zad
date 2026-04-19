@@ -38,6 +38,8 @@ use crate::error::{Result, ZadError};
 use crate::permissions::{
     content::{ContentRules, ContentRulesRaw},
     pattern::{DenyReason, PatternList, PatternListRaw},
+    service::HasSignature,
+    signing::{self, Signature, SigningKey},
     time::{TimeWindow, TimeWindowRaw},
 };
 use crate::service::onepass::client::{Item, ItemField, ItemSummary, ParsedOpRef, Vault};
@@ -93,6 +95,20 @@ pub struct OnePassPermissionsRaw {
     /// the vault(s) the agent may write to.
     #[serde(default, skip_serializing_if = "CreateBlockRaw_is_default")]
     pub create: CreateBlockRaw,
+
+    /// Ed25519 signature over the canonical serialization of every
+    /// other field. See [`crate::permissions::signing`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Signature>,
+}
+
+impl HasSignature for OnePassPermissionsRaw {
+    fn signature(&self) -> Option<&Signature> {
+        self.signature.as_ref()
+    }
+    fn set_signature(&mut self, sig: Option<Signature>) {
+        self.signature = sig;
+    }
 }
 
 /// Per-verb read-side block. Any field that's absent falls back to the
@@ -808,9 +824,26 @@ pub fn load_file(path: &Path) -> Result<Option<OnePassPermissions>> {
         path: path.to_path_buf(),
         source: e,
     })?;
+    signing::verify_raw(&raw, path)?;
     let compiled = OnePassPermissions::compile(&raw, path.to_path_buf())
         .map_err(|e| wrap_compile_error(e, path))?;
     Ok(Some(compiled))
+}
+
+/// Read a file's raw policy (signature included) without compiling.
+pub fn load_raw_file(path: &Path) -> Result<Option<OnePassPermissionsRaw>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw_str = std::fs::read_to_string(path).map_err(|e| ZadError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let raw: OnePassPermissionsRaw = toml::from_str(&raw_str).map_err(|e| ZadError::TomlParse {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    Ok(Some(raw))
 }
 
 fn wrap_compile_error(err: ZadError, path: &Path) -> ZadError {
@@ -834,14 +867,35 @@ pub fn load_effective_for(slug: &str) -> Result<EffectivePermissions> {
     Ok(EffectivePermissions { global, local })
 }
 
-pub fn save_file(path: &Path, raw: &OnePassPermissionsRaw) -> Result<()> {
+pub fn save_file(path: &Path, raw: &OnePassPermissionsRaw, key: &SigningKey) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| ZadError::Io {
             path: parent.to_path_buf(),
             source: e,
         })?;
     }
-    let body = toml::to_string_pretty(raw)?;
+    let mut to_write = raw.clone();
+    to_write.set_signature(None);
+    let sig = signing::sign_raw(&to_write, key)?;
+    to_write.set_signature(Some(sig));
+    let body = toml::to_string_pretty(&to_write)?;
+    std::fs::write(path, body).map_err(|e| ZadError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
+/// Write `raw` without signing. Staging-only.
+pub fn save_unsigned(path: &Path, raw: &OnePassPermissionsRaw) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| ZadError::Io {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+    let mut to_write = raw.clone();
+    to_write.set_signature(None);
+    let body = toml::to_string_pretty(&to_write)?;
     std::fs::write(path, body).map_err(|e| ZadError::Io {
         path: path.to_path_buf(),
         source: e,
@@ -882,5 +936,31 @@ pub fn starter_template() -> OnePassPermissionsRaw {
             ..CreateBlockRaw::default()
         },
         ..OnePassPermissionsRaw::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PermissionsService binding
+// ---------------------------------------------------------------------------
+
+/// Zero-sized type used to feed the shared permissions runner with
+/// 1Password-specific bindings. See
+/// [`crate::permissions::service::PermissionsService`].
+pub struct PermissionsService;
+
+impl crate::permissions::service::PermissionsService for PermissionsService {
+    const NAME: &'static str = SERVICE_NAME;
+    type Raw = OnePassPermissionsRaw;
+
+    fn starter_template() -> Self::Raw {
+        starter_template()
+    }
+
+    fn all_functions() -> &'static [&'static str] {
+        &["vaults", "items", "tags", "get", "read", "inject", "create"]
+    }
+
+    fn target_kinds() -> &'static [&'static str] {
+        &["vault", "item", "tag", "category", "field"]
     }
 }
