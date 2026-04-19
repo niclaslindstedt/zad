@@ -83,6 +83,7 @@ can add the bot to a guild.
 | `--bot-token <token>` | string | — | Bot token. Stored in the OS keychain, not the TOML. |
 | `--bot-token-env <VAR>` | string | — | Read the bot token from the named environment variable. Mutually exclusive with `--bot-token`. |
 | `--default-guild <id>` | string | — | Optional default guild (server) ID. |
+| `--self-user <id>` | string | — | Your own Discord user ID (numeric snowflake). Stored non-secretly as `self_user_id` and resolved from `@me` in later `send --dm` targets. Validated against `GET /users/{id}` before being persisted. Interactive mode prints the Developer Mode recipe before the prompt; omit this flag and leave the prompt blank to skip — the field can be set later via `zad discord self set <id>`. |
 | `--scopes <list>` | CSV | `guilds,messages.read,messages.send` | Capabilities to enable. |
 | `--force` | bool | `false` | Overwrite any existing credentials at the chosen scope. |
 | `--non-interactive` | bool | `false` | Fail instead of prompting for any missing value. |
@@ -130,6 +131,7 @@ browser-deep-link flow `create discord` uses.
 | `--bot-token <token>` | string | — | Bot token. Stored in the OS keychain, not the TOML. |
 | `--bot-token-env <VAR>` | string | — | Read the bot token from the named environment variable. Mutually exclusive with `--bot-token`. |
 | `--default-chat <ref>` | string | — | Optional default chat. Accepts a signed chat_id (negative for groups/supergroups), a `@username` (public channels/supergroups), or a directory alias. |
+| `--self-chat <chat_id>` | signed integer | — | Your own private-chat ID with this bot. Stored non-secretly as `self_chat_id` and resolved from `@me` in later `send`/`read` targets. Interactive mode skips this flag and instead offers to run the capture flow — polling `getUpdates` for up to 60s waiting for your first message to the bot. Non-interactive mode writes the flag verbatim. The field can be set later via `zad telegram self capture` or `zad telegram self set <id>`. |
 | `--scopes <list>` | CSV | `chats,messages.read,messages.send` | Capabilities to enable. |
 | `--force` | bool | `false` | Overwrite any existing credentials at the chosen scope. |
 | `--non-interactive` | bool | `false` | Fail instead of prompting for any missing value. |

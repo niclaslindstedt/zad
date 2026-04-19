@@ -10,9 +10,11 @@
 //!
 //! See `docs/services.md#adding-a-new-service` for the full recipe.
 
+use std::time::{Duration, Instant};
+
 use async_trait::async_trait;
 use clap::Args;
-use dialoguer::{Input, Password, theme::ColorfulTheme};
+use dialoguer::{Confirm, Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
     BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
@@ -22,6 +24,14 @@ use crate::config::{ProjectConfig, TelegramServiceCfg};
 use crate::error::{Result, ZadError};
 use crate::secrets::{self, Scope};
 use crate::service::telegram::TelegramHttp;
+use crate::service::telegram::client::BotIdentity;
+
+/// How long `capture_self_chat` will wait for the user to send a
+/// message to the bot before giving up. Picked to be long enough for a
+/// context-switch to the Telegram client, short enough to fail fast if
+/// the user never sends anything.
+pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(60);
+const CAPTURE_POLL_INTERVAL: Duration = Duration::from_millis(1500);
 
 const DEFAULT_SCOPES: &[&str] = &["chats", "messages.read", "messages.send"];
 const ALL_SCOPES: &[&str] = &["chats", "messages.read", "messages.send", "gateway.listen"];
@@ -55,6 +65,14 @@ pub struct CreateArgs {
     /// alias.
     #[arg(long)]
     pub default_chat: Option<String>,
+    /// Private-chat ID for the human user this bot belongs to.
+    /// Resolved from the literal `@me` in later send targets. If
+    /// omitted in interactive mode, `create` offers to capture it by
+    /// polling for your first message to the bot; if omitted in
+    /// non-interactive mode, the field is left unset (you can fill
+    /// it later via `zad telegram self capture|set`).
+    #[arg(long)]
+    pub self_chat: Option<i64>,
 }
 
 impl CreateArgsLike for CreateArgs {
@@ -85,7 +103,7 @@ impl LifecycleService for TelegramLifecycle {
         cfg.disable_telegram();
     }
 
-    fn resolve(
+    async fn resolve(
         args: &CreateArgs,
         non_interactive: bool,
     ) -> Result<(TelegramServiceCfg, TelegramSecrets)> {
@@ -103,10 +121,13 @@ impl LifecycleService for TelegramLifecycle {
             open_browser,
             non_interactive,
         )?;
+        let self_chat_id =
+            resolve_self_chat_id(args.self_chat, &bot_token, open_browser, non_interactive).await?;
         Ok((
             TelegramServiceCfg {
                 scopes,
                 default_chat,
+                self_chat_id,
             },
             TelegramSecrets { bot_token },
         ))
@@ -162,12 +183,16 @@ impl LifecycleService for TelegramLifecycle {
         if let Some(c) = &cfg.default_chat {
             out.push(("chat", c.clone()));
         }
+        if let Some(id) = cfg.self_chat_id {
+            out.push(("self", id.to_string()));
+        }
         out
     }
 
     fn cfg_json(cfg: &TelegramServiceCfg) -> serde_json::Value {
         serde_json::json!({
             "default_chat": cfg.default_chat,
+            "self_chat_id": cfg.self_chat_id,
         })
     }
 
@@ -288,4 +313,152 @@ fn validate_chat(v: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Self-chat capture
+// ---------------------------------------------------------------------------
+
+/// Snapshot of the first private-chat message we saw during capture.
+/// `chat_id` is the value persisted to config; the remaining fields are
+/// used only to render the confirmation prompt.
+#[derive(Debug, Clone)]
+pub struct CapturedChat {
+    pub chat_id: i64,
+    pub first_name: String,
+    pub username: Option<String>,
+}
+
+/// Resolve `self_chat_id` for `zad service create telegram`. If
+/// `--self-chat` was passed, use it verbatim. In non-interactive mode
+/// we leave it unset (the user can run `zad telegram self set` later).
+/// Interactively, we show the bot's `@username` (from `getMe`), ask if
+/// the user wants to capture now, and on `yes` run the polling loop.
+async fn resolve_self_chat_id(
+    flag: Option<i64>,
+    bot_token: &str,
+    open_browser: bool,
+    non_interactive: bool,
+) -> Result<Option<i64>> {
+    if let Some(id) = flag {
+        return Ok(Some(id));
+    }
+    if non_interactive {
+        return Ok(None);
+    }
+
+    let client = TelegramHttp::unscoped(bot_token);
+    let identity = client.get_me().await.map_err(|e| ZadError::Service {
+        name: "telegram",
+        message: format!("getMe failed while preparing self-chat capture: {e}"),
+    })?;
+
+    println!();
+    println!("Optional: configure `@me` so commands like");
+    println!("  zad telegram send --chat @me \"hello\"");
+    println!("resolve to your own private chat with the bot.");
+
+    let want = Confirm::with_theme(&theme())
+        .with_prompt("Capture your self-chat now?")
+        .default(true)
+        .interact()?;
+    if !want {
+        println!(
+            "Skipping. Run `zad telegram self capture` or `zad telegram self set <id>` later."
+        );
+        return Ok(None);
+    }
+
+    match capture_self_chat(&client, &identity, open_browser).await? {
+        Some(c) => Ok(Some(c.chat_id)),
+        None => Ok(None),
+    }
+}
+
+/// Poll `getUpdates` for up to [`CAPTURE_TIMEOUT`] seconds, looking for
+/// the first private-chat message whose `from.id` differs from the
+/// bot's own ID. Returns `Some(CapturedChat)` on success (and after the
+/// user confirms the detected identity), `None` if the user skipped or
+/// the timeout elapsed.
+///
+/// Shared between the create-time path and `zad telegram self capture`
+/// so both use the exact same prompts and filtering.
+pub async fn capture_self_chat(
+    client: &TelegramHttp,
+    identity: &BotIdentity,
+    open_browser: bool,
+) -> Result<Option<CapturedChat>> {
+    let handle = identity
+        .username
+        .as_deref()
+        .map(|u| format!("@{u}"))
+        .unwrap_or_else(|| identity.first_name.clone());
+    let bot_url = identity
+        .username
+        .as_deref()
+        .map(|u| format!("https://t.me/{u}"));
+
+    println!();
+    println!("Open Telegram and send {handle} any message (e.g. /start).");
+    if let Some(url) = &bot_url {
+        println!("  {url}");
+        if open_browser {
+            let _ = open::that(url);
+        }
+    }
+    println!(
+        "Waiting up to {}s for your message…",
+        CAPTURE_TIMEOUT.as_secs()
+    );
+
+    let deadline = Instant::now() + CAPTURE_TIMEOUT;
+    let bot_id = identity.id;
+    while Instant::now() < deadline {
+        let updates = client
+            .get_updates_unscoped(None)
+            .await
+            .map_err(|e| ZadError::Service {
+                name: "telegram",
+                message: format!("getUpdates failed during capture: {e}"),
+            })?;
+        for update in &updates {
+            if let Some(msg) = update.message.as_ref()
+                && msg.chat.kind == "private"
+                && let Some(from) = msg.from.as_ref()
+                && from.id != bot_id
+            {
+                let captured = CapturedChat {
+                    chat_id: msg.chat.id,
+                    first_name: from.first_name.clone(),
+                    username: from.username.clone(),
+                };
+                return confirm_captured(captured);
+            }
+        }
+        tokio::time::sleep(CAPTURE_POLL_INTERVAL).await;
+    }
+
+    println!(
+        "No message received within {}s. Skipping — run `zad telegram self capture` when you're ready.",
+        CAPTURE_TIMEOUT.as_secs()
+    );
+    Ok(None)
+}
+
+fn confirm_captured(c: CapturedChat) -> Result<Option<CapturedChat>> {
+    let handle = c
+        .username
+        .as_deref()
+        .map(|u| format!(" (@{u})"))
+        .unwrap_or_default();
+    let label = format!(
+        "Identified you as {}{handle}, chat id {}.",
+        c.first_name, c.chat_id
+    );
+    println!("  ✓ {label}");
+    let ok = Confirm::with_theme(&theme())
+        .with_prompt("Save as self-chat?")
+        .default(true)
+        .interact()?;
+    if ok { Ok(Some(c)) } else { Ok(None) }
 }

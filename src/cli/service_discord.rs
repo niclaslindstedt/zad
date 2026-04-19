@@ -63,6 +63,14 @@ pub struct CreateArgs {
     /// Optional default guild (server) ID.
     #[arg(long)]
     pub default_guild: Option<String>,
+    /// Numeric Discord user ID for the human user this bot belongs to.
+    /// Resolved from the literal `@me` in later send targets. Obtain
+    /// from Discord: Settings → Advanced → enable Developer Mode, then
+    /// right-click yourself → "Copy User ID". Leave unset in
+    /// non-interactive mode to skip; fill later via `zad discord self
+    /// set <id>`.
+    #[arg(long)]
+    pub self_user: Option<String>,
 }
 
 impl CreateArgsLike for CreateArgs {
@@ -93,7 +101,7 @@ impl LifecycleService for DiscordLifecycle {
         cfg.disable_discord();
     }
 
-    fn resolve(
+    async fn resolve(
         args: &CreateArgs,
         non_interactive: bool,
     ) -> Result<(DiscordServiceCfg, DiscordSecrets)> {
@@ -117,11 +125,14 @@ impl LifecycleService for DiscordLifecycle {
             open_browser,
             non_interactive,
         )?;
+        let self_user_id =
+            resolve_self_user_id(args.self_user.as_deref(), &bot_token, non_interactive).await?;
         Ok((
             DiscordServiceCfg {
                 application_id,
                 scopes,
                 default_guild,
+                self_user_id,
             },
             DiscordSecrets { bot_token },
         ))
@@ -177,6 +188,9 @@ impl LifecycleService for DiscordLifecycle {
         if let Some(g) = &cfg.default_guild {
             out.push(("guild", g.clone()));
         }
+        if let Some(u) = &cfg.self_user_id {
+            out.push(("self", u.clone()));
+        }
         out
     }
 
@@ -184,6 +198,7 @@ impl LifecycleService for DiscordLifecycle {
         serde_json::json!({
             "application_id": cfg.application_id,
             "default_guild": cfg.default_guild,
+            "self_user_id": cfg.self_user_id,
         })
     }
 
@@ -317,4 +332,63 @@ fn install_url(application_id: &str) -> String {
     format!(
         "https://discord.com/api/oauth2/authorize?client_id={application_id}&scope=bot&permissions=0"
     )
+}
+
+// ---------------------------------------------------------------------------
+// Self-user capture
+// ---------------------------------------------------------------------------
+
+/// Resolve `self_user_id` for `zad service create discord`. The flag
+/// path is non-interactive: validate numeric, validate against the
+/// Discord API, persist. The interactive path prints the Developer
+/// Mode recipe, prompts, and validates.
+async fn resolve_self_user_id(
+    flag: Option<&str>,
+    bot_token: &str,
+    non_interactive: bool,
+) -> Result<Option<String>> {
+    if let Some(raw) = flag {
+        return validate_self_user(bot_token, raw).await.map(Some);
+    }
+    if non_interactive {
+        return Ok(None);
+    }
+
+    println!();
+    println!("Optional: configure `@me` so commands like");
+    println!("  zad discord send --user @me \"hello\"");
+    println!("resolve to your own Discord user.");
+    println!("Find your user ID: Settings → Advanced → enable Developer Mode,");
+    println!("then right-click yourself → \"Copy User ID\".");
+
+    let raw: String = Input::with_theme(&theme())
+        .with_prompt("Your Discord user ID (leave blank to skip)")
+        .allow_empty(true)
+        .interact_text()?;
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    validate_self_user(bot_token, raw.trim()).await.map(Some)
+}
+
+/// Validate a Discord user-ID string: numeric snowflake that resolves
+/// via `GET /users/{id}`. Shared between the create-time path and
+/// `zad discord self set`. Returns the canonical string form (not the
+/// parsed `u64`) because the config field is already a `String`.
+pub async fn validate_self_user(bot_token: &str, raw: &str) -> Result<String> {
+    validate_numeric(raw, "self-user")?;
+    let id: u64 = raw.parse().map_err(|_| {
+        ZadError::Invalid(format!(
+            "self-user `{raw}` doesn't fit in a 64-bit unsigned integer"
+        ))
+    })?;
+    let name = DiscordHttp::unscoped(bot_token)
+        .get_user(id)
+        .await
+        .map_err(|e| ZadError::Service {
+            name: "discord",
+            message: format!("user-id validation failed: {e}"),
+        })?;
+    println!("  ✓ resolved `{raw}` as `{name}`");
+    Ok(raw.to_string())
 }

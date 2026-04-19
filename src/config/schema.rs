@@ -39,6 +39,12 @@ pub struct DiscordServiceCfg {
     pub scopes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_guild: Option<String>,
+    /// Numeric snowflake of the human user this bot belongs to. Populated
+    /// at `zad service create discord` time (or later via
+    /// `zad discord self set`) and resolved from the literal `@me` in
+    /// send targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_user_id: Option<String>,
 }
 
 /// Global Telegram service config stored at
@@ -57,6 +63,13 @@ pub struct TelegramServiceCfg {
     /// for public channels, or a directory alias.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_chat: Option<String>,
+    /// The private-chat ID Telegram assigns to the human user this bot
+    /// belongs to. Populated at `zad service create telegram` time (or
+    /// later via `zad telegram self capture|set`) once the user has
+    /// sent a message to the bot, and resolved from the literal `@me`
+    /// in send targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_chat_id: Option<i64>,
 }
 
 impl ProjectConfig {

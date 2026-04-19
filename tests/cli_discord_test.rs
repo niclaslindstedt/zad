@@ -65,7 +65,8 @@ fn help_lists_every_subcommand() {
         .stdout(contains("read"))
         .stdout(contains("channels"))
         .stdout(contains("join"))
-        .stdout(contains("leave"));
+        .stdout(contains("leave"))
+        .stdout(contains("self"));
 }
 
 // ---------------------------------------------------------------------------

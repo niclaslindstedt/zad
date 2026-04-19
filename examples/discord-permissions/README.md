@@ -41,5 +41,11 @@ The same pattern applies to every future service: each provider
 reuses the generic `content` / `time` / `allow` / `deny` primitives
 under `src/permissions/` and names its own per-function blocks.
 
+Patterns match every alias of the target — raw input, resolved
+snowflake, and directory entries — so `deny = ["@me"]` under `[send]`
+blocks `zad discord send --dm @me …` even after the sigil resolves.
+Conversely, allow-lists written against numeric snowflakes keep
+admitting `@me` invocations because the resolved ID is tested too.
+
 See [`docs/configuration.md`](../../docs/configuration.md#permissions-file)
 for the full schema.

@@ -46,6 +46,11 @@ pub enum Action {
     /// Inspect, scaffold, or dry-run the permissions policy that
     /// narrows what this service may actually do.
     Permissions(PermissionsArgs),
+    /// Manage the private-chat ID resolved from the literal `@me` in
+    /// send/read targets. Capture (by polling for your first message
+    /// to the bot), show, set, or clear.
+    #[command(name = "self")]
+    SelfCmd(SelfArgs),
 }
 
 pub async fn run(args: TelegramArgs) -> Result<()> {
@@ -59,6 +64,7 @@ pub async fn run(args: TelegramArgs) -> Result<()> {
         Action::Discover(a) => run_discover(a).await,
         Action::Directory(a) => run_directory(a),
         Action::Permissions(a) => run_permissions(a),
+        Action::SelfCmd(a) => run_self(a).await,
     }
 }
 
@@ -108,6 +114,7 @@ async fn run_send(args: SendArgs) -> Result<()> {
     let (chat_input, chat_id) = resolve_chat_arg(
         args.chat.as_deref(),
         cfg.default_chat.as_deref(),
+        cfg.self_chat_id,
         &directory,
     )?;
     permissions.check_send_chat(&chat_input, chat_id, &directory)?;
@@ -185,12 +192,13 @@ async fn run_read(args: ReadArgs) -> Result<()> {
             "--limit must be between 1 and 100".into(),
         ));
     }
-    let (_cfg, _scope) = effective_config()?;
+    let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let permissions = perms::load_effective()?;
     permissions.check_time(TelegramFunction::Read)?;
 
-    let (chat_input, chat_id) = resolve_chat_arg(Some(&args.chat), None, &directory)?;
+    let (chat_input, chat_id) =
+        resolve_chat_arg(Some(&args.chat), None, cfg.self_chat_id, &directory)?;
     permissions.check_read_chat(&chat_input, chat_id, &directory)?;
 
     let http = telegram_http_for("messages.read", false)?;
@@ -494,6 +502,7 @@ fn telegram_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn Te
 fn resolve_chat_arg(
     flag: Option<&str>,
     default: Option<&str>,
+    self_chat_id: Option<i64>,
     directory: &Directory,
 ) -> Result<(String, i64)> {
     let raw = flag.or(default).ok_or_else(|| {
@@ -502,6 +511,17 @@ fn resolve_chat_arg(
                 .into(),
         )
     })?;
+    if raw.eq_ignore_ascii_case("@me") {
+        return match self_chat_id {
+            Some(id) => Ok((raw.to_string(), id)),
+            None => Err(ZadError::Invalid(
+                "`@me` has no self-chat configured. Run `zad telegram self capture` \
+                 to poll for your first message to the bot, or \
+                 `zad telegram self set <id>` if you already know the id."
+                    .into(),
+            )),
+        };
+    }
     let id = directory.resolve_chat(raw).ok_or_else(|| {
         let key = raw.strip_prefix('@').unwrap_or(raw);
         ZadError::Invalid(format!(
@@ -1027,4 +1047,149 @@ fn parse_function(name: &str) -> Result<TelegramFunction> {
             "unknown function `{other}`. Expected one of: send, read, chats, discover."
         ))),
     }
+}
+
+// ---------------------------------------------------------------------------
+// self — manage the `@me` resolution target
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct SelfArgs {
+    #[command(subcommand)]
+    pub action: Option<SelfAction>,
+
+    /// When no subcommand is given, behave like `show`.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SelfAction {
+    /// Print the stored self-chat ID (or note that it's not set).
+    Show(SelfShowArgs),
+    /// Set the self-chat ID directly. No validation — use `capture`
+    /// for a validated setup.
+    Set(SelfSetArgs),
+    /// Clear the stored self-chat ID.
+    Clear(SelfClearArgs),
+    /// Poll `getUpdates` for up to 60s waiting for your first message
+    /// to the bot, then store that private-chat ID.
+    Capture(SelfCaptureArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SelfShowArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SelfSetArgs {
+    /// Your private-chat ID (a signed integer).
+    pub chat_id: i64,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SelfClearArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SelfCaptureArgs {
+    /// Don't open the bot's `https://t.me/<username>` link in the
+    /// system browser. The link is still printed either way.
+    #[arg(long)]
+    pub no_browser: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SelfOutput {
+    command: &'static str,
+    self_chat_id: Option<i64>,
+}
+
+async fn run_self(args: SelfArgs) -> Result<()> {
+    match args.action {
+        None => run_self_show(SelfShowArgs { json: args.json }),
+        Some(SelfAction::Show(a)) => run_self_show(a),
+        Some(SelfAction::Set(a)) => run_self_set(a),
+        Some(SelfAction::Clear(a)) => run_self_clear(a),
+        Some(SelfAction::Capture(a)) => run_self_capture(a).await,
+    }
+}
+
+fn run_self_show(args: SelfShowArgs) -> Result<()> {
+    let (cfg, _scope) = effective_config()?;
+    emit_self(args.json, "telegram.self.show", cfg.self_chat_id)
+}
+
+fn run_self_set(args: SelfSetArgs) -> Result<()> {
+    let (mut cfg, scope) = effective_config()?;
+    cfg.self_chat_id = Some(args.chat_id);
+    save_effective_config(&cfg, &scope)?;
+    emit_self(args.json, "telegram.self.set", cfg.self_chat_id)
+}
+
+fn run_self_clear(args: SelfClearArgs) -> Result<()> {
+    let (mut cfg, scope) = effective_config()?;
+    cfg.self_chat_id = None;
+    save_effective_config(&cfg, &scope)?;
+    emit_self(args.json, "telegram.self.clear", None)
+}
+
+async fn run_self_capture(args: SelfCaptureArgs) -> Result<()> {
+    let (mut cfg, scope) = effective_config()?;
+    let token = load_token(&scope)?;
+    let client = TelegramHttp::unscoped(&token);
+    let identity = client.get_me().await?;
+    let captured =
+        crate::cli::service_telegram::capture_self_chat(&client, &identity, !args.no_browser)
+            .await?;
+    match captured {
+        Some(c) => {
+            cfg.self_chat_id = Some(c.chat_id);
+            save_effective_config(&cfg, &scope)?;
+            emit_self(args.json, "telegram.self.capture", cfg.self_chat_id)
+        }
+        None => {
+            // User declined at the confirmation prompt or timeout
+            // expired. Report the unchanged state rather than erroring —
+            // `capture_self_chat` already printed the reason.
+            emit_self(args.json, "telegram.self.capture", cfg.self_chat_id)
+        }
+    }
+}
+
+fn emit_self(json: bool, command: &'static str, self_chat_id: Option<i64>) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&SelfOutput {
+                command,
+                self_chat_id
+            })
+            .unwrap()
+        );
+    } else {
+        match self_chat_id {
+            Some(id) => println!("self chat id: {id}"),
+            None => println!("self chat id: not configured"),
+        }
+    }
+    Ok(())
+}
+
+fn save_effective_config(cfg: &TelegramServiceCfg, scope: &EffectiveScope) -> Result<()> {
+    let path = match scope {
+        EffectiveScope::Local(slug) => {
+            config::path::project_service_config_path_for(slug, "telegram")?
+        }
+        EffectiveScope::Global => config::path::global_service_config_path("telegram")?,
+    };
+    config::save_flat(&path, cfg)
 }

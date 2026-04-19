@@ -95,7 +95,7 @@ pub trait LifecycleService: Send + Sync + 'static {
     /// prompts the user for any `Option<_>` fields that arrived
     /// empty; non-interactive mode returns
     /// [`ZadError::MissingRequired`] for anything still missing.
-    fn resolve(
+    async fn resolve(
         args: &Self::CreateArgs,
         non_interactive: bool,
     ) -> Result<(Self::Cfg, Self::Secrets)>;
@@ -471,7 +471,7 @@ pub async fn run_create<T: LifecycleService>(args: T::CreateArgs) -> Result<()> 
         });
     }
 
-    let (cfg, creds) = T::resolve(&args, base.non_interactive)?;
+    let (cfg, creds) = T::resolve(&args, base.non_interactive).await?;
 
     let mut authenticated_as: Option<String> = None;
     if !base.no_validate {

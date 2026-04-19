@@ -27,6 +27,7 @@ matching bot token from the OS keychain.
 | `discover` | Walk the bot's visible guilds/channels/members and cache a name → snowflake map. |
 | `directory` | Inspect or hand-edit that cache. |
 | `permissions` | Inspect, scaffold, or dry-run the per-project permissions policy. |
+| `self` | Manage the Discord user ID resolved from the literal `@me` in `--dm` targets. |
 
 Every verb supports `--json` to emit machine-readable output instead
 of the human-readable default.
@@ -88,6 +89,11 @@ names may be prefixed with `@` and channel names with `#` for ergonomic
 pasting (`#general`, `@alice`). When the name is unknown, the error
 message prints the exact `zad discord directory set …` command that would
 map it.
+
+`--dm` also accepts the literal `@me` (case-insensitive), which resolves
+to the snowflake stored via `zad discord self set` (or `--self-user` on
+`service create`). Errors with a pointer to `self set` when no
+self-user is configured.
 
 ## `zad discord send`
 
@@ -238,6 +244,31 @@ zad discord permissions check --function <name> [--channel|--user|--guild <id|na
 | `--local` | bool | false | `init` writes to the project-local scope instead of global. |
 | `--json` | bool | false | Emit machine-readable JSON. |
 
+## `zad discord self`
+
+```
+zad discord self                       # show (same as `show`)
+zad discord self show
+zad discord self set     <USER_ID>     # validates against Discord before storing
+zad discord self clear
+```
+
+Manage the Discord user ID that `--dm @me` resolves to. Stored as
+`self_user_id` in the effective `config.toml` (non-secret).
+
+- `show` — print the stored value or `"not configured"`.
+- `set <user_id>` — validate the snowflake against `GET /users/{id}`
+  and, on success, persist it. Fails cleanly on an unknown or
+  non-numeric ID. Requires a stored bot token.
+- `clear` — remove the stored value.
+
+Find your own user ID in Discord: Settings → Advanced → enable
+Developer Mode, then right-click yourself → "Copy User ID".
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--json` | bool | false | Emit machine-readable JSON on every subcommand. |
+
 ## Environment variables
 
 | Variable | Description |
@@ -273,6 +304,9 @@ tail -n 20 deploy.log | zad discord send --channel general --stdin
 
 # DM a user directly
 zad discord send --dm @alice "standup in 5 minutes"
+
+# DM yourself (after `zad discord self set <your-user-id>`)
+zad discord send --dm @me "remember to file the time sheet"
 
 # Scaffold a local permissions policy, then dry-run a send
 zad discord permissions init --local

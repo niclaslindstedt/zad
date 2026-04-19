@@ -46,7 +46,8 @@ identifies the service):
 ```toml
 application_id = "1234567890"
 scopes         = ["guilds", "messages.read", "messages.send"]
-default_guild  = "987654321"   # optional
+default_guild  = "987654321"          # optional
+self_user_id   = "1112223334445556"   # optional — resolved from `@me` in --dm targets
 ```
 
 | Key | Type | Default | Description |
@@ -54,6 +55,7 @@ default_guild  = "987654321"   # optional
 | `application_id` | string | — | Discord application (bot) ID. Numeric snowflake. |
 | `scopes` | `[string]` | `["guilds", "messages.read", "messages.send"]` | Capabilities the service is permitted to use. |
 | `default_guild` | string? | — | Optional default guild (server) ID. |
+| `self_user_id` | string? | — | Your own Discord user ID. Resolved from the literal `@me` in `send --dm`. Populated at `service create` time (flag or prompt) or later via `zad discord self set <id>`. Validated against `GET /users/{id}` before being written. |
 
 Scopes are **enforced at runtime, before any network call**. Omitting a
 scope denies the corresponding operation locally with a `scope denied`
@@ -280,13 +282,15 @@ format is flat:
 
 ```toml
 scopes       = ["chats", "messages.read", "messages.send"]
-default_chat = "team-room"   # optional
+default_chat = "team-room"    # optional
+self_chat_id = 8675309        # optional — resolved from `@me` in --chat targets
 ```
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `scopes` | `[string]` | `["chats", "messages.read", "messages.send"]` | Capabilities the service is permitted to use. |
 | `default_chat` | string? | — | Optional default destination for `send`. Accepts a signed chat_id (negative for groups/supergroups), a public `@username`, or a directory alias. |
+| `self_chat_id` | i64? | — | Your own private-chat ID with this bot. Resolved from the literal `@me` in `send`/`read` targets. Captured interactively at `service create` time via a `getUpdates` poll (or set directly with `--self-chat`), and can be managed later via `zad telegram self capture|set|clear`. |
 
 Scopes are **enforced at runtime, before any network call**. The
 supported values are:

@@ -43,7 +43,6 @@ The `website/` directory contains the marketing site for `zad`. Per §11.2 of `O
 - [ ] Refresh generated content under `website/`
 - [ ] Build the website locally and smoke-test the home page
 - [ ] Confirm the §11.2 staleness CI check would pass
-- [ ] Run `oss-spec validate .`
 - [ ] Write the new baseline:
 
       git rev-parse HEAD > .agent/skills/update-website/.last-updated
