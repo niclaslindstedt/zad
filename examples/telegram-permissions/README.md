@@ -21,6 +21,9 @@ scope is the only gate when neither file exists.
   that tighten the shared defaults further — notably an allow-list on
   `discover` so the walk doesn't index every chat the bot happens to
   see.
+- A `[send.attachments]` sub-block that caps attachment count and
+  per-file size, allow-lists safe extensions, and deny-lists obvious
+  secret filenames.
 
 ## Try it out
 

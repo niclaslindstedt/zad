@@ -62,6 +62,14 @@ channels.deny  = ["*admin*", "mod-*", "ops-*"]
 # DMs are allow-listed — agents should not cold-DM strangers.
 users.allow    = ["alice", "bob"]
 
+# Attachment policy. All fields are optional. Discord already hard-caps
+# attachments at 10 per message; the cap here narrows it further.
+[send.attachments]
+max_count      = 5
+max_size_bytes = 8388608                                    # 8 MiB per file
+extensions     = { allow = ["png", "jpg", "txt", "log", "md", "json"], deny = ["exe", "dll", "sh"] }
+deny_filenames = { deny = [".env*", "id_rsa*", "*.pem"] }
+
 [read]
 # Reading is broader than writing, but still skip anything marked
 # private.

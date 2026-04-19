@@ -6,13 +6,14 @@
 //! underlying implementation is the live Bot-API-backed client or a
 //! `--dry-run` preview that never touches the network.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::error::Result;
-use crate::service::telegram::client::TelegramHttp;
+use crate::error::{Result, ZadError};
+use crate::service::telegram::client::{TELEGRAM_MAX_MEDIA_GROUP, TelegramHttp};
 use crate::service::{DryRunOp, DryRunSink};
 
 /// Signed chat identifier. Telegram chat IDs are negative for
@@ -48,15 +49,24 @@ pub struct ChatInfo {
 /// one-to-one with a verb reachable from `zad telegram …`.
 #[async_trait]
 pub trait TelegramTransport: Send + Sync {
-    async fn send(&self, chat: ChatId, body: &str) -> Result<i64>;
+    async fn send(&self, chat: ChatId, body: &str, attachments: &[PathBuf]) -> Result<i64>;
     async fn history(&self, chat: ChatId, limit: usize) -> Result<Vec<ChatMessage>>;
     async fn list_chats(&self) -> Result<Vec<ChatInfo>>;
 }
 
 #[async_trait]
 impl TelegramTransport for TelegramHttp {
-    async fn send(&self, chat: ChatId, body: &str) -> Result<i64> {
-        TelegramHttp::send_message(self, chat, body).await
+    async fn send(&self, chat: ChatId, body: &str, attachments: &[PathBuf]) -> Result<i64> {
+        match attachments.len() {
+            0 => TelegramHttp::send_message(self, chat, body).await,
+            1 => TelegramHttp::send_document(self, chat, body, &attachments[0]).await,
+            n if n <= TELEGRAM_MAX_MEDIA_GROUP => {
+                TelegramHttp::send_media_group(self, chat, body, attachments).await
+            }
+            n => Err(ZadError::Invalid(format!(
+                "{n} attachments is above Telegram's sendMediaGroup cap of {TELEGRAM_MAX_MEDIA_GROUP}"
+            ))),
+        }
     }
 
     async fn history(&self, chat: ChatId, limit: usize) -> Result<Vec<ChatMessage>> {
@@ -134,16 +144,46 @@ impl DryRunTelegramTransport {
 
 #[async_trait]
 impl TelegramTransport for DryRunTelegramTransport {
-    async fn send(&self, chat: ChatId, body: &str) -> Result<i64> {
+    async fn send(&self, chat: ChatId, body: &str, attachments: &[PathBuf]) -> Result<i64> {
         let len = body.chars().count();
+        let atts: Vec<serde_json::Value> = attachments
+            .iter()
+            .map(|p| {
+                let basename = p
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| p.display().to_string());
+                let bytes = std::fs::metadata(p).map(|m| m.len()).ok();
+                json!({
+                    "path": p.display().to_string(),
+                    "basename": basename,
+                    "bytes": bytes,
+                })
+            })
+            .collect();
+        let method = match attachments.len() {
+            0 => "sendMessage",
+            1 => "sendDocument",
+            _ => "sendMediaGroup",
+        };
+        let summary = if atts.is_empty() {
+            format!("would send {len} chars to chat {chat}")
+        } else {
+            format!(
+                "would send {len} chars + {} file(s) to chat {chat} (via {method})",
+                atts.len()
+            )
+        };
         self.record(
             "send",
-            format!("would send {len} chars to chat {chat}"),
+            summary,
             json!({
                 "command": "telegram.send",
+                "method": method,
                 "chat_id": chat.to_string(),
                 "body": body,
                 "body_chars": len,
+                "attachments": atts,
             }),
         );
         Ok(0)

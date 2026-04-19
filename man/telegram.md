@@ -82,7 +82,7 @@ mapping from verb to function block is:
 
 | Verb | Permissions block | Matches against |
 |---|---|---|
-| `send`     | `[send]`     | `chats` (for `--chat`); body against `content` |
+| `send`     | `[send]`     | `chats` (for `--chat`); body against `content`; files against `[send.attachments]` |
 | `read`     | `[read]`     | `chats` |
 | `chats`    | `[chats]`    | `chats` |
 | `discover` | `[discover]` | `chats` — denied chats are skipped in the walk |
@@ -109,7 +109,7 @@ When the name is unknown, the error message prints the exact
 ## `zad telegram send`
 
 ```
-zad telegram send [--chat <ID|@USERNAME|NAME>] [--stdin] [BODY]
+zad telegram send [--chat <ID|@USERNAME|NAME>] [--stdin] [--file PATH]... [BODY]
 ```
 
 Post a message. The body is taken from the positional argument, or
@@ -117,12 +117,20 @@ from standard input when `--stdin` is set. Bodies longer than
 Telegram's 4096-codepoint hard limit are rejected locally (no
 round-trip).
 
+Pass `--file PATH` one or more times to attach files. Zero files →
+`sendMessage`; one file → `sendDocument` (body becomes the caption);
+2–10 files → `sendMediaGroup` (body becomes the caption on the first
+item). When attachments are present Telegram's caption cap of 1024
+characters applies instead of the 4096-character plain-text cap, and
+the body may be empty.
+
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--chat <id\|@username\|name>` | chat_id \| `@username` \| directory name | `default_chat` from the effective config | Destination chat. |
 | `--stdin` | bool | `false` | Read the body from standard input instead of a positional argument. |
+| `--file <path>` | path | — | Attach a file. Repeat up to 10 times. When present the body is optional and the 1024-char caption cap applies. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
-| `--dry-run` | bool | `false` | Preview the outgoing call without contacting the Bot API — prints the payload as JSON on stdout and makes no network request. Scope and permission checks still run; no bot token is loaded. |
+| `--dry-run` | bool | `false` | Preview the outgoing call without contacting the Bot API — prints the payload as JSON on stdout (including `method`, and an `attachments` array with `path`, `basename`, and `bytes` per file) and makes no network request. Scope and permission checks still run; no bot token is loaded. |
 
 ## `zad telegram read`
 
@@ -275,6 +283,12 @@ zad telegram send --chat @me "remember to file the time sheet"
 
 # Send a multi-line body via stdin (handy for CI logs).
 tail -n 20 deploy.log | zad telegram send --chat team-room --stdin
+
+# Attach a file (routed as sendDocument; body becomes the caption).
+zad telegram send --chat team-room --file ./report.pdf "see attached"
+
+# Attach 2-10 files (routed as sendMediaGroup; caption on the first item).
+zad telegram send --chat team-room --file ./a.log --file ./b.png "both attached"
 
 # Fetch recent updates the bot has buffered (forward-only).
 zad telegram read --chat team-room --limit 50 --json | jq '.messages[].body'

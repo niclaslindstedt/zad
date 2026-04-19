@@ -59,6 +59,15 @@ chats.allow = ["team-room", "bot-*", "@team_notifications"]
 # Nothing admin-like, no ops channels, no direct ops noise.
 chats.deny  = ["*admin*", "mod-*", "ops-*"]
 
+# Attachment policy. Telegram routes a single --file through
+# sendDocument and 2-10 files through sendMediaGroup; the extension
+# and filename rules apply in both paths before the upload starts.
+[send.attachments]
+max_count      = 5
+max_size_bytes = 8388608                                    # 8 MiB per file
+extensions     = { allow = ["png", "jpg", "txt", "log", "md", "json", "pdf"], deny = ["exe", "dll", "sh"] }
+deny_filenames = { deny = [".env*", "id_rsa*", "*.pem"] }
+
 [read]
 # Reading is broader than writing, but still skip anything marked
 # private.

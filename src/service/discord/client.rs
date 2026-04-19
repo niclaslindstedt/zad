@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serenity::all::{
-    ChannelId as SerenityChannelId, ChannelType, CreateMessage, GetMessages,
+    ChannelId as SerenityChannelId, ChannelType, CreateAttachment, CreateMessage, GetMessages,
     GuildId as SerenityGuildId, UserId as SerenityUserId,
 };
 use serenity::builder::CreateChannel;
@@ -18,6 +18,11 @@ use crate::service::{
 /// counts codepoints, not bytes — hence `chars().count()` at the
 /// validation site.
 pub const DISCORD_MAX_MESSAGE_LEN: usize = 2000;
+
+/// Discord's hard cap on the number of attachments in a single message.
+/// Enforced locally before any upload so the operator hits a clean
+/// `ZadError::Invalid` instead of a cryptic 4xx from the REST API.
+pub const DISCORD_MAX_ATTACHMENTS: usize = 10;
 
 /// Discord REST error code for "Unknown Channel". The JSON body uses a
 /// numeric code independent of the HTTP status; this is the canonical
@@ -90,12 +95,23 @@ impl DiscordHttp {
         Ok(user.name.clone())
     }
 
-    pub async fn send(&self, target: Target, body: &str) -> Result<MessageId> {
+    pub async fn send(
+        &self,
+        target: Target,
+        body: &str,
+        attachments: &[PathBuf],
+    ) -> Result<MessageId> {
         self.require_scope("messages.send")?;
         let len = body.chars().count();
         if len > DISCORD_MAX_MESSAGE_LEN {
             return Err(ZadError::Invalid(format!(
                 "message body is {len} characters; Discord's hard limit is {DISCORD_MAX_MESSAGE_LEN}"
+            )));
+        }
+        if attachments.len() > DISCORD_MAX_ATTACHMENTS {
+            return Err(ZadError::Invalid(format!(
+                "{} attachments is above Discord's per-message cap of {DISCORD_MAX_ATTACHMENTS}",
+                attachments.len()
             )));
         }
         let (channel_id, channel_id_raw) = match target {
@@ -109,8 +125,18 @@ impl DiscordHttp {
                 (dm.id, id)
             }
         };
+        let mut create = CreateMessage::new().content(body);
+        for path in attachments {
+            // `CreateAttachment::path` is async — it reads the file with
+            // `tokio::fs::read` and captures the basename for the
+            // multipart part name serenity sends up.
+            let att = CreateAttachment::path(path).await.map_err(|e| {
+                ZadError::Invalid(format!("attachment `{}` not readable: {e}", path.display()))
+            })?;
+            create = create.add_file(att);
+        }
         let msg = channel_id
-            .send_message(&*self.http, CreateMessage::new().content(body))
+            .send_message(&*self.http, create)
             .await
             .map_err(|e| map_http(e, HttpCtx::Channel(channel_id_raw)))?;
         Ok(MessageId(msg.id.get()))

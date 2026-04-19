@@ -6,6 +6,7 @@
 //! keychain entry holds the bot token. The project must already have
 //! enabled the Telegram service.
 
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
@@ -13,9 +14,12 @@ use serde::Serialize;
 
 use crate::config::{self, TelegramServiceCfg};
 use crate::error::{Result, ZadError};
+use crate::permissions::attachments::AttachmentInfo;
 use crate::secrets::{self, Scope};
 use crate::service::default_dry_run_sink;
-use crate::service::telegram::client::TELEGRAM_MAX_MESSAGE_LEN;
+use crate::service::telegram::client::{
+    TELEGRAM_MAX_CAPTION_LEN, TELEGRAM_MAX_MEDIA_GROUP, TELEGRAM_MAX_MESSAGE_LEN,
+};
 use crate::service::telegram::directory::{self as dir, Directory};
 use crate::service::telegram::permissions::{self as perms, TelegramFunction};
 use crate::service::telegram::{DryRunTelegramTransport, TelegramHttp, TelegramTransport};
@@ -85,7 +89,18 @@ pub struct SendArgs {
     #[arg(long, conflicts_with = "body")]
     pub stdin: bool,
 
-    /// Message body. Required unless `--stdin` is set.
+    /// Attach a file to the message. Repeat up to Telegram's
+    /// `sendMediaGroup` cap of 10 to attach multiple files. With one
+    /// file the message is sent via `sendDocument`; with 2+ files it
+    /// becomes a `sendMediaGroup`. The body (if any) is sent as the
+    /// caption on the first item; with attachments present Telegram's
+    /// 1024-character caption cap applies instead of the 4096-character
+    /// plain-text cap.
+    #[arg(long = "file", value_name = "PATH", action = clap::ArgAction::Append)]
+    pub files: Vec<PathBuf>,
+
+    /// Message body. Required unless `--stdin` is set or at least one
+    /// `--file` is attached.
     pub body: Option<String>,
 
     /// Emit machine-readable JSON instead of human-readable text.
@@ -119,17 +134,51 @@ async fn run_send(args: SendArgs) -> Result<()> {
     )?;
     permissions.check_send_chat(&chat_input, chat_id, &directory)?;
 
-    let body = resolve_body(args.body.as_deref(), args.stdin)?;
+    let body = if args.files.is_empty() {
+        resolve_body(args.body.as_deref(), args.stdin)?
+    } else {
+        resolve_body_or_empty(args.body.as_deref(), args.stdin)?
+    };
     let len = body.chars().count();
-    if len > TELEGRAM_MAX_MESSAGE_LEN {
+    // Bot API caption cap (1024) is stricter than the plain-text cap
+    // (4096); when attachments are present the body rides as the
+    // caption, so narrow the check accordingly.
+    let body_cap = if args.files.is_empty() {
+        TELEGRAM_MAX_MESSAGE_LEN
+    } else {
+        TELEGRAM_MAX_CAPTION_LEN
+    };
+    if len > body_cap {
+        let label = if args.files.is_empty() {
+            "hard limit"
+        } else {
+            "caption cap (attachments present)"
+        };
         return Err(ZadError::Invalid(format!(
-            "message body is {len} characters; Telegram's hard limit is {TELEGRAM_MAX_MESSAGE_LEN}"
+            "message body is {len} characters; Telegram's {label} is {body_cap}"
+        )));
+    }
+    if args.files.len() > TELEGRAM_MAX_MEDIA_GROUP {
+        return Err(ZadError::Invalid(format!(
+            "{} attachments is above Telegram's per-message cap of {TELEGRAM_MAX_MEDIA_GROUP}",
+            args.files.len()
         )));
     }
     permissions.check_send_body(&body)?;
 
+    let infos: Vec<AttachmentInfo> = args
+        .files
+        .iter()
+        .map(|p| {
+            AttachmentInfo::probe(p).map_err(|e| {
+                ZadError::Invalid(format!("attachment `{}` not readable: {e}", p.display()))
+            })
+        })
+        .collect::<Result<_>>()?;
+    permissions.check_send_attachments(&infos)?;
+
     let http = telegram_http_for("messages.send", args.dry_run)?;
-    let message_id = http.send(chat_id, &body).await?;
+    let message_id = http.send(chat_id, &body, &args.files).await?;
 
     // When --dry-run is active the transport already emitted a preview
     // record (human summary via `tracing::info!`, JSON payload on
@@ -534,6 +583,21 @@ fn resolve_chat_arg(
 }
 
 fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {
+    resolve_body_inner(positional, from_stdin, false)
+}
+
+/// Same as [`resolve_body`] but tolerates an empty result, for send
+/// paths that carry at least one attachment (the caption on a
+/// `sendDocument` / `sendMediaGroup` is optional).
+fn resolve_body_or_empty(positional: Option<&str>, from_stdin: bool) -> Result<String> {
+    resolve_body_inner(positional, from_stdin, true)
+}
+
+fn resolve_body_inner(
+    positional: Option<&str>,
+    from_stdin: bool,
+    allow_empty: bool,
+) -> Result<String> {
     if from_stdin {
         use std::io::Read;
         let mut buf = String::new();
@@ -541,15 +605,17 @@ fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {
             ZadError::Invalid(format!("failed to read message body from stdin: {e}"))
         })?;
         let trimmed = buf.trim_end_matches(['\n', '\r']).to_string();
-        if trimmed.is_empty() {
+        if trimmed.is_empty() && !allow_empty {
             return Err(ZadError::Invalid("message body is empty (stdin)".into()));
         }
         return Ok(trimmed);
     }
     match positional {
         Some(b) if !b.is_empty() => Ok(b.to_string()),
+        Some(_) if allow_empty => Ok(String::new()),
+        None if allow_empty => Ok(String::new()),
         _ => Err(ZadError::Invalid(
-            "missing message body: pass it as a positional arg or use --stdin".into(),
+            "missing message body: pass it as a positional arg, --stdin, or attach at least one --file".into(),
         )),
     }
 }
