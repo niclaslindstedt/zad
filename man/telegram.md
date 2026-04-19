@@ -201,6 +201,17 @@ zad telegram permissions show
 zad telegram permissions path
 zad telegram permissions init  [--local] [--force]
 zad telegram permissions check --function <name> [--chat <id|name>] [--body <text>]
+
+# Staged-commit workflow (shared across every service — see docs/permissions.md)
+zad telegram permissions status   [--local]
+zad telegram permissions diff     [--local]
+zad telegram permissions discard  [--local]
+zad telegram permissions commit   [--local]      # signs + atomic replace
+zad telegram permissions sign     [--local]      # re-sign after hand edit
+zad telegram permissions add      --function <f> --target chat --list <allow|deny> [--local] <pattern>
+zad telegram permissions remove   --function <f> --target chat --list <allow|deny> [--local] <pattern>
+zad telegram permissions content  [--function <f>] [--local] {add-deny-word WORD|remove-deny-word WORD|add-deny-regex PAT|remove-deny-regex PAT|set-max-length --value N|set-max-length --clear}
+zad telegram permissions time     [--function <f>] [--local] {set-days --days mon,tue,... | set-windows --windows 09:00-18:00,...}
 ```
 
 - `show` — print both candidate file paths plus the body of whichever

@@ -240,14 +240,15 @@ zad gcal events delete --id abc123 --calendar primary \
 Default-deny this verb in your permissions file if you want an agent
 to be able to create events but not delete them.
 
-### `zad gcal permissions {show|path|init|check}`
+### `zad gcal permissions {show|path|init|check|status|diff|discard|commit|sign|add|remove|content|time}`
 
 Standard permissions subgroup shared with every service. `init`
 generates a machine-wide Ed25519 signing keypair on first run (OS
 keychain account `signing:v1`) and signs the starter template — see
-[`docs/permissions.md`](../docs/permissions.md) for the trust model.
-`check` lets you dry-run any verb's policy without hitting the
-network:
+[`docs/permissions.md`](../docs/permissions.md) for the trust model
+and the staged-commit workflow (`add`/`remove`/`content`/`time`
+queue changes to a `.pending` file; only `commit` signs). `check`
+lets you dry-run any verb's policy without hitting the network:
 
 ```
 zad gcal permissions check --function create_event \

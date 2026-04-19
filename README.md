@@ -75,10 +75,24 @@ project (under `~/.zad/projects/<slug>/services/discord/`).
 
 Permission policies are signed with an Ed25519 keypair stored in your
 OS keychain: `zad <svc> permissions init` generates the key on first
-use and signs the starter template. Load-time verification fails
-closed, so an agent with filesystem access cannot silently widen a
-policy. See [`docs/permissions.md`](docs/permissions.md) for the
-trust model and failure modes.
+use and signs the starter template. Agents propose policy changes via
+a staged workflow — mutations write to a `.pending` file, and only
+`zad <svc> permissions commit` signs and replaces the live file:
+
+```sh
+# Agent:
+zad discord permissions add --function send --target channel \
+    --list deny --local 'deploy-*'
+
+# You:
+zad discord permissions diff --local
+zad discord permissions commit --local   # prompts keychain
+```
+
+Load-time verification fails closed, so an agent with filesystem
+access cannot silently widen a policy. See
+[`docs/permissions.md`](docs/permissions.md) for the trust model and
+failure modes.
 
 ## Usage
 

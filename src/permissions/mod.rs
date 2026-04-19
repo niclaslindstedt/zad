@@ -21,13 +21,16 @@
 
 pub mod attachments;
 pub mod content;
+pub mod mutation;
 pub mod pattern;
 pub mod service;
 pub mod signing;
+pub mod staging;
 pub mod time;
 
 pub use attachments::{AttachmentInfo, AttachmentRules};
 pub use content::ContentRules;
+pub use mutation::{ListKind, Mutation};
 pub use pattern::{Pattern, PatternList};
 pub use service::{HasSignature, PermissionsService};
 pub use signing::{Signature, SigningKey};

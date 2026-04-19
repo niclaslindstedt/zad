@@ -1065,6 +1065,10 @@ pub enum PermissionsAction {
     /// Dry-run: ask whether a proposed action would be admitted *without*
     /// hitting Discord. Useful for agents that want to pre-flight.
     Check(PermissionsCheckArgs),
+    /// Staged-commit workflow: queue mutations in a `.pending` file and
+    /// only sign on `commit`. See [`cli::permissions`].
+    #[command(flatten)]
+    Staging(crate::cli::permissions::StagingAction),
 }
 
 #[derive(Debug, Args)]
@@ -1129,6 +1133,9 @@ fn run_permissions(args: PermissionsArgs) -> Result<()> {
         Some(PermissionsAction::Init(a)) => run_permissions_init(a),
         Some(PermissionsAction::Path(a)) => run_permissions_path(a),
         Some(PermissionsAction::Check(a)) => run_permissions_check(a),
+        Some(PermissionsAction::Staging(a)) => {
+            crate::cli::permissions::run::<perms::PermissionsService>(a)
+        }
     }
 }
 

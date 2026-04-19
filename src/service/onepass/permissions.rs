@@ -37,6 +37,7 @@ use crate::config;
 use crate::error::{Result, ZadError};
 use crate::permissions::{
     content::{ContentRules, ContentRulesRaw},
+    mutation::{self, Mutation},
     pattern::{DenyReason, PatternList, PatternListRaw},
     service::HasSignature,
     signing::{self, Signature, SigningKey},
@@ -962,5 +963,137 @@ impl crate::permissions::service::PermissionsService for PermissionsService {
 
     fn target_kinds() -> &'static [&'static str] {
         &["vault", "item", "tag", "category", "field"]
+    }
+
+    fn apply_mutation(raw: &mut Self::Raw, m: &Mutation) -> Result<()> {
+        let function = match m {
+            Mutation::AddPattern { function, .. }
+            | Mutation::RemovePattern { function, .. }
+            | Mutation::AddDenyWord { function, .. }
+            | Mutation::RemoveDenyWord { function, .. }
+            | Mutation::AddDenyRegex { function, .. }
+            | Mutation::RemoveDenyRegex { function, .. }
+            | Mutation::SetMaxLength { function, .. }
+            | Mutation::SetTimeDays { function, .. }
+            | Mutation::SetTimeWindows { function, .. } => function.as_deref(),
+        };
+
+        let (content, time) = block_refs_mut(raw, function)?;
+        if mutation::apply_content(content, m)? {
+            return Ok(());
+        }
+        if mutation::apply_time(time, m)? {
+            return Ok(());
+        }
+
+        match m {
+            Mutation::AddPattern {
+                function,
+                target,
+                list,
+                value,
+            }
+            | Mutation::RemovePattern {
+                function,
+                target,
+                list,
+                value,
+            } => {
+                let add = matches!(m, Mutation::AddPattern { .. });
+                let plist = pattern_list_mut(raw, function.as_deref(), target)?;
+                mutation::apply_pattern_list(plist, *list, value, add);
+                Ok(())
+            }
+            other => Err(mutation::unsupported("1pass", other)),
+        }
+    }
+}
+
+fn block_refs_mut<'a>(
+    raw: &'a mut OnePassPermissionsRaw,
+    function: Option<&str>,
+) -> Result<(&'a mut ContentRulesRaw, &'a mut TimeWindowRaw)> {
+    match function {
+        None => Ok((&mut raw.content, &mut raw.time)),
+        Some("vaults") => Ok((&mut raw.vaults_verb.content, &mut raw.vaults_verb.time)),
+        Some("items") => Ok((&mut raw.items_verb.content, &mut raw.items_verb.time)),
+        Some("tags") => Ok((&mut raw.tags_verb.content, &mut raw.tags_verb.time)),
+        Some("get") => Ok((&mut raw.get.content, &mut raw.get.time)),
+        Some("read") => Ok((&mut raw.read.content, &mut raw.read.time)),
+        Some("inject") => Ok((&mut raw.inject.content, &mut raw.inject.time)),
+        Some("create") => Err(ZadError::Invalid(
+            "1pass permissions: the [create] block has no content rules; \
+             use a per-verb block for content mutations (get/read/inject)"
+                .into(),
+        )),
+        Some(other) => Err(ZadError::Invalid(format!(
+            "1pass permissions: unknown function `{other}`; expected one of \
+             vaults, items, tags, get, read, inject, create (for create use \
+             pattern mutations only)"
+        ))),
+    }
+}
+
+fn per_verb_pattern_list_mut<'a>(
+    block: &'a mut FunctionBlockRaw,
+    target: &str,
+    function: &str,
+) -> Result<&'a mut PatternListRaw> {
+    Ok(match target {
+        "vault" => &mut block.vaults,
+        "item" => &mut block.items,
+        "tag" => &mut block.tags,
+        "category" => &mut block.categories,
+        "field" => &mut block.fields,
+        other => {
+            return Err(ZadError::Invalid(format!(
+                "1pass permissions: unknown target `{other}` for function `{function}`; \
+                 expected one of vault, item, tag, category, field"
+            )));
+        }
+    })
+}
+
+fn pattern_list_mut<'a>(
+    raw: &'a mut OnePassPermissionsRaw,
+    function: Option<&str>,
+    target: &str,
+) -> Result<&'a mut PatternListRaw> {
+    match function {
+        None => Ok(match target {
+            "vault" => &mut raw.vaults,
+            "item" => &mut raw.items,
+            "tag" => &mut raw.tags,
+            "category" => &mut raw.categories,
+            "field" => &mut raw.fields,
+            other => {
+                return Err(ZadError::Invalid(format!(
+                    "1pass permissions: unknown target `{other}`; \
+                     expected one of vault, item, tag, category, field"
+                )));
+            }
+        }),
+        Some("create") => Ok(match target {
+            "vault" => &mut raw.create.vaults,
+            "category" => &mut raw.create.categories,
+            "tag" => &mut raw.create.tags,
+            "title" => &mut raw.create.titles,
+            other => {
+                return Err(ZadError::Invalid(format!(
+                    "1pass permissions: [create] does not accept target `{other}`; \
+                     expected one of vault, category, tag, title"
+                )));
+            }
+        }),
+        Some("vaults") => per_verb_pattern_list_mut(&mut raw.vaults_verb, target, "vaults"),
+        Some("items") => per_verb_pattern_list_mut(&mut raw.items_verb, target, "items"),
+        Some("tags") => per_verb_pattern_list_mut(&mut raw.tags_verb, target, "tags"),
+        Some("get") => per_verb_pattern_list_mut(&mut raw.get, target, "get"),
+        Some("read") => per_verb_pattern_list_mut(&mut raw.read, target, "read"),
+        Some("inject") => per_verb_pattern_list_mut(&mut raw.inject, target, "inject"),
+        Some(other) => Err(ZadError::Invalid(format!(
+            "1pass permissions: unknown function `{other}`; expected one of \
+             vaults, items, tags, get, read, inject, create"
+        ))),
     }
 }

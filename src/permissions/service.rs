@@ -24,6 +24,7 @@ use serde::de::DeserializeOwned;
 use crate::config;
 use crate::error::Result;
 
+use super::mutation::Mutation;
 use super::signing::Signature;
 
 /// Small companion trait so the generic signer can get/set the signature
@@ -67,6 +68,13 @@ pub trait PermissionsService: 'static {
     /// `&["calendar", "event"]`). Used by the shared CLI to validate
     /// `--target`.
     fn target_kinds() -> &'static [&'static str];
+
+    /// Apply a typed [`Mutation`] to `raw`. Each service matches on the
+    /// mutation variant and dispatches to the appropriate field of its
+    /// `*Raw` struct. Unsupported mutations return
+    /// [`ZadError::Invalid`] naming the service and the rejected
+    /// mutation so the operator knows which axis is missing.
+    fn apply_mutation(raw: &mut Self::Raw, mutation: &Mutation) -> Result<()>;
 }
 
 /// Global path helper generic over `S`.
