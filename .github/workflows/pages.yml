@@ -24,10 +24,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.88.0
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-      - run: cd website && npm install && npm run build
+      - run: make website
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
