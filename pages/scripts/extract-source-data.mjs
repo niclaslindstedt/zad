@@ -116,8 +116,10 @@ function extractCommands() {
 
   const enumIndex = new Map();
   const structIndex = new Map();
-  const enumRe = /#\[derive\(([^)]*)\)\]\s*(?:pub\s+)?enum\s+(\w+)\s*\{([\s\S]*?)\n\}/g;
-  const structRe = /#\[derive\(([^)]*)\)\]\s*(?:pub\s+)?struct\s+(\w+)\s*\{([\s\S]*?)\n\}/g;
+  // Allow arbitrary intervening attributes between `#[derive(...)]` and
+  // the enum/struct header (e.g. `#[allow(clippy::large_enum_variant)]`).
+  const enumRe = /#\[derive\(([^)]*)\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?enum\s+(\w+)\s*\{([\s\S]*?)\n\}/g;
+  const structRe = /#\[derive\(([^)]*)\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?struct\s+(\w+)\s*\{([\s\S]*?)\n\}/g;
   for (const [mod, src] of sources) {
     for (const m of src.matchAll(enumRe)) {
       if (!/\bSubcommand\b/.test(m[1])) continue;
