@@ -161,7 +161,7 @@ allow = ["agent-managed"]   # every created item must carry this tag
 |---|---|
 | `show`                 | Print the two candidate file paths and their bodies. |
 | `path`                 | Print the two file paths (one per line) so scripts can `open` them. |
-| `init [--local]`       | Write a starter policy (read-wide, create narrowly scoped to `AgentWork`). |
+| `init [--local]`       | Write a starter policy (read-wide, create narrowly scoped to `AgentWork`). On first run generates a machine-wide Ed25519 signing keypair in the OS keychain (account `signing:v1`) and signs the starter template; subsequent calls reuse the same keypair. See [`docs/permissions.md`](../docs/permissions.md) for the trust model. |
 | `check --function <f>` | Dry-run a policy check without touching the network. |
 
 `check`'s output distinguishes three outcomes:

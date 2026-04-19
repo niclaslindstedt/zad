@@ -242,8 +242,12 @@ to be able to create events but not delete them.
 
 ### `zad gcal permissions {show|path|init|check}`
 
-Standard permissions subgroup shared with every service. `check` lets
-you dry-run any verb's policy without hitting the network:
+Standard permissions subgroup shared with every service. `init`
+generates a machine-wide Ed25519 signing keypair on first run (OS
+keychain account `signing:v1`) and signs the starter template — see
+[`docs/permissions.md`](../docs/permissions.md) for the trust model.
+`check` lets you dry-run any verb's policy without hitting the
+network:
 
 ```
 zad gcal permissions check --function create_event \

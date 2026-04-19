@@ -5,6 +5,7 @@
 //! CLI verbs will after resolving names.
 
 use zad::error::ZadError;
+use zad::permissions::SigningKey;
 use zad::permissions::content::ContentRulesRaw;
 use zad::permissions::pattern::PatternListRaw;
 use zad::service::telegram::directory::Directory;
@@ -12,6 +13,11 @@ use zad::service::telegram::permissions::{
     self as perms, EffectivePermissions, FunctionBlockRaw, TelegramPermissions,
     TelegramPermissionsRaw,
 };
+
+fn test_key() -> SigningKey {
+    zad::secrets::use_memory_backend();
+    SigningKey::generate()
+}
 
 fn raw_with_send_allow(allow: Vec<&str>) -> TelegramPermissionsRaw {
     TelegramPermissionsRaw {
@@ -27,7 +33,8 @@ fn raw_with_send_allow(allow: Vec<&str>) -> TelegramPermissionsRaw {
 }
 
 fn write_raw(path: &std::path::Path, raw: &TelegramPermissionsRaw) {
-    perms::save_file(path, raw).unwrap();
+    let key = test_key();
+    perms::save_file(path, raw, &key).unwrap();
 }
 
 fn load(path: &std::path::Path) -> TelegramPermissions {
@@ -61,7 +68,8 @@ fn starter_template_round_trips_through_toml() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
     let raw = perms::starter_template();
-    perms::save_file(&p, &raw).unwrap();
+    let key = test_key();
+    perms::save_file(&p, &raw, &key).unwrap();
 
     let body = std::fs::read_to_string(&p).unwrap();
     assert!(body.contains("deny_words"), "body: {body}");
@@ -75,7 +83,17 @@ fn starter_template_round_trips_through_toml() {
 fn invalid_glob_surfaces_the_file_path() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
-    std::fs::write(&p, "[send]\nchats.allow = [\"re:(\"]\n").unwrap();
+    let raw = TelegramPermissionsRaw {
+        send: FunctionBlockRaw {
+            chats: PatternListRaw {
+                allow: vec!["re:(".into()],
+                deny: vec![],
+            },
+            ..FunctionBlockRaw::default()
+        },
+        ..TelegramPermissionsRaw::default()
+    };
+    write_raw(&p, &raw);
     let err = perms::load_file(&p).unwrap_err();
     let s = err.to_string();
     assert!(s.contains(&p.display().to_string()), "err: {s}");

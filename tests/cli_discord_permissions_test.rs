@@ -42,6 +42,8 @@ fn enable_discord(home: &std::path::Path, project: &std::path::Path) {
 }
 
 fn write_local_permissions(home: &std::path::Path, project: &std::path::Path, body: &str) {
+    use zad::permissions::SigningKey;
+    use zad::service::discord::permissions::{self as perms, DiscordPermissionsRaw};
     let slug = common::project_slug(project);
     let p = home
         .join(".zad")
@@ -51,7 +53,15 @@ fn write_local_permissions(home: &std::path::Path, project: &std::path::Path, bo
         .join("discord")
         .join("permissions.toml");
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(&p, body).unwrap();
+    // Parse the literal body and sign it so the CLI subprocess (which
+    // verifies every permission file on load) sees a valid signature.
+    // The subprocess runs with `ZAD_SECRETS_MEMORY=1` and no stored
+    // signing key, so the keychain cross-check is skipped and the
+    // embedded pubkey is authoritative.
+    let raw: DiscordPermissionsRaw =
+        toml::from_str(body).expect("write_local_permissions: body must be valid TOML");
+    let key = SigningKey::generate();
+    perms::save_file(&p, &raw, &key).unwrap();
 }
 
 // ---------------------------------------------------------------------------

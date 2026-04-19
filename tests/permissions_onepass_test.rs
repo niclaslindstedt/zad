@@ -8,12 +8,18 @@
 use std::path::PathBuf;
 
 use zad::error::ZadError;
+use zad::permissions::SigningKey;
 use zad::permissions::{content::ContentRulesRaw, pattern::PatternListRaw};
 use zad::service::onepass::client::{Item, ItemField, ItemSummary, ParsedOpRef, Vault, VaultRef};
 use zad::service::onepass::permissions::{
     CreateBlockRaw, EffectivePermissions, FunctionBlockRaw, OnePassPermissions,
     OnePassPermissionsRaw,
 };
+
+fn test_key() -> SigningKey {
+    zad::secrets::use_memory_backend();
+    SigningKey::generate()
+}
 
 fn toml_to_effective(global: Option<&str>, local: Option<&str>) -> EffectivePermissions {
     let global = global.map(|b| {
@@ -33,7 +39,8 @@ fn toml_to_effective(global: Option<&str>, local: Option<&str>) -> EffectivePerm
 fn compile_via_save(raw: OnePassPermissionsRaw, label: &str) -> OnePassPermissions {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(format!("{label}-permissions.toml"));
-    zad::service::onepass::permissions::save_file(&path, &raw).unwrap();
+    let key = test_key();
+    zad::service::onepass::permissions::save_file(&path, &raw, &key).unwrap();
     let loaded = zad::service::onepass::permissions::load_file(&path).unwrap();
     std::mem::forget(dir); // keep the file alive for the duration of the test
     loaded.unwrap_or_else(|| panic!("file should have compiled"))

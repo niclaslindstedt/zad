@@ -5,15 +5,24 @@
 use std::path::PathBuf;
 
 use zad::error::ZadError;
+use zad::permissions::SigningKey;
 use zad::service::gcal::permissions::{
     self, EffectivePermissions, FunctionBlockRaw, GcalFunction, GcalPermissionsRaw,
     HARD_REMINDER_MINUTES_CAP,
 };
 
+fn test_key() -> SigningKey {
+    zad::secrets::use_memory_backend();
+    SigningKey::generate()
+}
+
 fn tempfile_with(contents: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("permissions.toml");
-    std::fs::write(&path, contents).unwrap();
+    // Parse + re-sign so verify_raw succeeds. Empty bodies are legal.
+    let raw: GcalPermissionsRaw = toml::from_str(contents).expect("test body must be valid TOML");
+    let key = test_key();
+    permissions::save_file(&path, &raw, &key).unwrap();
     (dir, path)
 }
 

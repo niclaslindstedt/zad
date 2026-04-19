@@ -73,6 +73,13 @@ zad service create discord \
 Use `--local` on `create` to store credentials only for the current
 project (under `~/.zad/projects/<slug>/services/discord/`).
 
+Permission policies are signed with an Ed25519 keypair stored in your
+OS keychain: `zad <svc> permissions init` generates the key on first
+use and signs the starter template. Load-time verification fails
+closed, so an agent with filesystem access cannot silently widen a
+policy. See [`docs/permissions.md`](docs/permissions.md) for the
+trust model and failure modes.
+
 ## Usage
 
 ```

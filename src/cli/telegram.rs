@@ -989,7 +989,9 @@ fn run_permissions_init(args: PermissionsInitArgs) -> Result<()> {
         )));
     }
     let template = perms::starter_template();
-    perms::save_file(&path, &template)?;
+    let key = crate::permissions::signing::load_or_create_from_keychain()?;
+    crate::permissions::signing::write_public_key_cache(&key)?;
+    perms::save_file(&path, &template, &key)?;
     if args.json {
         let out = PermissionsInitOutput {
             command: "telegram.permissions.init",
@@ -1000,6 +1002,7 @@ fn run_permissions_init(args: PermissionsInitArgs) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
         println!("Wrote starter permissions ({scope}): {}", path.display());
+        println!("Signed with key {}.", key.fingerprint());
         println!("Review it; the defaults deny admin-like chats.");
     }
     Ok(())
