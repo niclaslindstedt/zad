@@ -1,0 +1,73 @@
+# 1Password permissions policy — example
+#
+# Drop this file at either:
+#   ~/.zad/services/1pass/permissions.toml                    (global)
+#   ~/.zad/projects/<slug>/services/1pass/permissions.toml    (local)
+#
+# Both files intersect: a call must pass every file that exists.
+# A missing file contributes no restrictions.
+#
+# Read-side axes (vaults / tags / items / categories / fields) are
+# FILTERS — anything out of scope is hidden from `vaults`, `items`,
+# `tags`, `get`, `read`, and `inject` output. An agent cannot tell
+# whether a hidden target exists.
+#
+# The `[create]` block is DENY-BY-DEFAULT: without an explicit
+# `[create].vaults.allow` entry, every `create` call is refused.
+
+# ---------------------------------------------------------------------------
+# Top-level read-side defaults
+# ---------------------------------------------------------------------------
+
+# Limit the agent to a project-specific vault plus anything that
+# starts with `Shared-`. `Personal` and anything tagged `*Prod*` via
+# name convention stays invisible.
+[vaults]
+allow = ["AgentWork", "Shared-*"]
+deny  = ["Personal", "re:.*Prod.*"]
+
+# Drop sensitive field blobs — the agent can still see the item and
+# its metadata, but `value` is stripped so `op read` returns
+# "not found" rather than the plaintext.
+[fields]
+deny = ["notesPlain", "recovery_code", "re:(?i).*private.*key"]
+
+# Hide items tagged for a human operator.
+[tags]
+deny = ["owner-only", "admin"]
+
+# Only read the item shapes an agent typically needs.
+[categories]
+allow = ["Login", "API Credential", "Secure Note", "Database"]
+
+# Content rules apply to `inject` output (body scan post-render).
+[content]
+deny_words    = ["api_key", "bearer"]
+deny_patterns = ["(?i)AKIA[0-9A-Z]{16}"]
+max_length    = 50000
+
+# ---------------------------------------------------------------------------
+# Per-verb overrides
+# ---------------------------------------------------------------------------
+
+# Bare-metal `read` (single op:// reference) strips even more fields
+# than the default — recovery codes, 2FA seeds, anything a scripted
+# call has no business reading.
+[read]
+fields.deny = ["notesPlain", "recovery_code", "otp", "re:(?i).*seed.*"]
+
+# ---------------------------------------------------------------------------
+# Create — deny-by-default; explicit allow-list per axis.
+# ---------------------------------------------------------------------------
+
+[create.vaults]
+allow = ["AgentWork"]
+
+[create.categories]
+allow = ["Login", "API Credential", "Secure Note"]
+
+[create.tags]
+# Every created item must carry at least one of these tags. Paired
+# with the `AgentWork`-only vault rule, this lets a human reviewer
+# filter the vault down to exactly the agent's writes.
+allow = ["agent-managed"]

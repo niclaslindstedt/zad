@@ -70,6 +70,30 @@ pub struct GcalServiceCfg {
     pub self_email: Option<String>,
 }
 
+/// Global 1Password (1pass) service config stored at
+/// `~/.zad/services/1pass/config.toml`. Authentication is always via a
+/// 1Password Service Account token (agent-first; no desktop / biometric
+/// flow), stored in the OS keychain. This struct carries only the
+/// non-secret fields: the sign-in host (`account`), an optional
+/// `default_vault` convenience for commands that omit `--vault`, and
+/// the declared scopes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OnePassServiceCfg {
+    /// 1Password sign-in address — e.g. `my.1password.com` or
+    /// `team.1password.eu`. `op` reads this via the `OP_ACCOUNT`
+    /// environment variable so we don't need to pass a `--account`
+    /// flag on every shell-out.
+    pub account: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional vault the runtime verbs default to when `--vault` is
+    /// omitted. Accepts a vault name or UUID. Absent means every verb
+    /// must name its vault explicitly (or accept `op`'s own search
+    /// across all visible vaults).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_vault: Option<String>,
+}
+
 /// Global Telegram service config stored at
 /// `~/.zad/services/telegram/config.toml`. Telegram bots carry their
 /// identity inside the bot token itself (no separate app ID), and
@@ -120,6 +144,19 @@ impl ProjectConfig {
 
     pub fn disable_telegram(&mut self) {
         self.service.remove("telegram");
+    }
+
+    pub fn one_pass(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("1pass")
+    }
+
+    pub fn enable_one_pass(&mut self) {
+        self.service
+            .insert("1pass".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_one_pass(&mut self) {
+        self.service.remove("1pass");
     }
 
     pub fn gcal(&self) -> Option<&ServiceProjectRef> {

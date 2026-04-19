@@ -517,6 +517,91 @@ Numeric caps intersect across layers via `min()`; boolean caps via
 `OR` (strictest wins). Reminders are additionally capped at **40320
 minutes (four weeks)** by a built-in, non-configurable rule.
 
+## 1Password service (`1pass`)
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/1pass.md`](../man/1pass.md)):
+
+- `zad service create 1pass [--local]` — register a Service Account
+  token.
+- `zad service enable 1pass` — enable the service in the current project.
+- `zad service disable 1pass` — disable it again (leaves credentials intact).
+
+Every command accepts `--json` for script-friendly structured output.
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/1pass/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/1pass/config.toml`
+
+```toml
+account       = "my.1password.com"
+scopes        = ["read", "write"]
+default_vault = "AgentWork"        # optional
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `account` | string | — | 1Password sign-in address. Passed to `op` as `OP_ACCOUNT`. |
+| `scopes` | `[string]` | `["read"]` | Capabilities the service is permitted to use. |
+| `default_vault` | string? | — | Optional default vault for verbs that omit `--vault`. |
+
+A single keychain entry holds the Service Account token:
+
+| Keychain account | Contents |
+|---|---|
+| `1pass-service-account:<scope>` | `ops_…` Service Account token. |
+
+Scopes are **enforced at runtime, before any `op` spawn**:
+
+| Scope | Gates |
+|---|---|
+| `read`  | `vaults`, `items`, `tags`, `get`, `read`, `inject`, `whoami` |
+| `write` | `create` |
+
+### Permissions file
+
+Optional, located at:
+
+- Global: `~/.zad/services/1pass/permissions.toml`
+- Local:  `~/.zad/projects/<slug>/services/1pass/permissions.toml`
+
+Both files intersect; local can only tighten global. Read-side axes
+(`vaults`, `tags`, `items`, `categories`, `fields`) are **filters** —
+anything out of scope is presented as if it doesn't exist, and
+`get`/`read` on a hidden target return `op`'s own "no item found"
+shape. See
+[`examples/1pass-permissions/`](../examples/1pass-permissions/) for a
+worked example and [`man/1pass.md`](../man/1pass.md) for the per-verb
+reference.
+
+| Top-level axis | Applies to | Gate |
+|---|---|---|
+| `vaults` | all read-side verbs | vault name or UUID |
+| `tags`   | all read-side verbs | item tags |
+| `items`  | all read-side verbs | item title or UUID |
+| `categories` | all read-side verbs | `Login`, `API Credential`, `Secure Note`, … |
+| `fields` | `get`, `read`, `inject` | field label or ID |
+| `content` | `inject` output | body of the rendered template |
+| `time`   | all | UTC days + `HH:MM-HH:MM` windows |
+
+Per-verb blocks (`[vaults]`, `[items]`, `[tags]`, `[get]`, `[read]`,
+`[inject]`) override the corresponding top-level axis.
+
+The `[create]` block is **deny-by-default** — without an explicit
+`[create].vaults.allow` entry matching the target vault, every
+`create` call is rejected with `PermissionDenied`:
+
+```toml
+[create.vaults]
+allow = ["AgentWork"]
+[create.categories]
+allow = ["Login", "API Credential", "Secure Note"]
+[create.tags]
+allow = ["agent-managed"]   # every created item must carry this tag
+```
+
 ## Logging
 
 zad always writes a rolling daily log file at a platform-appropriate

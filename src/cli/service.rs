@@ -11,9 +11,10 @@ use clap::{Args, Subcommand};
 use crate::cli::lifecycle::{self, DeleteArgs, DisableArgs, EnableArgs, ShowArgs, StatusArgs};
 use crate::error::Result;
 
-use super::{service_discord, service_gcal, service_list, service_telegram};
+use super::{service_discord, service_gcal, service_list, service_onepass, service_telegram};
 use service_discord::DiscordLifecycle;
 use service_gcal::GcalLifecycle;
+use service_onepass::OnePassLifecycle;
 use service_telegram::TelegramLifecycle;
 
 #[derive(Debug, Args)]
@@ -49,6 +50,10 @@ pub struct CreateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum CreateService {
+    /// Create 1Password (1pass) credentials (global by default,
+    /// `--local` for project-scoped).
+    #[command(name = "1pass")]
+    OnePass(service_onepass::CreateArgs),
     /// Create Discord credentials (global by default, `--local` for
     /// project-scoped).
     Discord(service_discord::CreateArgs),
@@ -68,6 +73,9 @@ pub struct EnableAction {
 
 #[derive(Debug, Subcommand)]
 pub enum EnableService {
+    /// Enable the 1Password service in the current project.
+    #[command(name = "1pass")]
+    OnePass(EnableArgs),
     /// Enable the Discord service in the current project.
     Discord(EnableArgs),
     /// Enable the Google Calendar service in the current project.
@@ -84,6 +92,9 @@ pub struct DisableAction {
 
 #[derive(Debug, Subcommand)]
 pub enum DisableService {
+    /// Disable the 1Password service in the current project.
+    #[command(name = "1pass")]
+    OnePass(DisableArgs),
     /// Disable the Discord service in the current project.
     Discord(DisableArgs),
     /// Disable the Google Calendar service in the current project.
@@ -100,6 +111,9 @@ pub struct ShowAction {
 
 #[derive(Debug, Subcommand)]
 pub enum ShowService {
+    /// Show the 1Password service's effective configuration.
+    #[command(name = "1pass")]
+    OnePass(ShowArgs),
     /// Show the Discord service's effective configuration.
     Discord(ShowArgs),
     /// Show the Google Calendar service's effective configuration.
@@ -116,6 +130,9 @@ pub struct StatusAction {
 
 #[derive(Debug, Subcommand)]
 pub enum StatusService {
+    /// Check whether 1Password credentials work (pings `op whoami`).
+    #[command(name = "1pass")]
+    OnePass(StatusArgs),
     /// Check whether Discord credentials work (pings `GET /users/@me`).
     Discord(StatusArgs),
     /// Check whether Google Calendar credentials work (pings the
@@ -133,6 +150,10 @@ pub struct DeleteAction {
 
 #[derive(Debug, Subcommand)]
 pub enum DeleteService {
+    /// Delete 1Password credentials (global by default, `--local` for
+    /// project-scoped).
+    #[command(name = "1pass")]
+    OnePass(DeleteArgs),
     /// Delete Discord credentials (global by default, `--local` for
     /// project-scoped).
     Discord(DeleteArgs),
@@ -147,32 +168,38 @@ pub enum DeleteService {
 pub async fn run(args: ServiceArgs) -> Result<()> {
     match args.action {
         Action::Create(c) => match c.service {
+            CreateService::OnePass(a) => lifecycle::run_create::<OnePassLifecycle>(a).await,
             CreateService::Discord(a) => lifecycle::run_create::<DiscordLifecycle>(a).await,
             CreateService::Gcal(a) => lifecycle::run_create::<GcalLifecycle>(a).await,
             CreateService::Telegram(a) => lifecycle::run_create::<TelegramLifecycle>(a).await,
         },
         Action::Enable(a) => match a.service {
+            EnableService::OnePass(a) => lifecycle::run_enable::<OnePassLifecycle>(a),
             EnableService::Discord(a) => lifecycle::run_enable::<DiscordLifecycle>(a),
             EnableService::Gcal(a) => lifecycle::run_enable::<GcalLifecycle>(a),
             EnableService::Telegram(a) => lifecycle::run_enable::<TelegramLifecycle>(a),
         },
         Action::Disable(d) => match d.service {
+            DisableService::OnePass(a) => lifecycle::run_disable::<OnePassLifecycle>(a),
             DisableService::Discord(a) => lifecycle::run_disable::<DiscordLifecycle>(a),
             DisableService::Gcal(a) => lifecycle::run_disable::<GcalLifecycle>(a),
             DisableService::Telegram(a) => lifecycle::run_disable::<TelegramLifecycle>(a),
         },
         Action::List(a) => service_list::run(a),
         Action::Show(s) => match s.service {
+            ShowService::OnePass(a) => lifecycle::run_show::<OnePassLifecycle>(a),
             ShowService::Discord(a) => lifecycle::run_show::<DiscordLifecycle>(a),
             ShowService::Gcal(a) => lifecycle::run_show::<GcalLifecycle>(a),
             ShowService::Telegram(a) => lifecycle::run_show::<TelegramLifecycle>(a),
         },
         Action::Status(s) => match s.service {
+            StatusService::OnePass(a) => lifecycle::run_status::<OnePassLifecycle>(a).await,
             StatusService::Discord(a) => lifecycle::run_status::<DiscordLifecycle>(a).await,
             StatusService::Gcal(a) => lifecycle::run_status::<GcalLifecycle>(a).await,
             StatusService::Telegram(a) => lifecycle::run_status::<TelegramLifecycle>(a).await,
         },
         Action::Delete(d) => match d.service {
+            DeleteService::OnePass(a) => lifecycle::run_delete::<OnePassLifecycle>(a),
             DeleteService::Discord(a) => lifecycle::run_delete::<DiscordLifecycle>(a),
             DeleteService::Gcal(a) => lifecycle::run_delete::<GcalLifecycle>(a),
             DeleteService::Telegram(a) => lifecycle::run_delete::<TelegramLifecycle>(a),

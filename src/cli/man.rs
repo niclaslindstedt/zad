@@ -21,6 +21,7 @@ pub struct ManArgs {
 
 pub const PAGES: &[(&str, &str)] = &[
     ("main", include_str!("../../man/main.md")),
+    ("1pass", include_str!("../../man/1pass.md")),
     ("commands", include_str!("../../man/commands.md")),
     ("discord", include_str!("../../man/discord.md")),
     ("docs", include_str!("../../man/docs.md")),
