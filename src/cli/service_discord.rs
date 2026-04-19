@@ -97,8 +97,12 @@ impl LifecycleService for DiscordLifecycle {
         args: &CreateArgs,
         non_interactive: bool,
     ) -> Result<(DiscordServiceCfg, DiscordSecrets)> {
-        let application_id =
-            resolve_application_id(args.application_id.as_deref(), non_interactive)?;
+        let open_browser = !args.base.no_browser;
+        let application_id = resolve_application_id(
+            args.application_id.as_deref(),
+            open_browser,
+            non_interactive,
+        )?;
         let default_guild = resolve_default_guild(args.default_guild.as_deref(), non_interactive)?;
         let scopes = resolve_scopes(
             args.scopes.scopes.as_deref(),
@@ -110,7 +114,7 @@ impl LifecycleService for DiscordLifecycle {
             args.token.bot_token.as_deref(),
             args.token.bot_token_env.as_deref(),
             &application_id,
-            !args.base.no_browser,
+            open_browser,
             non_interactive,
         )?;
         Ok((
@@ -200,13 +204,27 @@ fn theme() -> ColorfulTheme {
     ColorfulTheme::default()
 }
 
-fn resolve_application_id(flag: Option<&str>, non_interactive: bool) -> Result<String> {
+fn resolve_application_id(
+    flag: Option<&str>,
+    open_browser: bool,
+    non_interactive: bool,
+) -> Result<String> {
     if let Some(v) = flag {
         return validate_numeric(v, "application-id").map(|_| v.to_string());
     }
     if non_interactive {
         return Err(ZadError::MissingRequired("--application-id"));
     }
+
+    let url = PORTAL_APPS_URL;
+    println!();
+    println!("Your Discord applications live at:");
+    println!("  {url}");
+    println!("Create one (or open an existing app) and copy its Application ID.");
+    if open_browser {
+        let _ = open::that(url);
+    }
+
     let v: String = Input::with_theme(&theme())
         .with_prompt("Discord application ID")
         .validate_with(|s: &String| validate_numeric(s, "application-id").map(|_| ()))
@@ -222,6 +240,13 @@ fn resolve_default_guild(flag: Option<&str>, non_interactive: bool) -> Result<Op
     if non_interactive {
         return Ok(None);
     }
+
+    println!();
+    println!("To find a guild (server) ID in Discord:");
+    println!("  Settings → Advanced → enable Developer Mode, then");
+    println!("  right-click the server icon → \"Copy Server ID\".");
+    println!("Leave blank to skip — you can set a default guild later.");
+
     let v: String = Input::with_theme(&theme())
         .with_prompt("Default guild ID (leave blank for none)")
         .allow_empty(true)
@@ -281,6 +306,8 @@ fn resolve_discord_bot_token(
         .interact()?;
     Ok(v)
 }
+
+const PORTAL_APPS_URL: &str = "https://discord.com/developers/applications";
 
 fn portal_bot_url(application_id: &str) -> String {
     format!("https://discord.com/developers/applications/{application_id}/bot")

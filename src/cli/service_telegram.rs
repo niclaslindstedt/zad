@@ -12,11 +12,11 @@
 
 use async_trait::async_trait;
 use clap::Args;
-use dialoguer::{Input, theme::ColorfulTheme};
+use dialoguer::{Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
     BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
-    resolve_bot_token, resolve_scopes,
+    resolve_scopes,
 };
 use crate::config::{ProjectConfig, TelegramServiceCfg};
 use crate::error::{Result, ZadError};
@@ -89,6 +89,7 @@ impl LifecycleService for TelegramLifecycle {
         args: &CreateArgs,
         non_interactive: bool,
     ) -> Result<(TelegramServiceCfg, TelegramSecrets)> {
+        let open_browser = !args.base.no_browser;
         let default_chat = resolve_default_chat(args.default_chat.as_deref(), non_interactive)?;
         let scopes = resolve_scopes(
             args.scopes.scopes.as_deref(),
@@ -96,14 +97,11 @@ impl LifecycleService for TelegramLifecycle {
             ALL_SCOPES,
             non_interactive,
         )?;
-        // Bot tokens come from a chat with @BotFather on Telegram, not
-        // a web page — so we take the vanilla password-prompt path
-        // without any developer-portal deep link.
-        let bot_token = resolve_bot_token(
+        let bot_token = resolve_telegram_bot_token(
             args.token.bot_token.as_deref(),
             args.token.bot_token_env.as_deref(),
+            open_browser,
             non_interactive,
-            Self::DISPLAY,
         )?;
         Ok((
             TelegramServiceCfg {
@@ -198,6 +196,15 @@ fn resolve_default_chat(flag: Option<&str>, non_interactive: bool) -> Result<Opt
     if non_interactive {
         return Ok(None);
     }
+
+    println!();
+    println!("Default chat accepts any of:");
+    println!("  • @username           (public channel or supergroup)");
+    println!("  • numeric chat ID     (e.g. -1001234567890 for a group)");
+    println!("  • alias               (resolved later via the directory)");
+    println!("For private chats, message @userinfobot to get your chat ID.");
+    println!("Leave blank to skip — you can set a default chat later.");
+
     let v: String = Input::with_theme(&theme())
         .with_prompt("Default chat ID, @username, or alias (leave blank for none)")
         .allow_empty(true)
@@ -208,6 +215,44 @@ fn resolve_default_chat(flag: Option<&str>, non_interactive: bool) -> Result<Opt
         validate_chat(&v).map(|_| Some(v))
     }
 }
+
+/// Telegram-specific bot-token prompt: same flag/env contract as the
+/// generic `resolve_bot_token`, but the interactive path surfaces (and
+/// optionally opens) the @BotFather chat, since that's the only source
+/// of a Telegram bot token — there's no developer portal.
+fn resolve_telegram_bot_token(
+    flag: Option<&str>,
+    env_flag: Option<&str>,
+    open_browser: bool,
+    non_interactive: bool,
+) -> Result<String> {
+    if let Some(env) = env_flag {
+        return std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()));
+    }
+    if let Some(v) = flag {
+        return Ok(v.to_string());
+    }
+    if non_interactive {
+        return Err(ZadError::MissingRequired("--bot-token or --bot-token-env"));
+    }
+
+    let url = BOTFATHER_URL;
+    println!();
+    println!("Telegram bot tokens are issued by @BotFather:");
+    println!("  {url}");
+    println!("Send /newbot to create a bot, or /mybots → pick a bot → \"API Token\"");
+    println!("for an existing one. Copy the token and paste it below.");
+    if open_browser {
+        let _ = open::that(url);
+    }
+
+    let v = Password::with_theme(&theme())
+        .with_prompt("Telegram bot token")
+        .interact()?;
+    Ok(v)
+}
+
+const BOTFATHER_URL: &str = "https://t.me/BotFather";
 
 /// Lightweight sanity-check on a chat reference. Accepts:
 ///
