@@ -13,9 +13,10 @@ governance. A copy of the spec lives at the repository root so contributors and
 AI agents can consult it without leaving the repo; its version is recorded in
 the YAML front matter at the top of the file.
 
-Run `oss-spec validate .` to verify conformance. When in doubt about a layout,
-naming, or workflow decision, consult the relevant section of `OSS_SPEC.md` —
-it is the source of truth for the conventions this repo follows.
+When in doubt about a layout, naming, or workflow decision, consult the
+relevant section of `OSS_SPEC.md` — it is the source of truth for the
+conventions this repo follows. `oss-spec validate .` is available as an
+on-demand check; it is not part of the routine dev loop.
 
 ## Build and test commands
 

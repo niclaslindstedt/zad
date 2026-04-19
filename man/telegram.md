@@ -25,6 +25,7 @@ then load the matching bot token from the OS keychain.
 | `discover`    | Poll the Bot API for recent updates and cache chat aliases. |
 | `directory`   | Inspect or hand-edit the name → chat_id directory. |
 | `permissions` | Inspect, scaffold, or dry-run the per-project permissions policy. |
+| `self`        | Manage the private-chat ID resolved from the literal `@me` in send/read targets. |
 
 Every verb supports `--json` to emit machine-readable output instead
 of the human-readable default.
@@ -96,6 +97,10 @@ same shape as the scope-denied error.
 
 - a numeric `chat_id` (positive or negative),
 - a public `@username` (looked up as a directory key after stripping the `@`),
+- the literal `@me` (case-insensitive) — resolves to the private-chat
+  ID captured via `zad telegram self capture` (or `--self-chat` on
+  `service create`). Errors with a pointer to `self capture` when no
+  self-chat is configured.
 - a name from this project's directory.
 
 When the name is unknown, the error message prints the exact
@@ -209,6 +214,35 @@ zad telegram permissions check --function <name> [--chat <id|name>] [--body <tex
 | `--local` | bool | false | `init` writes to the project-local scope instead of global. |
 | `--json` | bool | false | Emit machine-readable JSON. |
 
+## `zad telegram self`
+
+```
+zad telegram self                      # show (same as `show`)
+zad telegram self show
+zad telegram self set     <CHAT_ID>    # bypass validation, write verbatim
+zad telegram self clear
+zad telegram self capture              # interactive: poll for your first message to the bot
+```
+
+Manage the private-chat ID that `--chat @me` resolves to. Stored as
+`self_chat_id` in the effective `config.toml` (non-secret).
+
+- `show` — print the stored value or `"not configured"`.
+- `set <chat_id>` — write a chat ID directly. Useful when you already
+  know it (e.g. from `@userinfobot`).
+- `clear` — remove the stored value.
+- `capture` — call `getMe` to learn the bot's `@username`, print its
+  `https://t.me/<username>` link (and open it in the system browser
+  unless `--no-browser` is set), then poll `getUpdates` for up to 60
+  seconds and store the first private-chat ID whose `from.id` differs
+  from the bot's own. Requires a stored bot token (run `service create
+  telegram` first) and an interactive terminal.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--no-browser` | bool | false | Only on `capture`: print the bot's `t.me` link but don't auto-open it. |
+| `--json` | bool | false | Emit machine-readable JSON on every subcommand. |
+
 ## Environment variables
 
 | Variable | Description |
@@ -235,6 +269,9 @@ zad telegram send --chat team-room "deploy finished"
 
 # Or by @username (channels / public supergroups).
 zad telegram send --chat @team_notifications "deploy finished"
+
+# Send to yourself (after `zad telegram self capture`).
+zad telegram send --chat @me "remember to file the time sheet"
 
 # Send a multi-line body via stdin (handy for CI logs).
 tail -n 20 deploy.log | zad telegram send --chat team-room --stdin

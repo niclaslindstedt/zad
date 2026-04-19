@@ -315,8 +315,10 @@ service is a valid interim state).
    `lifecycle::run_*::<<Name>Lifecycle>(a)`.
 7. **Add `tests/cli_service_<name>_test.rs`** mirroring
    `tests/cli_service_discord_test.rs`.
-8. **Run `make fmt lint build test`** plus `oss-spec validate .`.
-   Lifecycle is now wired end-to-end.
+8. **Run `make fmt lint build test`**. Lifecycle is now wired
+   end-to-end. (`oss-spec validate .` is an on-demand conformance
+   check — useful when introducing structural changes, not required
+   for every PR.)
 
 9. **Implement the `Service` trait** in `src/service/<name>/mod.rs`
    when you're ready to ship runtime verbs. Keep the provider's SDK a
@@ -398,10 +400,13 @@ impl LifecycleService for TelegramLifecycle {
     fn enable_in_project(cfg: &mut ProjectConfig) { cfg.enable_telegram(); }  // EDIT
     fn disable_in_project(cfg: &mut ProjectConfig) { cfg.disable_telegram(); } // EDIT
 
-    fn resolve(args: &CreateArgs, non_interactive: bool)
+    async fn resolve(args: &CreateArgs, non_interactive: bool)
         -> Result<(TelegramServiceCfg, TelegramSecrets)>
     {
         // EDIT: prompt-or-fail for each Option<_> field in your args.
+        // `resolve` is async so you can call provider APIs from here
+        // (e.g. validate a user-supplied snowflake, poll for a
+        // self-identity message) before returning the final Cfg.
         let bot_username = args.bot_username.clone()
             .ok_or(ZadError::MissingRequired("--bot-username"))?;
         let default_chat_id = args.default_chat_id.clone();
@@ -481,7 +486,35 @@ impl LifecycleService for TelegramLifecycle {
 }
 ```
 
-### 4. Golden rules
+### 4. Optional: a `self` identity and `@me`
+
+Services where "the user" is a meaningful address (Discord, Telegram,
+Slack, …) can expose an optional `self_*_id` field on their `Cfg` so
+`zad <svc> send --<target> @me` resolves to the caller's own
+account. Discord's `self_user_id` and Telegram's `self_chat_id` are
+the reference implementations:
+
+- Add the field to the `Cfg` as `Option<…>` with `#[serde(default,
+  skip_serializing_if = "Option::is_none")]`. It's non-secret config,
+  not a keychain entry.
+- Take an optional `--self-<thing>` flag on `CreateArgs`. In
+  non-interactive mode use the flag verbatim; in interactive mode
+  prompt (or run a provider-specific capture flow) after the token is
+  resolved — `resolve` is async, so provider calls are fair game.
+- In the runtime CLI, special-case the literal `@me` (case-insensitive)
+  in the target resolver **before** the directory lookup. Emit a clear
+  error when the self-ID isn't set, pointing at the `self` subcommand.
+- Wire a `self {show,set,clear,…}` subcommand group that mirrors
+  `permissions` — same four-verb shape — so the field is manageable
+  after create.
+- Permission patterns match the raw input alongside the resolved ID,
+  so `deny = ["@me"]` works automatically. Document this in the
+  service's `examples/*-permissions/README.md`.
+
+Services where "self" has no useful meaning (Reddit bots, GitHub Apps,
+etc.) simply skip this — the pattern is opt-in.
+
+### 5. Golden rules
 
 - **Secrets never go in the TOML.** `Cfg` fields are for non-secret
   material only; everything sensitive flows through `Secrets` and

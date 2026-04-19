@@ -61,7 +61,8 @@ fn help_lists_every_subcommand() {
         .stdout(contains("chats"))
         .stdout(contains("discover"))
         .stdout(contains("directory"))
-        .stdout(contains("permissions"));
+        .stdout(contains("permissions"))
+        .stdout(contains("self"));
 }
 
 // ---------------------------------------------------------------------------

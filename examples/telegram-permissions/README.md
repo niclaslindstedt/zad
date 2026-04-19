@@ -37,5 +37,13 @@ zad telegram permissions check --function send \
     --chat team-room --body "deploy ok"
 ```
 
+The permission engine matches patterns against every alias of the
+target — the raw `--chat` input, the resolved `chat_id`, and every
+directory entry that maps to that ID. That means a rule like
+`deny = ["@me"]` in the `[send]` block blocks `zad telegram send
+--chat @me …` even after the sigil resolves to a numeric ID. Conversely,
+allow-lists written in terms of numeric IDs continue to admit `@me`
+invocations because the resolved ID is tested too.
+
 See [`docs/configuration.md`](../../docs/configuration.md#permissions-file)
 for the full schema.

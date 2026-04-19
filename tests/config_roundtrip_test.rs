@@ -30,6 +30,7 @@ fn global_discord_config_serializes_flat() {
         application_id: "1234".to_string(),
         scopes: vec!["guilds".into()],
         default_guild: Some("987".into()),
+        self_user_id: None,
     };
 
     config::save_flat(&path, &cfg).unwrap();

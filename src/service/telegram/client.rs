@@ -97,12 +97,15 @@ impl TelegramHttp {
         })
     }
 
-    /// Call `getMe`, returning the bot's username on success. Used by
-    /// the lifecycle driver during `zad service create telegram` to
-    /// confirm the token is live before writing anything to disk.
+    /// Call `getMe`, returning the bot's full identity (numeric ID,
+    /// `@username`, first name). Used by the lifecycle driver during
+    /// `zad service create telegram` to confirm the token is live, and
+    /// by the self-capture flow to learn the bot's username (to prompt
+    /// `"send /start to @{botname}"`) and its numeric ID (to ignore
+    /// bot-sourced messages when picking the user's private chat).
     ///
     /// No scope check: this runs before scopes are persisted.
-    pub async fn validate_token(&self) -> Result<String> {
+    pub async fn get_me(&self) -> Result<BotIdentity> {
         let envelope: ApiEnvelope<GetMeResult> = self.get("getMe", &[]).await?;
         let me = envelope.into_result()?;
         if !me.is_bot {
@@ -111,6 +114,18 @@ impl TelegramHttp {
                 message: "Telegram reports this token as a non-bot account".into(),
             });
         }
+        Ok(BotIdentity {
+            id: me.id,
+            username: me.username,
+            first_name: me.first_name,
+        })
+    }
+
+    /// Call `getMe` and return only the display name. Preserved as a
+    /// thin wrapper because the lifecycle's `validate()` hook wants a
+    /// single string; structured callers use [`Self::get_me`] directly.
+    pub async fn validate_token(&self) -> Result<String> {
+        let me = self.get_me().await?;
         Ok(me.username.unwrap_or(me.first_name))
     }
 
@@ -143,6 +158,17 @@ impl TelegramHttp {
     /// here is the library layer's defense in depth.
     pub async fn get_updates(&self, offset: Option<i64>) -> Result<Vec<Update>> {
         self.require_any_scope(&["messages.read", "chats"])?;
+        self.get_updates_inner(offset).await
+    }
+
+    /// Same as [`Self::get_updates`] but without the scope check.
+    /// Intended for lifecycle flows (e.g. self-chat capture during
+    /// `service create`) that run on an [`Self::unscoped`] client.
+    pub async fn get_updates_unscoped(&self, offset: Option<i64>) -> Result<Vec<Update>> {
+        self.get_updates_inner(offset).await
+    }
+
+    async fn get_updates_inner(&self, offset: Option<i64>) -> Result<Vec<Update>> {
         let mut query: Vec<(&str, String)> = vec![("timeout", "0".into())];
         if let Some(o) = offset {
             query.push(("offset", o.to_string()));
@@ -246,11 +272,21 @@ impl<T> ApiEnvelope<T> {
 
 #[derive(Debug, Deserialize)]
 struct GetMeResult {
-    #[allow(dead_code)]
     id: i64,
     is_bot: bool,
     first_name: String,
     username: Option<String>,
+}
+
+/// Subset of `getMe` the caller gets back from [`TelegramHttp::get_me`].
+/// `username` is optional because Telegram bots can, in theory, ship
+/// without one (though BotFather enforces it today); `first_name` is
+/// always present and is used as a display fallback.
+#[derive(Debug, Clone)]
+pub struct BotIdentity {
+    pub id: i64,
+    pub username: Option<String>,
+    pub first_name: String,
 }
 
 #[derive(Debug, Deserialize)]

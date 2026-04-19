@@ -48,6 +48,10 @@ pub enum Action {
     /// Inspect, scaffold, or dry-run the permissions policy that narrows
     /// what this service may actually do.
     Permissions(PermissionsArgs),
+    /// Manage the Discord user ID resolved from the literal `@me` in
+    /// `--dm` targets. Show, set (with API validation), or clear.
+    #[command(name = "self")]
+    SelfCmd(SelfArgs),
 }
 
 pub async fn run(args: DiscordArgs) -> Result<()> {
@@ -63,6 +67,7 @@ pub async fn run(args: DiscordArgs) -> Result<()> {
         Action::Discover(a) => run_discover(a).await,
         Action::Directory(a) => run_directory(a),
         Action::Permissions(a) => run_permissions(a),
+        Action::SelfCmd(a) => run_self(a).await,
     }
 }
 
@@ -121,7 +126,7 @@ async fn run_send(args: SendArgs) -> Result<()> {
             Target::Channel(ChannelId(id))
         }
         (None, Some(u)) => {
-            let id = resolve_user(u, &directory)?;
+            let id = resolve_user_or_self(u, cfg.self_user_id.as_deref(), &directory)?;
             permissions.check_send_dm(u, id, &directory)?;
             Target::Dm(UserId(id))
         }
@@ -562,6 +567,31 @@ fn resolve_user(input: &str, directory: &Directory) -> Result<u64> {
              `zad discord directory set user {key} <id>`."
         ))
     })
+}
+
+fn resolve_user_or_self(
+    input: &str,
+    self_user_id: Option<&str>,
+    directory: &Directory,
+) -> Result<u64> {
+    if input.eq_ignore_ascii_case("@me") {
+        return match self_user_id {
+            Some(id) => id.parse::<u64>().map_err(|_| {
+                ZadError::Invalid(format!(
+                    "stored self-user id `{id}` is not a numeric snowflake; \
+                     run `zad discord self set <id>` with a valid id"
+                ))
+            }),
+            None => Err(ZadError::Invalid(
+                "`@me` has no self-user configured. Run \
+                 `zad discord self set <id>` with your Discord user ID \
+                 (Settings → Advanced → Developer Mode → right-click \
+                 yourself → \"Copy User ID\")."
+                    .into(),
+            )),
+        };
+    }
+    resolve_user(input, directory)
 }
 
 fn parse_snowflake(v: &str, field: &'static str) -> Result<u64> {
@@ -1343,4 +1373,114 @@ fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {
             "missing message body: pass it as a positional arg or use --stdin".into(),
         )),
     }
+}
+
+// ---------------------------------------------------------------------------
+// self — manage the `@me` resolution target
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct SelfArgs {
+    #[command(subcommand)]
+    pub action: Option<SelfAction>,
+
+    /// When no subcommand is given, behave like `show`.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SelfAction {
+    /// Print the stored self-user ID (or note that it's not set).
+    Show(SelfShowArgs),
+    /// Validate the supplied snowflake against Discord and store it.
+    Set(SelfSetArgs),
+    /// Clear the stored self-user ID.
+    Clear(SelfClearArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SelfShowArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SelfSetArgs {
+    /// Your Discord user ID (numeric snowflake).
+    pub user_id: String,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SelfClearArgs {
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SelfOutput {
+    command: &'static str,
+    self_user_id: Option<String>,
+}
+
+async fn run_self(args: SelfArgs) -> Result<()> {
+    match args.action {
+        None => run_self_show(SelfShowArgs { json: args.json }),
+        Some(SelfAction::Show(a)) => run_self_show(a),
+        Some(SelfAction::Set(a)) => run_self_set(a).await,
+        Some(SelfAction::Clear(a)) => run_self_clear(a),
+    }
+}
+
+fn run_self_show(args: SelfShowArgs) -> Result<()> {
+    let (cfg, _scope) = effective_config()?;
+    emit_self(args.json, "discord.self.show", cfg.self_user_id)
+}
+
+async fn run_self_set(args: SelfSetArgs) -> Result<()> {
+    let (mut cfg, scope) = effective_config()?;
+    let token = load_token(&scope)?;
+    let resolved =
+        crate::cli::service_discord::validate_self_user(&token, args.user_id.trim()).await?;
+    cfg.self_user_id = Some(resolved);
+    save_effective_config(&cfg, &scope)?;
+    emit_self(args.json, "discord.self.set", cfg.self_user_id)
+}
+
+fn run_self_clear(args: SelfClearArgs) -> Result<()> {
+    let (mut cfg, scope) = effective_config()?;
+    cfg.self_user_id = None;
+    save_effective_config(&cfg, &scope)?;
+    emit_self(args.json, "discord.self.clear", None)
+}
+
+fn emit_self(json: bool, command: &'static str, self_user_id: Option<String>) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&SelfOutput {
+                command,
+                self_user_id
+            })
+            .unwrap()
+        );
+    } else {
+        match self_user_id {
+            Some(id) => println!("self user id: {id}"),
+            None => println!("self user id: not configured"),
+        }
+    }
+    Ok(())
+}
+
+fn save_effective_config(cfg: &DiscordServiceCfg, scope: &EffectiveScope) -> Result<()> {
+    let path = match scope {
+        EffectiveScope::Local(slug) => {
+            config::path::project_service_config_path_for(slug, "discord")?
+        }
+        EffectiveScope::Global => config::path::global_service_config_path("discord")?,
+    };
+    config::save_flat(&path, cfg)
 }

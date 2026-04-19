@@ -74,6 +74,22 @@ impl DiscordHttp {
         Ok(me.name.clone())
     }
 
+    /// Fetch a human user's display name by snowflake. Used to validate
+    /// the ID supplied for `--self-user` / `zad discord self set <id>`
+    /// before persisting it.
+    ///
+    /// No scope check: this runs before scopes are persisted during
+    /// `service create`, and on the `self set` path the call is an
+    /// identity ping with no side-effects.
+    pub async fn get_user(&self, id: u64) -> Result<String> {
+        let user = self
+            .http
+            .get_user(SerenityUserId::new(id))
+            .await
+            .map_err(|e| map_http(e, HttpCtx::User(id)))?;
+        Ok(user.name.clone())
+    }
+
     pub async fn send(&self, target: Target, body: &str) -> Result<MessageId> {
         self.require_scope("messages.send")?;
         let len = body.chars().count();

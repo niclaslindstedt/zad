@@ -52,6 +52,11 @@ zad discord discover
 zad discord send --channel general "deploy finished"
 zad discord read --channel general --limit 20
 zad discord channels --json
+
+# 5. (Optional) DM yourself. `zad service create discord` offers to
+#    capture your user ID via Developer Mode; if skipped, set it later:
+zad discord self set 1112223334445556
+zad discord send --dm @me "reminder: file the time sheet"
 ```
 
 For headless / CI setups, pass the token non-interactively:
