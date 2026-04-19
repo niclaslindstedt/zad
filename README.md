@@ -137,12 +137,22 @@ Runtime verbs are chosen per service.
   windows, `max_future_days`, `min_notice_minutes`, `max_attendees`,
   `send_updates_allowed`, and `block_shared_calendars`. Mutating
   verbs support `--dry-run`.
+- **`1pass`** (1Password): `vaults`, `items`, `tags`, `get`, `read`,
+  `inject`, `create`, `whoami`, and `permissions`. Wraps the official
+  `op` CLI with the token stored in the OS keychain and injected as
+  `OP_SERVICE_ACCOUNT_TOKEN` into spawned child processes — the token
+  is never exported into the parent shell. Destructive `op` verbs
+  (`item edit`, `item delete`, `vault create|edit|delete`, `user`,
+  `group`, `events-api`, `run`) are intentionally not exposed. The
+  filter-style permissions policy treats out-of-scope targets as if
+  they don't exist (hidden-target semantics).
 
 Every command takes `--json` for machine-readable output.
 
-Today the shipped services are `discord`, `gcal`, and `telegram`.
-See [`man/main.md`](man/main.md) for the top-level overview and
-[`man/service.md`](man/service.md), [`man/discord.md`](man/discord.md),
+Today the shipped services are `1pass`, `discord`, `gcal`, and
+`telegram`. See [`man/main.md`](man/main.md) for the top-level
+overview and [`man/service.md`](man/service.md),
+[`man/1pass.md`](man/1pass.md), [`man/discord.md`](man/discord.md),
 [`man/gcal.md`](man/gcal.md), and [`man/telegram.md`](man/telegram.md)
 for the full per-command reference.
 
