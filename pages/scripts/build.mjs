@@ -1,8 +1,8 @@
-// Render the static website from the extracted source data.
+// Render the static pages site from the extracted source data.
 //
 // The extractor (extract-source-data.mjs) writes
-// website/src/generated/sourceData.json. This script renders a single
-// HTML page at website/dist/index.html by filling a string template
+// pages/src/generated/sourceData.json. This script renders a single
+// HTML page at pages/dist/index.html by filling a string template
 // with the extracted values. Vite is still usable as a dev server, but
 // the production deployable artifact is what this script writes.
 
@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
-const generated = path.join(repoRoot, "website", "src", "generated", "sourceData.json");
+const generated = path.join(repoRoot, "pages", "src", "generated", "sourceData.json");
 if (!fs.existsSync(generated)) {
   throw new Error(
     `sourceData.json is missing at ${generated}. Run \`npm run extract\` first ` +
@@ -19,7 +19,7 @@ if (!fs.existsSync(generated)) {
 }
 
 const data = JSON.parse(fs.readFileSync(generated, "utf8"));
-const dist = path.join(repoRoot, "website", "dist");
+const dist = path.join(repoRoot, "pages", "dist");
 fs.mkdirSync(dist, { recursive: true });
 
 function escape(s) {

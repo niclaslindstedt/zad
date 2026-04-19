@@ -24,9 +24,9 @@ The registry is the single source of truth for which sync skills exist in this r
 | `update-manpages` | `man/*.md` vs. clap CLI definitions        | 1 |
 | `update-docs`     | `docs/*.md` vs. source of truth            | 2 |
 | `update-readme`   | `README.md` vs. current public surface     | 3 |
-| `update-website`  | `website/` source-derived content          | 4 |
+| `update-pages`    | `pages/` source-derived content            | 4 |
 
-Run order matters: upstream fixes must land before downstream skills read them. Manpages mirror the CLI parser and must settle first; `docs/` references those manpages; the README summarizes everything above; the website is rendered from all three.
+Run order matters: upstream fixes must land before downstream skills read them. Manpages mirror the CLI parser and must settle first; `docs/` references those manpages; the README summarizes everything above; the pages site is rendered from all three.
 
 ## Discovery process
 

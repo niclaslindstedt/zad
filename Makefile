@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt fmt-check release clean docs website website-dev install bench
+.PHONY: build test lint fmt fmt-check release clean docs pages pages-dev install bench
 
 
 build:
@@ -29,10 +29,8 @@ install:
 docs:
 	@echo "see docs/"
 
-website:
-	cargo build --bin zad
-	cd website && npm install && npm run build
+pages:
+	cd pages && npm install && npm run build
 
-website-dev:
-	cargo build --bin zad
-	cd website && npm install && npm run dev
+pages-dev:
+	cd pages && npm install && npm run dev

@@ -48,7 +48,7 @@ first public commit:
 ├── docs/                    # Topic-specific documentation (see §11.1)
 ├── man/                     # CLI manpages, <cli>-command (see §12.3)
 ├── examples/                # Runnable example projects (see §13)
-├── website/                 # Showcase and hosted docs site (see §11.2)
+├── pages/                   # Showcase and hosted docs site (see §11.2)
 ├── prompts/                 # Versioned LLM prompts (see §13.5)
 ├── scripts/                 # Automation scripts (release, lint helpers)
 └── Makefile                 # Standard developer entry points (see §9)
@@ -61,7 +61,7 @@ specific files (`CLAUDE.md`, `.github/copilot-instructions.md`,
 
 `man/` is required for any project whose primary deliverable is a CLI
 binary; see §12 for the full set of CLI-specific requirements. The
-`docs/`, `examples/`, and `website/` directories are required for any
+`docs/`, `examples/`, and `pages/` directories are required for any
 project that has a public audience. Only a pure internal library with
 no users may omit them.
 
@@ -324,8 +324,8 @@ Recommended optional targets:
 | `make fmt-check`   | Verify formatting without modifying files    |
 | `make coverage`    | Run tests with coverage reporting            |
 | `make docs`        | Build local documentation                    |
-| `make website`     | Build the marketing website                  |
-| `make website-dev` | Run a local website dev server               |
+| `make pages`       | Build the pages site                         |
+| `make pages-dev`   | Run a local pages dev server                 |
 | `make install`     | Install the built artifact locally           |
 | `make bench`       | Run benchmarks                               |
 
@@ -668,7 +668,7 @@ Projects expose their surface in three complementary layers:
   page must be able to evaluate and start using the project from the
   README alone (see §3).
 - **`docs/`** — the reference manual. Topic-specific markdown.
-- **`website/`** — the public showcase and hosted docs. A real web page
+- **`pages/`** — the public showcase and hosted docs. A real web page
   with a landing hero, live-looking examples, and the `docs/` content
   rendered into a navigable site.
 
@@ -691,7 +691,7 @@ Documentation is kept in sync with code via the "documentation sync
 points" table in `AGENTS.md` (see §7) so that contributors know exactly
 which pages to touch for each kind of change.
 
-### 11.2 `website/` — showcase and hosted docs
+### 11.2 `pages/` — showcase and hosted docs
 
 **Every project must ship a website.** The website is the project's
 public face: a new visitor who does not yet know what the project is
@@ -731,8 +731,8 @@ and emits a single generated data file that the website imports.
 
 A minimal specification for the extraction script:
 
-- **Location:** `website/scripts/extract-source-data.{mjs,ts,py}`.
-- **Output:** `website/src/generated/sourceData.{ts,json}`. The output
+- **Location:** `pages/scripts/extract-source-data.{mjs,ts,py}`.
+- **Output:** `pages/src/generated/sourceData.{ts,json}`. The output
   path must be gitignored and must be regenerated on every build.
 - **Inputs it must resolve from source**, where applicable:
   - Current version from the authoritative manifest (`Cargo.toml`,
@@ -755,7 +755,7 @@ A minimal specification for the extraction script:
   A missing command, a renamed enum, or a deleted capability must break
   the website build and force the developer to update the extractor.
 
-The `website/package.json` (or equivalent) must expose the extraction
+The `pages/package.json` (or equivalent) must expose the extraction
 as a named script and must chain it into the build command so that it
 is impossible to build the website without regenerating the data:
 
@@ -770,7 +770,7 @@ is impossible to build the website without regenerating the data:
 }
 ```
 
-The top-level `Makefile` exposes `make website` and `make website-dev`
+The top-level `Makefile` exposes `make pages` and `make pages-dev`
 as thin wrappers that delegate to these scripts (see §9).
 
 #### Recommended stack
@@ -1426,7 +1426,7 @@ the corresponding artifact exists:
 | `README.md`   | `update-readme`     | Always (§3)                        |
 | `docs/`       | `update-docs`       | Always (§11.1)                     |
 | `man/`        | `update-manpages`   | CLI projects (§12.3)               |
-| `website/`    | `update-website`    | A website is published (§11.2)     |
+| `pages/`      | `update-pages`      | A pages site is published (§11.2)  |
 | *(umbrella)*  | `maintenance`       | Always — routes to all `update-*`  |
 
 Projects with additional drift-prone surfaces should add further skills
@@ -1457,7 +1457,7 @@ right.
 
 Run order matters: upstream fixes must land before downstream skills
 read them. Typical order is `update-spec` → `update-manpages` →
-`update-docs` → `update-readme` → `update-website`. Projects that do
+`update-docs` → `update-readme` → `update-pages`. Projects that do
 not publish a given artifact simply omit its row.
 
 The `maintenance` skill does no rewriting itself. It only schedules
@@ -1505,7 +1505,7 @@ checked before the first public tag.
 [ ] CHANGELOG.md (empty, auto-generated)                (§8.4)
 [ ] Conventional commits enforced                       (§8.1)
 [ ] Default branch protected with status checks         (§10.2)
-[ ] Makefile with build/test/lint/fmt/website targets   (§9)
+[ ] Makefile with build/test/lint/fmt/pages targets     (§9)
 [ ] CI workflow: build, test, lint, fmt-check           (§10.1)
 [ ] version-bump workflow (workflow_dispatch, pushes
     `v*` tag via RELEASE_TOKEN)                         (§10.3)
@@ -1519,9 +1519,9 @@ checked before the first public tag.
 [ ] Publish jobs declare explicit least-privilege
     permissions (contents: read, id-token: write)       (§10.3)
 [ ] docs/ with at least getting-started.md              (§11.1)
-[ ] website/ with source-extraction script and build    (§11.2)
-[ ] pages workflow deploys website on every main push   (§10.4, §11.2)
-[ ] Website staleness CI check                          (§11.2)
+[ ] pages/ with source-extraction script and build      (§11.2)
+[ ] pages workflow deploys the site on every main push  (§10.4, §11.2)
+[ ] Pages staleness CI check                            (§11.2)
 [ ] examples/ (if applicable) exercised by CI           (§13)
 [ ] prompts/<name>/<major>_<minor>.md for every LLM
     prompt the project sends (if applicable)            (§13.5)

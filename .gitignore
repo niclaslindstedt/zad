@@ -14,10 +14,10 @@
 .coverage/
 coverage/
 
-# Website
-website/node_modules/
-website/dist/
-website/src/generated/
+# Pages site
+pages/node_modules/
+pages/dist/
+pages/src/generated/
 
 # Generated docs
 docs/_build/

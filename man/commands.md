@@ -26,7 +26,7 @@ mandated by OSS_SPEC.md §12.4. It has four modes:
 | `zad commands <NAME>...` | Full reference for one command: flags, positionals, subcommands, exit codes, pointer to the matching manpage. |
 | `zad commands --examples` | Realistic example invocation for every command that has one. |
 | `zad commands <NAME>... --examples` | Example for a single command. |
-| `zad commands --json` | Machine-readable dump consumed by the website extractor and by external tooling. |
+| `zad commands --json` | Machine-readable dump consumed by the pages extractor and by external tooling. |
 
 ## Options
 

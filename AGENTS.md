@@ -135,13 +135,14 @@ expose `EffectivePermissions { global, local }` with one
 `examples/<service>-permissions/` (subdirectory with `permissions.toml`
 and a `README.md`, per §13 of `OSS_SPEC.md`).
 
-## Website staleness policy
+## Pages staleness policy
 
-Per §11.2 of `OSS_SPEC.md`, the website must be regenerated whenever
-commands, configuration keys, or examples change. Run `make website` locally
+Per §11.2 of `OSS_SPEC.md`, the pages site must be regenerated whenever
+commands, configuration keys, or examples change. Run `make pages` locally
 (or push to `main` — the `pages` CI workflow rebuilds and deploys
-automatically). If `make website` is not available yet, the `pages` CI job
-will catch drift on every push to `main`.
+automatically). The `pages-staleness` CI job scrapes the clap source and
+diffs it against `zad commands --json`, catching drift on every push to
+`main`.
 
 ## Maintenance skills
 
@@ -153,6 +154,6 @@ Per §21 of `OSS_SPEC.md`, this repo ships agent skills for keeping drift-prone 
 | `update-manpages` | After any change to the clap CLI tree (subcommand added / renamed, flag added or removed, default changed). |
 | `update-docs`     | After any change to the public API, configuration keys, or error messages. |
 | `update-readme`   | After any change that alters user-visible behavior, commands, or install instructions. |
-| `update-website`  | After README, `docs/`, `OSS_SPEC.md` front matter, or `Cargo.toml` version moves — the website extractor reads from those. |
+| `update-pages`    | After README, `docs/`, `OSS_SPEC.md` front matter, or `Cargo.toml` version moves — the pages extractor reads from those. |
 
 Each skill has a `SKILL.md` (the playbook) and a `.last-updated` file (the baseline commit hash). Run a skill by loading its `SKILL.md` and following the discovery process and update checklist. The skill rewrites `.last-updated` at the end of a successful run, and improves itself in place when it discovers new mapping entries. The `maintenance` skill owns a **Registry** table listing every `update-*` skill — add a row whenever you create a new sync skill. Skills are accessible via the `.claude/skills` symlink (→ `.agent/skills/`).

@@ -76,11 +76,12 @@ jobs:
             --ignore RUSTSEC-2026-0098 \
             --ignore RUSTSEC-2026-0099
 
-  # Website staleness check (OSS_SPEC §11.2). Builds the CLI, runs the
-  # website extractor, and fails if the extractor exits non-zero — the
-  # extractor itself fails loudly when any source-derived field no
-  # longer matches what the website expects.
-  website-staleness:
+  # Pages staleness check (OSS_SPEC §11.2). The deploy extractor
+  # scrapes the clap source directly (no Rust toolchain needed on the
+  # Pages runner), so this CI job is the one place that runs the live
+  # binary and diffs its `zad commands --json` output against the
+  # scrape. Any drift fails here, restoring the §11.2 guarantee.
+  pages-staleness:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -92,5 +93,26 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-      - name: Build website
-        run: make website
+      - name: Build pages
+        run: make pages
+      - name: Diff scrape against `zad commands --json`
+        run: |
+          cargo build --bin zad --quiet
+          ./target/debug/zad commands --json > /tmp/binary.json
+          node -e '
+            const fs = require("fs");
+            const binary = JSON.parse(fs.readFileSync("/tmp/binary.json", "utf8")).commands;
+            const scrape = JSON.parse(fs.readFileSync("pages/src/generated/sourceData.json", "utf8")).commands.commands;
+            const norm = (cs) => cs.map(c => c.path.join("/") + "|" + (c.description || "")).sort();
+            const b = norm(binary);
+            const s = norm(scrape);
+            const onlyB = b.filter(x => !s.includes(x));
+            const onlyS = s.filter(x => !b.includes(x));
+            if (onlyB.length || onlyS.length) {
+              console.error("pages extractor drifted from zad commands --json");
+              if (onlyB.length) { console.error("only in binary:"); onlyB.forEach(x => console.error("  " + x)); }
+              if (onlyS.length) { console.error("only in scrape:"); onlyS.forEach(x => console.error("  " + x)); }
+              process.exit(1);
+            }
+            console.log("pages scrape matches binary (" + b.length + " commands)");
+          '

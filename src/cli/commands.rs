@@ -25,7 +25,7 @@ pub struct CommandsArgs {
 
     /// Emit a machine-readable JSON dump of every command (path,
     /// description, flags, positionals, example). Consumed by the
-    /// website extractor.
+    /// pages extractor.
     #[arg(long)]
     pub json: bool,
 }

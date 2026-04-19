@@ -27,10 +27,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-      - run: cd website && npm install && npm run build
+      - run: cd pages && npm install && npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website/dist
+          path: pages/dist
       - id: deploy
         uses: actions/deploy-pages@v4

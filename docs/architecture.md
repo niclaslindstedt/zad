@@ -81,7 +81,7 @@ surface introspects the same clap tree so they cannot drift from
   block with log paths, env vars, and diagnostic commands.
 - `zad commands` (`src/cli/commands.rs`) — §12.4, command tree + flag
   reference + realistic examples + a machine-readable JSON dump
-  consumed by the website extractor.
+  consumed by the pages extractor.
 - `zad docs` / `zad man` (`src/cli/docs.rs`, `src/cli/man.rs`) — §12.3,
   conceptual topics and per-command reference pages embedded into the
   binary via `include_str!`.
