@@ -457,8 +457,9 @@ impl LifecycleService for TelegramLifecycle {
         Ok(vec![SecretRef { label: "token", account, present }])
     }
 
-    // Powers `zad service status <svc>` and `zad status` — the driver
-    // reads secrets back out of the keychain and hands them to
+    // Powers `zad service status --service <svc>` and the aggregate
+    // `zad service status` — the driver reads secrets back out of the
+    // keychain and hands them to
     // `validate` as a live "does this credential work?" check.
     // Return `Ok(None)` if any required account is missing at the
     // given scope; the driver will report "credentials_present: false"

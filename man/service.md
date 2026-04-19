@@ -31,7 +31,7 @@ Seven actions operate on services:
 | `disable <service>` | Disable the service in the current project (inverse of `enable`). |
 | `list` | List all services with credential and project-enablement status. |
 | `show <service>` | Show the effective configuration and both scopes' details. |
-| `status <service>` | Check whether credentials work by pinging the provider. |
+| `status [--service <name>]` | Check whether credentials work by pinging the provider. Without `--service`, every service in the registry is pinged in parallel. |
 | `delete <service>` | Delete credentials for the service (inverse of `create`). |
 
 Recognised services:
@@ -292,31 +292,84 @@ keychain. The bot token itself is **never** printed.
 |---|---|---|---|
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
-## `zad service status discord`
+## `zad service status`
 
 ```
-zad service status discord [--json]
+zad service status [--service <NAME>] [--json]
 ```
 
-Verifies that the effective Discord credentials work end-to-end by
-calling `GET /users/@me` with the stored bot token. Reports, per scope:
-the config path, whether a config file exists, whether the token is
-present in the OS keychain, and — for the effective scope only — the
-live ping result (`ok` with the authenticated bot username, or
-`FAILED` with the provider error message).
+Checks whether service credentials actually work by pinging the
+provider. This is the agent-facing health check: one command covers
+every service, and the JSON envelope is stable for script consumption.
 
-Exits `0` when the effective scope's ping succeeds; exits `1` when
-the effective scope fails or no credentials are configured at all.
-Designed for agents: pair `--json` with `$?` to branch on the outcome
-without parsing.
+Without `--service`, every service in zad's internal registry is
+pinged in parallel (so adding a service doesn't linearly inflate
+latency) and an aggregate envelope is emitted. With `--service`,
+only the named service is pinged and the per-service envelope is
+emitted.
+
+Per service, the command:
+
+1. Loads the global and local config files (if any).
+2. Determines the *effective* scope (local wins over global).
+3. Reads the secret for the effective scope out of the OS keychain.
+4. Calls the provider's lightweight identity endpoint (Discord's
+   `GET /users/@me`, Telegram's `getMe`). The identity the provider
+   returns is reported as `authenticated_as`.
+
+Only the effective scope is pinged — pinging both `global` and `local`
+when both are configured would double the per-run provider rate-limit
+cost. The non-effective scope is still reported (`configured`,
+`credentials_present`) so an agent can see what's on disk without
+spending a second API call.
 
 ### Flags
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
+| `--service <NAME>` | enum | — | Limit the check to a single service (`discord`, `telegram`). Without this flag every service is pinged. Clap rejects unknown names with exit 2. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. Recommended for agents. |
 
-### JSON shape
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Every queried service's effective scope pinged successfully. Services with no credentials at all (`effective: null`) do **not** count as failures — "not configured" is different from "broken". |
+| 1 | At least one queried service's effective scope failed (auth rejected, network error, missing keychain entry). |
+| 2 | Usage error (unknown `--service` value, etc.). |
+
+### JSON shape — aggregate (no `--service`)
+
+```json
+{
+  "command": "service.status",
+  "ok": true,
+  "services": [
+    {
+      "service": "discord",
+      "effective": "global",
+      "ok": true,
+      "global": {
+        "path": "...",
+        "configured": true,
+        "credentials_present": true,
+        "check": { "ok": true, "authenticated_as": "mybot" }
+      },
+      "local":  { "path": "...", "configured": false, "credentials_present": false },
+      "project": { "config": "...", "enabled": true }
+    },
+    {
+      "service": "telegram",
+      "ok": false,
+      "global": { "path": "...", "configured": true, "credentials_present": false },
+      "local":  { "path": "...", "configured": false, "credentials_present": false },
+      "project": { "config": "...", "enabled": false }
+    }
+  ]
+}
+```
+
+### JSON shape — single service (`--service <NAME>`)
 
 ```json
 {
@@ -335,24 +388,35 @@ without parsing.
 }
 ```
 
+Each entry in the aggregate's `services` array has the same shape as
+the single-service envelope, minus the top-level `command` field
+(that's hoisted out to the aggregate).
+
 `effective` is omitted (null) when no scope is configured. `check`
 appears only on the effective scope; non-effective scopes report
-presence without a live ping to avoid doubling provider rate-limit
-cost.
+presence without a live ping.
 
-## `zad service status telegram`
+### Examples
 
+```sh
+# Human-readable summary, one row per service
+zad service status
+
+# Agent use: JSON + exit code covers every service in one call
+if zad service status --json > /tmp/zad-status.json; then
+  echo "all good"
+else
+  jq '.services[] | select(.ok == false)' < /tmp/zad-status.json
+fi
+
+# Pluck just the working services
+zad service status --json | jq '.services[] | select(.ok) | .service'
+
+# Narrow to a single service (pings `GET /users/@me` for discord,
+# `getMe` for telegram)
+zad service status --service discord
+zad service status --service discord --json | jq '.ok'
 ```
-zad service status telegram [--json]
-```
-
-Same shape as `status discord`, pinging Telegram's `getMe` endpoint.
-
-### Flags
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. Recommended for agents. |
 
 ## `zad service delete discord`
 
@@ -438,13 +502,14 @@ zad service create discord --force --bot-token-env DISCORD_BOT_TOKEN_NEW
 # Inspect and clean up
 zad service list                       # see which services have creds / are enabled
 zad service show discord               # show the effective config + both scopes
-zad service status discord             # ping the provider with the effective token
+zad service status                     # ping every service in one go (agent-facing)
+zad service status --service discord   # pin the check to a single service
 zad service delete discord --local     # remove this project's local creds only
 zad service delete discord             # remove the global creds (keychain too)
 
 # Script-friendly JSON output is available on every command
 zad service list --json | jq '.services[] | select(.enabled)'
-zad service status discord --json | jq '.ok'
+zad service status --json | jq '.ok'
 ```
 
 ## See also
