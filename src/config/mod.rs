@@ -5,7 +5,9 @@ pub mod schema;
 use std::path::Path;
 
 pub use directory::Directory;
-pub use schema::{DiscordServiceCfg, ProjectConfig, ServiceProjectRef, TelegramServiceCfg};
+pub use schema::{
+    DiscordServiceCfg, GcalServiceCfg, ProjectConfig, ServiceProjectRef, TelegramServiceCfg,
+};
 
 use crate::error::{Result, ZadError};
 

@@ -47,6 +47,29 @@ pub struct DiscordServiceCfg {
     pub self_user_id: Option<String>,
 }
 
+/// Global Google Calendar (gcal) service config stored at
+/// `~/.zad/services/gcal/config.toml`. gcal authenticates via OAuth
+/// 2.0 rather than a bot token, so all three credential pieces
+/// (`client_id`, `client_secret`, `refresh_token`) live in the OS
+/// keychain; this struct carries only the non-secret metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GcalServiceCfg {
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional calendar the runtime verbs default to when `--calendar`
+    /// is omitted. Accepts a bare calendar ID, `primary`, or a directory
+    /// alias. Absent means every verb must name its calendar
+    /// explicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_calendar: Option<String>,
+    /// The authenticated user's primary email, captured during
+    /// `zad service create gcal` from Google's userinfo endpoint.
+    /// Resolves the literal `@me` in attendee targets, same role
+    /// `self_user_id` plays for Discord.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_email: Option<String>,
+}
+
 /// Global Telegram service config stored at
 /// `~/.zad/services/telegram/config.toml`. Telegram bots carry their
 /// identity inside the bot token itself (no separate app ID), and
@@ -97,6 +120,19 @@ impl ProjectConfig {
 
     pub fn disable_telegram(&mut self) {
         self.service.remove("telegram");
+    }
+
+    pub fn gcal(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("gcal")
+    }
+
+    pub fn enable_gcal(&mut self) {
+        self.service
+            .insert("gcal".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_gcal(&mut self) {
+        self.service.remove("gcal");
     }
 
     pub fn has_service(&self, name: &str) -> bool {

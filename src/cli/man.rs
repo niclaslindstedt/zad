@@ -24,6 +24,7 @@ pub const PAGES: &[(&str, &str)] = &[
     ("commands", include_str!("../../man/commands.md")),
     ("discord", include_str!("../../man/discord.md")),
     ("docs", include_str!("../../man/docs.md")),
+    ("gcal", include_str!("../../man/gcal.md")),
     ("man", include_str!("../../man/man.md")),
     ("service", include_str!("../../man/service.md")),
     ("status", include_str!("../../man/status.md")),

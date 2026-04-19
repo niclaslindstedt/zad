@@ -1,0 +1,100 @@
+# Example Google Calendar (gcal) permissions policy.
+#
+# Drop this at one of:
+#   ~/.zad/services/gcal/permissions.toml                       (global)
+#   ~/.zad/projects/<slug>/services/gcal/permissions.toml       (local, per project)
+#
+# When both files exist they INTERSECT: a call must pass every file
+# that is present. Missing files contribute no restrictions, so scope
+# is the only gate when neither file exists.
+
+# Pattern grammar (used anywhere an allow/deny list appears):
+#   "primary"                 exact name match
+#   "work-*"                  glob (`*` and `?` wildcards)
+#   "re:^[a-z]+@group\\..+$"  full Rust regex (anchor it yourself)
+#   "user@example.com"        matches the resolved calendar/attendee ID
+
+# Evaluation order:
+#   1. Any deny match -> denied (deny always wins).
+#   2. Empty allow list -> no positive constraint on this front.
+#   3. Otherwise the call must match at least one allow pattern.
+
+# The alias list patterns are evaluated against:
+#   - calendars: raw --calendar input, resolved calendar ID
+#   - attendees: raw email, resolved self_email when input is @me
+
+# -----------------------------------------------------------------
+# Shared defaults. Each per-function block inherits these and can
+# narrow them further (never loosen).
+# -----------------------------------------------------------------
+
+[content]
+# Applies to event summary + description.
+deny_words = ["password", "api_key", "secret", "confidential"]
+deny_patterns = [
+    "(?i)bearer\\s+[a-z0-9._-]+",
+    "(?i)AKIA[0-9A-Z]{16}",
+]
+max_length = 5000
+
+[time]
+# UTC window during which any gcal call is admitted. Pin agent
+# activity to your business hours if you want.
+days    = ["mon", "tue", "wed", "thu", "fri"]
+windows = ["06:00-22:00"]
+
+# -----------------------------------------------------------------
+# Read verbs
+# -----------------------------------------------------------------
+
+[list_calendars]
+calendars.allow = ["primary", "re:^work-"]
+calendars.deny  = ["*personal*"]
+
+[get_calendar]
+calendars.allow = ["primary", "re:^work-"]
+
+[list_events]
+calendars.allow = ["primary"]
+
+[get_event]
+calendars.allow = ["primary"]
+
+# -----------------------------------------------------------------
+# Event writes — the main safety surface
+# -----------------------------------------------------------------
+
+[create_event]
+calendars.allow           = ["primary"]
+attendees.allow           = ["*@mycompany.com", "@me"]
+attendees.deny            = ["ceo@*", "board-*@*"]
+max_future_days           = 365       # refuse events more than a year out
+min_notice_minutes        = 15        # refuse events starting too soon
+max_attendees             = 20
+send_updates_allowed      = { allow = ["none", "external"] }  # deny "all"
+block_shared_calendars    = true      # writes only on calendars the user owns
+
+[update_event]
+calendars.allow = ["primary"]
+# create_event caps also re-apply to new values; you can add per-verb
+# overrides here if you want updates to be stricter than creates.
+block_shared_calendars = true
+
+[delete_event]
+# Default-deny — the agent can create but not delete events unless
+# you explicitly opt calendars in.
+calendars.allow = []
+calendars.deny  = ["*"]
+
+# -----------------------------------------------------------------
+# Subsidiary policy blocks — apply to --add-attendee and
+# --add-reminder-minutes on events update / events create.
+# -----------------------------------------------------------------
+
+[invite]
+attendees.allow = ["*@mycompany.com", "@me"]
+max_attendees   = 20
+
+[remind]
+# No configurable caps; the built-in safety cap of 40320 minutes
+# (four weeks) is always enforced regardless of this block.
