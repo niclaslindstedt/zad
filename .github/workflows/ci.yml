@@ -109,9 +109,14 @@ jobs:
             const onlyB = b.filter(x => !s.includes(x));
             const onlyS = s.filter(x => !b.includes(x));
             if (onlyB.length || onlyS.length) {
-              console.error("pages extractor drifted from zad commands --json");
-              if (onlyB.length) { console.error("only in binary:"); onlyB.forEach(x => console.error("  " + x)); }
-              if (onlyS.length) { console.error("only in scrape:"); onlyS.forEach(x => console.error("  " + x)); }
+              const lines = ["pages extractor drifted from zad commands --json"];
+              if (onlyB.length) { lines.push("only in binary:"); onlyB.forEach(x => lines.push("  " + x)); }
+              if (onlyS.length) { lines.push("only in scrape:"); onlyS.forEach(x => lines.push("  " + x)); }
+              const out = lines.join("\n");
+              console.error(out);
+              lines.forEach(l => console.log("::error::" + l));
+              const summary = process.env.GITHUB_STEP_SUMMARY;
+              if (summary) fs.appendFileSync(summary, "### pages-staleness drift\n\n```\n" + out + "\n```\n");
               process.exit(1);
             }
             console.log("pages scrape matches binary (" + b.length + " commands)");
