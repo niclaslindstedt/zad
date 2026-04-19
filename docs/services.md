@@ -444,6 +444,17 @@ impl LifecycleService for TelegramLifecycle {
         Ok(vec![SecretRef { label: "token", account, present }])
     }
 
+    // Powers `zad service status <svc>` and `zad status` — the driver
+    // reads secrets back out of the keychain and hands them to
+    // `validate` as a live "does this credential work?" check.
+    // Return `Ok(None)` if any required account is missing at the
+    // given scope; the driver will report "credentials_present: false"
+    // without surfacing an error.
+    fn load_secrets(scope: Scope<'_>) -> Result<Option<TelegramSecrets>> {
+        let account = secrets::account(Self::NAME, "bot", scope);
+        Ok(secrets::load(&account)?.map(|bot_token| TelegramSecrets { bot_token }))
+    }
+
     fn cfg_human(cfg: &TelegramServiceCfg) -> Vec<(&'static str, String)> {
         let mut out = vec![("bot", cfg.bot_username.clone())];               // EDIT
         if let Some(c) = &cfg.default_chat_id { out.push(("chat", c.clone())); }

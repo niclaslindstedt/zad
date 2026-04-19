@@ -127,6 +127,14 @@ pub trait LifecycleService: Send + Sync + 'static {
     /// that `store_secrets` writes.
     fn inspect_secrets(scope: Scope<'_>) -> Result<Vec<SecretRef>>;
 
+    /// Load the full secret material from the keychain at `scope`.
+    /// Returns `Ok(None)` if any required account is missing — lets
+    /// `zad service status` report "credentials_present: false"
+    /// without escalating to an error. `Ok(Some(_))` means every
+    /// account this service stores via [`Self::store_secrets`] was
+    /// present and read successfully.
+    fn load_secrets(scope: Scope<'_>) -> Result<Option<Self::Secrets>>;
+
     /// Human-readable non-secret fields rendered in `create` and
     /// `show` output, as `(label, value)` pairs. Keep labels short
     /// (≤ 6 chars recommended) for consistent column alignment with
@@ -267,6 +275,16 @@ pub struct ShowArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct StatusArgs {
+    /// Emit machine-readable JSON instead of human-readable text.
+    /// Recommended when an agent is consuming the output — the JSON
+    /// envelope is stable and includes the authenticated identity on
+    /// success and the provider error string on failure.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct DeleteArgs {
     /// Delete the project-scoped credentials instead of the global
     /// ones.
@@ -357,10 +375,59 @@ struct ScopeBlock {
     secrets: Vec<SecretRef>,
 }
 
+/// Per-service envelope for `zad service status <svc>`. Also reused
+/// verbatim inside `zad status`'s aggregate output so every service
+/// row carries the same shape whether the caller asked about one
+/// service or all of them.
 #[derive(Debug, Serialize)]
-struct ProjectBlock {
-    config: String,
-    enabled: bool,
+pub struct ServiceStatusOutput {
+    /// `"service.status.<name>"` for the per-service command; left
+    /// unset when the value is embedded in the aggregate output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    pub service: &'static str,
+    /// Which scope would be used at runtime (local wins over global).
+    /// `None` when neither scope is configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective: Option<&'static str>,
+    /// Overall health: `true` iff the effective scope pinged OK.
+    /// `false` when no scope is configured, credentials are missing,
+    /// or the provider rejected the token.
+    pub ok: bool,
+    pub global: StatusBlock,
+    pub local: StatusBlock,
+    pub project: ProjectBlock,
+}
+
+/// One scope's view for status. `check` is populated only for the
+/// effective scope; non-effective scopes report presence but aren't
+/// pinged (avoids doubling the provider's rate-limit burden when both
+/// scopes happen to be configured).
+#[derive(Debug, Serialize)]
+pub struct StatusBlock {
+    pub path: String,
+    pub configured: bool,
+    pub credentials_present: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check: Option<StatusCheck>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StatusCheck {
+    pub ok: bool,
+    /// Identity the provider reported back (bot username, etc.) on a
+    /// successful ping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authenticated_as: Option<String>,
+    /// Provider-side or local error message on failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectBlock {
+    pub config: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -707,6 +774,203 @@ fn print_scope_block<T: LifecycleService>(
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Generic driver: status
+// ---------------------------------------------------------------------------
+
+/// Run `zad service status <svc>` for service `T`. Emits JSON or human
+/// output, then exits the process with code 1 if the effective scope
+/// failed its live ping (or no scope is configured). Agents can branch
+/// on `$?` without parsing the output.
+pub async fn run_status<T: LifecycleService>(args: StatusArgs) -> Result<()> {
+    let mut out = status_for::<T>().await?;
+    out.command = Some(format!("service.status.{}", T::NAME));
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        print_status_human(&out);
+    }
+    if !out.ok {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// Collect the status envelope for service `T` without emitting
+/// anything. Shared between the per-service command (`zad service
+/// status <svc>`) and the aggregate (`zad status`), which calls this
+/// once per service in parallel.
+pub async fn status_for<T: LifecycleService>() -> Result<ServiceStatusOutput> {
+    let slug = config::path::project_slug()?;
+    let global_path = config::path::global_service_config_path(T::NAME)?;
+    let local_path = config::path::project_service_config_path_for(&slug, T::NAME)?;
+
+    let global_cfg: Option<T::Cfg> = config::load_flat(&global_path)?;
+    let local_cfg: Option<T::Cfg> = config::load_flat(&local_path)?;
+
+    let effective = if local_cfg.is_some() {
+        Some("local")
+    } else if global_cfg.is_some() {
+        Some("global")
+    } else {
+        None
+    };
+
+    // Only ping the effective scope. A non-effective scope that's
+    // also configured reports credential presence but is not pinged:
+    // it wouldn't be used at runtime anyway, and pinging it would
+    // double the provider rate-limit cost for every `zad status`.
+    let global_block = build_status_block::<T>(
+        &global_path,
+        global_cfg.as_ref(),
+        Scope::Global,
+        effective == Some("global"),
+    )
+    .await;
+    let local_block = build_status_block::<T>(
+        &local_path,
+        local_cfg.as_ref(),
+        Scope::Project(&slug),
+        effective == Some("local"),
+    )
+    .await;
+
+    let project_path = config::path::project_config_path()?;
+    let project_cfg = config::load_from(&project_path)?;
+    let project_enabled = project_cfg.has_service(T::NAME);
+
+    let ok = match effective {
+        Some("global") => global_block.check.as_ref().map(|c| c.ok).unwrap_or(false),
+        Some("local") => local_block.check.as_ref().map(|c| c.ok).unwrap_or(false),
+        _ => false,
+    };
+
+    Ok(ServiceStatusOutput {
+        command: None,
+        service: T::NAME,
+        effective,
+        ok,
+        global: global_block,
+        local: local_block,
+        project: ProjectBlock {
+            config: project_path.display().to_string(),
+            enabled: project_enabled,
+        },
+    })
+}
+
+async fn build_status_block<T: LifecycleService>(
+    path: &std::path::Path,
+    cfg: Option<&T::Cfg>,
+    scope: Scope<'_>,
+    do_ping: bool,
+) -> StatusBlock {
+    let mut block = StatusBlock {
+        path: path.display().to_string(),
+        configured: cfg.is_some(),
+        credentials_present: false,
+        check: None,
+    };
+    let Some(cfg) = cfg else {
+        return block;
+    };
+
+    // A keychain-read failure (backend unavailable, locked keyring)
+    // is reported as "credentials missing" rather than aborting the
+    // whole command — status is diagnostic output, not a place to
+    // bubble keychain errors up to `main`.
+    let secrets = match T::load_secrets(scope) {
+        Ok(s) => s,
+        Err(e) => {
+            block.check = Some(StatusCheck {
+                ok: false,
+                authenticated_as: None,
+                error: Some(format!("keychain error: {e}")),
+            });
+            return block;
+        }
+    };
+    block.credentials_present = secrets.is_some();
+
+    if !do_ping {
+        return block;
+    }
+
+    block.check = Some(match secrets {
+        None => StatusCheck {
+            ok: false,
+            authenticated_as: None,
+            error: Some("credentials missing from keychain".into()),
+        },
+        Some(s) => match T::validate(cfg, &s).await {
+            Ok(name) => StatusCheck {
+                ok: true,
+                authenticated_as: Some(name),
+                error: None,
+            },
+            Err(e) => StatusCheck {
+                ok: false,
+                authenticated_as: None,
+                error: Some(e.to_string()),
+            },
+        },
+    });
+    block
+}
+
+pub(crate) fn print_status_human(out: &ServiceStatusOutput) {
+    println!("Service: {}", out.service);
+    println!();
+    println!("## Credentials");
+    match out.effective {
+        Some(label) => println!("  effective : {label}"),
+        None => println!(
+            "  effective : (none — run `zad service create {}`)",
+            out.service
+        ),
+    }
+    println!("  overall   : {}", if out.ok { "ok" } else { "FAILED" });
+
+    print_status_scope("global", &out.global);
+    print_status_scope("local", &out.local);
+
+    println!();
+    println!("## Project");
+    println!(
+        "  enabled : {}",
+        if out.project.enabled { "yes" } else { "no" }
+    );
+    println!("  config  : {}", out.project.config);
+}
+
+fn print_status_scope(label: &str, block: &StatusBlock) {
+    println!();
+    println!("  [{label}] {}", block.path);
+    if !block.configured {
+        println!("    status : not configured");
+        return;
+    }
+    println!(
+        "    credentials : {}",
+        if block.credentials_present {
+            "present"
+        } else {
+            "missing"
+        }
+    );
+    match &block.check {
+        None => println!("    check       : (not the effective scope)"),
+        Some(c) if c.ok => {
+            let name = c.authenticated_as.as_deref().unwrap_or("(unknown)");
+            println!("    check       : ok (authenticated as `{name}`)");
+        }
+        Some(c) => {
+            let err = c.error.as_deref().unwrap_or("(no error message)");
+            println!("    check       : FAILED ({err})");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

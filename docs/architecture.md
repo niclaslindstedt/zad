@@ -13,11 +13,12 @@ src/
   output.rs       — structured human-readable printing helpers
   cli/
     mod.rs        — clap root + `run()` dispatcher
-    lifecycle.rs  — `LifecycleService` trait + generic `run_{create,enable,disable,show,delete}<T>` driver shared by every service
+    lifecycle.rs  — `LifecycleService` trait + generic `run_{create,enable,disable,show,status,delete}<T>` driver shared by every service
     service.rs    — `zad service <action> <service>` group (clap enums + dispatch to the generic driver)
     service_list.rs    — `zad service list` rendering (shared across services)
     service_discord.rs — `DiscordLifecycle` impl of `LifecycleService`; Discord-specific prompts and token validation
     service_telegram.rs — `TelegramLifecycle` impl; Telegram-specific prompts and token validation
+    status.rs     — `zad status` aggregate: pings every service in parallel and emits one envelope for agents
     discord.rs    — `zad discord <verb>` runtime handlers (send, read, channels, join, leave, discover, directory, permissions)
     telegram.rs   — `zad telegram <verb>` runtime handlers (send, read, chats, discover, directory, permissions)
     commands.rs   — `zad commands [NAME]... [--examples|--json]` — clap-tree introspection for the OSS_SPEC §12.4 discovery surface

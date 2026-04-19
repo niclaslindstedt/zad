@@ -9,6 +9,7 @@ pub mod service;
 pub mod service_discord;
 pub mod service_list;
 pub mod service_telegram;
+pub mod status;
 pub mod telegram;
 
 use clap::{Parser, Subcommand};
@@ -51,6 +52,8 @@ pub enum Command {
     Discord(discord::DiscordArgs),
     /// Operate the Telegram service (send, read, chats, discover).
     Telegram(telegram::TelegramArgs),
+    /// Check the live status of every configured service in one go.
+    Status(status::StatusArgs),
     /// Enumerate CLI commands, flags, and realistic examples.
     Commands(commands::CommandsArgs),
     /// Print topic documentation embedded at build time.
@@ -77,6 +80,7 @@ pub async fn run() -> Result<()> {
         Some(Command::Service(args)) => service::run(args).await,
         Some(Command::Discord(args)) => discord::run(args).await,
         Some(Command::Telegram(args)) => telegram::run(args).await,
+        Some(Command::Status(args)) => status::run(args).await,
         Some(Command::Commands(args)) => commands::run(args),
         Some(Command::Docs(args)) => docs::run(args),
         Some(Command::Man(args)) => man::run(args),

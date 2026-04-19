@@ -22,7 +22,7 @@ same scheme Claude Code uses.
 Bot tokens, API keys, and other secrets always live in the OS keychain
 and are **never** written to the TOML.
 
-Six actions operate on services:
+Seven actions operate on services:
 
 | Action | Description |
 |---|---|
@@ -31,6 +31,7 @@ Six actions operate on services:
 | `disable <service>` | Disable the service in the current project (inverse of `enable`). |
 | `list` | List all services with credential and project-enablement status. |
 | `show <service>` | Show the effective configuration and both scopes' details. |
+| `status <service>` | Check whether credentials work by pinging the provider. |
 | `delete <service>` | Delete credentials for the service (inverse of `create`). |
 
 Recognised services:
@@ -289,6 +290,68 @@ keychain. The bot token itself is **never** printed.
 |---|---|---|---|
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
 
+## `zad service status discord`
+
+```
+zad service status discord [--json]
+```
+
+Verifies that the effective Discord credentials work end-to-end by
+calling `GET /users/@me` with the stored bot token. Reports, per scope:
+the config path, whether a config file exists, whether the token is
+present in the OS keychain, and — for the effective scope only — the
+live ping result (`ok` with the authenticated bot username, or
+`FAILED` with the provider error message).
+
+Exits `0` when the effective scope's ping succeeds; exits `1` when
+the effective scope fails or no credentials are configured at all.
+Designed for agents: pair `--json` with `$?` to branch on the outcome
+without parsing.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. Recommended for agents. |
+
+### JSON shape
+
+```json
+{
+  "command": "service.status.discord",
+  "service": "discord",
+  "effective": "global",
+  "ok": true,
+  "global": {
+    "path": "...",
+    "configured": true,
+    "credentials_present": true,
+    "check": { "ok": true, "authenticated_as": "mybot" }
+  },
+  "local":  { "path": "...", "configured": false, "credentials_present": false },
+  "project": { "config": "...", "enabled": true }
+}
+```
+
+`effective` is omitted (null) when no scope is configured. `check`
+appears only on the effective scope; non-effective scopes report
+presence without a live ping to avoid doubling provider rate-limit
+cost.
+
+## `zad service status telegram`
+
+```
+zad service status telegram [--json]
+```
+
+Same shape as `status discord`, pinging Telegram's `getMe` endpoint.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. Recommended for agents. |
+
 ## `zad service delete discord`
 
 ```
@@ -373,11 +436,13 @@ zad service create discord --force --bot-token-env DISCORD_BOT_TOKEN_NEW
 # Inspect and clean up
 zad service list                       # see which services have creds / are enabled
 zad service show discord               # show the effective config + both scopes
+zad service status discord             # ping the provider with the effective token
 zad service delete discord --local     # remove this project's local creds only
 zad service delete discord             # remove the global creds (keychain too)
 
 # Script-friendly JSON output is available on every command
 zad service list --json | jq '.services[] | select(.enabled)'
+zad service status discord --json | jq '.ok'
 ```
 
 ## See also

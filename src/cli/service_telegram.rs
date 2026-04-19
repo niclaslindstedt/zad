@@ -154,6 +154,11 @@ impl LifecycleService for TelegramLifecycle {
         }])
     }
 
+    fn load_secrets(scope: Scope<'_>) -> Result<Option<TelegramSecrets>> {
+        let account = secrets::account(Self::NAME, "bot", scope);
+        Ok(secrets::load(&account)?.map(|bot_token| TelegramSecrets { bot_token }))
+    }
+
     fn cfg_human(cfg: &TelegramServiceCfg) -> Vec<(&'static str, String)> {
         let mut out = vec![];
         if let Some(c) = &cfg.default_chat {

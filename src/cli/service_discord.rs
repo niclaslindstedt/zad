@@ -163,6 +163,11 @@ impl LifecycleService for DiscordLifecycle {
         }])
     }
 
+    fn load_secrets(scope: Scope<'_>) -> Result<Option<DiscordSecrets>> {
+        let account = secrets::account(Self::NAME, "bot", scope);
+        Ok(secrets::load(&account)?.map(|bot_token| DiscordSecrets { bot_token }))
+    }
+
     fn cfg_human(cfg: &DiscordServiceCfg) -> Vec<(&'static str, String)> {
         let mut out = vec![("app id", cfg.application_id.clone())];
         if let Some(g) = &cfg.default_guild {
