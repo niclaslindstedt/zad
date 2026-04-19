@@ -60,6 +60,7 @@ use crate::error::{Result, ZadError};
 use crate::permissions::{
     attachments::{AttachmentInfo, AttachmentRules, AttachmentRulesRaw},
     content::{ContentRules, ContentRulesRaw},
+    mutation::{self, Mutation},
     pattern::{PatternList, PatternListRaw},
     service::HasSignature,
     signing::{self, Signature, SigningKey},
@@ -724,4 +725,106 @@ impl crate::permissions::service::PermissionsService for PermissionsService {
     fn target_kinds() -> &'static [&'static str] {
         &["channel", "user", "guild"]
     }
+
+    fn apply_mutation(raw: &mut Self::Raw, m: &Mutation) -> Result<()> {
+        let function = match m {
+            Mutation::AddPattern { function, .. }
+            | Mutation::RemovePattern { function, .. }
+            | Mutation::AddDenyWord { function, .. }
+            | Mutation::RemoveDenyWord { function, .. }
+            | Mutation::AddDenyRegex { function, .. }
+            | Mutation::RemoveDenyRegex { function, .. }
+            | Mutation::SetMaxLength { function, .. }
+            | Mutation::SetTimeDays { function, .. }
+            | Mutation::SetTimeWindows { function, .. } => function.as_deref(),
+        };
+
+        // Content + time mutations route first. If neither handles it,
+        // fall through to pattern edits.
+        let (content, time) = block_refs_mut(raw, function)?;
+        if mutation::apply_content(content, m)? {
+            return Ok(());
+        }
+        if mutation::apply_time(time, m)? {
+            return Ok(());
+        }
+
+        match m {
+            Mutation::AddPattern {
+                function,
+                target,
+                list,
+                value,
+            }
+            | Mutation::RemovePattern {
+                function,
+                target,
+                list,
+                value,
+            } => {
+                let add = matches!(m, Mutation::AddPattern { .. });
+                let plist = pattern_list_mut(raw, function.as_deref(), target)?;
+                mutation::apply_pattern_list(plist, *list, value, add);
+                Ok(())
+            }
+            other => Err(mutation::unsupported("discord", other)),
+        }
+    }
+}
+
+fn function_block_mut<'a>(
+    raw: &'a mut DiscordPermissionsRaw,
+    function: &str,
+) -> Result<&'a mut FunctionBlockRaw> {
+    Ok(match function {
+        "send" => &mut raw.send,
+        "read" => &mut raw.read,
+        "channels" => &mut raw.channels,
+        "join" => &mut raw.join,
+        "leave" => &mut raw.leave,
+        "discover" => &mut raw.discover,
+        "manage" => &mut raw.manage,
+        other => {
+            return Err(ZadError::Invalid(format!(
+                "discord permissions: unknown function `{other}`; expected one of \
+                 send, read, channels, join, leave, discover, manage"
+            )));
+        }
+    })
+}
+
+fn block_refs_mut<'a>(
+    raw: &'a mut DiscordPermissionsRaw,
+    function: Option<&str>,
+) -> Result<(&'a mut ContentRulesRaw, &'a mut TimeWindowRaw)> {
+    match function {
+        None => Ok((&mut raw.content, &mut raw.time)),
+        Some(name) => {
+            let block = function_block_mut(raw, name)?;
+            Ok((&mut block.content, &mut block.time))
+        }
+    }
+}
+
+fn pattern_list_mut<'a>(
+    raw: &'a mut DiscordPermissionsRaw,
+    function: Option<&str>,
+    target: &str,
+) -> Result<&'a mut PatternListRaw> {
+    let Some(name) = function else {
+        return Err(ZadError::Invalid(format!(
+            "discord permissions: pattern mutations require --function (top-level {target} lists are not a Discord schema field)"
+        )));
+    };
+    let block = function_block_mut(raw, name)?;
+    Ok(match target {
+        "channel" => &mut block.channels,
+        "user" => &mut block.users,
+        "guild" => &mut block.guilds,
+        other => {
+            return Err(ZadError::Invalid(format!(
+                "discord permissions: unknown target `{other}`; expected one of channel, user, guild"
+            )));
+        }
+    })
 }

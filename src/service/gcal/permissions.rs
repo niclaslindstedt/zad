@@ -43,6 +43,7 @@ use crate::config;
 use crate::error::{Result, ZadError};
 use crate::permissions::{
     content::{ContentRules, ContentRulesRaw},
+    mutation::{self, Mutation},
     pattern::{PatternList, PatternListRaw},
     service::HasSignature,
     signing::{self, Signature, SigningKey},
@@ -717,4 +718,106 @@ impl crate::permissions::service::PermissionsService for PermissionsService {
     fn target_kinds() -> &'static [&'static str] {
         &["calendar", "attendee"]
     }
+
+    fn apply_mutation(raw: &mut Self::Raw, m: &Mutation) -> Result<()> {
+        let function = match m {
+            Mutation::AddPattern { function, .. }
+            | Mutation::RemovePattern { function, .. }
+            | Mutation::AddDenyWord { function, .. }
+            | Mutation::RemoveDenyWord { function, .. }
+            | Mutation::AddDenyRegex { function, .. }
+            | Mutation::RemoveDenyRegex { function, .. }
+            | Mutation::SetMaxLength { function, .. }
+            | Mutation::SetTimeDays { function, .. }
+            | Mutation::SetTimeWindows { function, .. } => function.as_deref(),
+        };
+
+        let (content, time) = block_refs_mut(raw, function)?;
+        if mutation::apply_content(content, m)? {
+            return Ok(());
+        }
+        if mutation::apply_time(time, m)? {
+            return Ok(());
+        }
+
+        match m {
+            Mutation::AddPattern {
+                function,
+                target,
+                list,
+                value,
+            }
+            | Mutation::RemovePattern {
+                function,
+                target,
+                list,
+                value,
+            } => {
+                let add = matches!(m, Mutation::AddPattern { .. });
+                let plist = pattern_list_mut(raw, function.as_deref(), target)?;
+                mutation::apply_pattern_list(plist, *list, value, add);
+                Ok(())
+            }
+            other => Err(mutation::unsupported("gcal", other)),
+        }
+    }
+}
+
+fn function_block_mut<'a>(
+    raw: &'a mut GcalPermissionsRaw,
+    function: &str,
+) -> Result<&'a mut FunctionBlockRaw> {
+    Ok(match function {
+        "list_calendars" => &mut raw.list_calendars,
+        "get_calendar" => &mut raw.get_calendar,
+        "list_events" => &mut raw.list_events,
+        "get_event" => &mut raw.get_event,
+        "create_event" => &mut raw.create_event,
+        "update_event" => &mut raw.update_event,
+        "delete_event" => &mut raw.delete_event,
+        "invite" => &mut raw.invite,
+        "remind" => &mut raw.remind,
+        other => {
+            return Err(ZadError::Invalid(format!(
+                "gcal permissions: unknown function `{other}`; expected one of \
+                 list_calendars, get_calendar, list_events, get_event, create_event, \
+                 update_event, delete_event, invite, remind"
+            )));
+        }
+    })
+}
+
+fn block_refs_mut<'a>(
+    raw: &'a mut GcalPermissionsRaw,
+    function: Option<&str>,
+) -> Result<(&'a mut ContentRulesRaw, &'a mut TimeWindowRaw)> {
+    match function {
+        None => Ok((&mut raw.content, &mut raw.time)),
+        Some(name) => {
+            let block = function_block_mut(raw, name)?;
+            Ok((&mut block.content, &mut block.time))
+        }
+    }
+}
+
+fn pattern_list_mut<'a>(
+    raw: &'a mut GcalPermissionsRaw,
+    function: Option<&str>,
+    target: &str,
+) -> Result<&'a mut PatternListRaw> {
+    let Some(name) = function else {
+        return Err(ZadError::Invalid(format!(
+            "gcal permissions: pattern mutations require --function (top-level {target} lists are not a gcal schema field)"
+        )));
+    };
+    let block = function_block_mut(raw, name)?;
+    Ok(match target {
+        "calendar" => &mut block.calendars,
+        "attendee" => &mut block.attendees,
+        other => {
+            return Err(ZadError::Invalid(format!(
+                "gcal permissions: unknown target `{other}`; expected one of calendar, attendee"
+            )));
+        }
+    })
 }

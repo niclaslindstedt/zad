@@ -7,6 +7,7 @@ pub mod help_agent;
 pub mod lifecycle;
 pub mod man;
 pub mod onepass;
+pub mod permissions;
 pub mod service;
 pub mod service_discord;
 pub mod service_gcal;

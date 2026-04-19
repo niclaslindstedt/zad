@@ -226,6 +226,17 @@ zad discord permissions show
 zad discord permissions path
 zad discord permissions init  [--local] [--force]
 zad discord permissions check --function <name> [--channel|--user|--guild <id|name>] [--body <text>]
+
+# Staged-commit workflow (shared across every service — see docs/permissions.md)
+zad discord permissions status   [--local]
+zad discord permissions diff     [--local]
+zad discord permissions discard  [--local]
+zad discord permissions commit   [--local]       # signs + atomic replace
+zad discord permissions sign     [--local]       # re-sign after hand edit
+zad discord permissions add      --function <f> --target <channel|user|guild> --list <allow|deny> [--local] <pattern>
+zad discord permissions remove   --function <f> --target <channel|user|guild> --list <allow|deny> [--local] <pattern>
+zad discord permissions content  [--function <f>] [--local] {add-deny-word WORD|remove-deny-word WORD|add-deny-regex PAT|remove-deny-regex PAT|set-max-length --value N|set-max-length --clear}
+zad discord permissions time     [--function <f>] [--local] {set-days --days mon,tue,... | set-windows --windows 09:00-18:00,...}
 ```
 
 - `show` — print both candidate file paths plus the body of whichever
