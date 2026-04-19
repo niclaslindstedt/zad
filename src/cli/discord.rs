@@ -4,6 +4,7 @@
 //! keychain entry holds the bot token. The project must already have
 //! enabled the Discord service.
 
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
@@ -12,6 +13,7 @@ use serde::Serialize;
 use crate::config::directory::{self as dir, Directory};
 use crate::config::{self, DiscordServiceCfg};
 use crate::error::{Result, ZadError};
+use crate::permissions::attachments::AttachmentInfo;
 use crate::secrets::{self, Scope};
 use crate::service::discord::permissions::{self as perms, DiscordFunction};
 use crate::service::discord::{DiscordHttp, DiscordTransport, DryRunDiscordTransport};
@@ -91,7 +93,14 @@ pub struct SendArgs {
     #[arg(long, conflicts_with = "body")]
     pub stdin: bool,
 
-    /// Message body. Required unless `--stdin` is set.
+    /// Attach a file to the message. Repeat up to Discord's per-message
+    /// cap of 10 to attach multiple files. When at least one `--file` is
+    /// given the message body may be empty.
+    #[arg(long = "file", value_name = "PATH", action = clap::ArgAction::Append)]
+    pub files: Vec<PathBuf>,
+
+    /// Message body. Required unless `--stdin` is set or at least one
+    /// `--file` is attached.
     pub body: Option<String>,
 
     /// Emit machine-readable JSON instead of human-readable text.
@@ -138,7 +147,11 @@ async fn run_send(args: SendArgs) -> Result<()> {
         (Some(_), Some(_)) => unreachable!("clap enforces mutual exclusion"),
     };
 
-    let body = resolve_body(args.body.as_deref(), args.stdin)?;
+    let body = if args.files.is_empty() {
+        resolve_body(args.body.as_deref(), args.stdin)?
+    } else {
+        resolve_body_or_empty(args.body.as_deref(), args.stdin)?
+    };
     let len = body.chars().count();
     if len > crate::service::discord::client::DISCORD_MAX_MESSAGE_LEN {
         return Err(ZadError::Invalid(format!(
@@ -146,9 +159,28 @@ async fn run_send(args: SendArgs) -> Result<()> {
             crate::service::discord::client::DISCORD_MAX_MESSAGE_LEN
         )));
     }
+    if args.files.len() > crate::service::discord::client::DISCORD_MAX_ATTACHMENTS {
+        return Err(ZadError::Invalid(format!(
+            "{} attachments is above Discord's per-message cap of {}",
+            args.files.len(),
+            crate::service::discord::client::DISCORD_MAX_ATTACHMENTS
+        )));
+    }
     permissions.check_send_body(&body)?;
+
+    let infos: Vec<AttachmentInfo> = args
+        .files
+        .iter()
+        .map(|p| {
+            AttachmentInfo::probe(p).map_err(|e| {
+                ZadError::Invalid(format!("attachment `{}` not readable: {e}", p.display()))
+            })
+        })
+        .collect::<Result<_>>()?;
+    permissions.check_send_attachments(&infos)?;
+
     let http = discord_http_for("messages.send", args.dry_run)?;
-    let msg_id = http.send(target.clone(), &body).await?;
+    let msg_id = http.send(target.clone(), &body, &args.files).await?;
 
     // When --dry-run is active the transport already emitted a preview
     // record (human summary via `tracing::info!`, JSON payload on
@@ -1355,6 +1387,21 @@ fn parse_function(name: &str) -> Result<DiscordFunction> {
 }
 
 fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {
+    resolve_body_inner(positional, from_stdin, false)
+}
+
+/// Same as [`resolve_body`] but tolerates an empty result when the
+/// caller has attachments to send alongside (Discord accepts an empty
+/// `content` as long as at least one file is attached).
+fn resolve_body_or_empty(positional: Option<&str>, from_stdin: bool) -> Result<String> {
+    resolve_body_inner(positional, from_stdin, true)
+}
+
+fn resolve_body_inner(
+    positional: Option<&str>,
+    from_stdin: bool,
+    allow_empty: bool,
+) -> Result<String> {
     if from_stdin {
         use std::io::Read;
         let mut buf = String::new();
@@ -1362,15 +1409,17 @@ fn resolve_body(positional: Option<&str>, from_stdin: bool) -> Result<String> {
             ZadError::Invalid(format!("failed to read message body from stdin: {e}"))
         })?;
         let trimmed = buf.trim_end_matches(['\n', '\r']).to_string();
-        if trimmed.is_empty() {
+        if trimmed.is_empty() && !allow_empty {
             return Err(ZadError::Invalid("message body is empty (stdin)".into()));
         }
         return Ok(trimmed);
     }
     match positional {
         Some(b) if !b.is_empty() => Ok(b.to_string()),
+        Some(_) if allow_empty => Ok(String::new()),
+        None if allow_empty => Ok(String::new()),
         _ => Err(ZadError::Invalid(
-            "missing message body: pass it as a positional arg or use --stdin".into(),
+            "missing message body: pass it as a positional arg, --stdin, or attach at least one --file".into(),
         )),
     }
 }

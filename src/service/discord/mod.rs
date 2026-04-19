@@ -47,7 +47,7 @@ impl Service for DiscordService {
     }
 
     async fn send_message(&self, target: Target, body: &str) -> Result<MessageId> {
-        self.http.send(target, body).await
+        self.http.send(target, body, &[]).await
     }
 
     async fn read_messages(&self, channel: ChannelId, limit: usize) -> Result<Vec<Message>> {

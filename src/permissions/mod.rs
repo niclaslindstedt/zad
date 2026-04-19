@@ -19,10 +19,12 @@
 //! `service::discord::permissions`) composes them into a per-function
 //! policy.
 
+pub mod attachments;
 pub mod content;
 pub mod pattern;
 pub mod time;
 
+pub use attachments::{AttachmentInfo, AttachmentRules};
 pub use content::ContentRules;
 pub use pattern::{Pattern, PatternList};
 pub use time::{TimeWindow, Weekday};

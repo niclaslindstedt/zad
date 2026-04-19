@@ -67,7 +67,7 @@ from verb to function block is:
 
 | Verb | Permissions block | Matches against |
 |---|---|---|
-| `send`     | `[send]`     | `channels` (for `--channel`) or `users` (for `--dm`); body against `content` |
+| `send`     | `[send]`     | `channels` (for `--channel`) or `users` (for `--dm`); body against `content`; files against `[send.attachments]` |
 | `read`     | `[read]`     | `channels` |
 | `channels` | `[channels]` | `guilds` |
 | `join`     | `[join]`     | `channels` |
@@ -98,7 +98,7 @@ self-user is configured.
 ## `zad discord send`
 
 ```
-zad discord send (--channel <ID|NAME> | --dm <USER|NAME>) [--stdin] [BODY]
+zad discord send (--channel <ID|NAME> | --dm <USER|NAME>) [--stdin] [--file PATH]... [BODY]
 ```
 
 Post a message. Exactly one of `--channel` or `--dm` is required. The
@@ -106,13 +106,19 @@ body is taken from the positional argument, or from standard input when
 `--stdin` is set. Bodies longer than Discord's 2000-codepoint hard limit
 are rejected locally (no round-trip).
 
+Pass `--file PATH` one or more times to attach files. Discord accepts
+at most 10 attachments per message; zad rejects anything above that
+before touching the network. When at least one `--file` is given the
+message body may be empty.
+
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--channel <id\|name>` | snowflake \| directory name | — | Destination channel. Mutually exclusive with `--dm`. |
 | `--dm <id\|name>` | snowflake \| directory name | — | Destination user for a DM. Mutually exclusive with `--channel`. |
 | `--stdin` | bool | `false` | Read the body from standard input instead of a positional argument. |
+| `--file <path>` | path | — | Attach a file. Repeat up to 10 times. When present the body is optional. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
-| `--dry-run` | bool | `false` | Preview the outgoing call without contacting Discord — prints the payload as JSON on stdout and makes no network request. Scope and permission checks still run; no bot token is loaded (so the flag works before a bot is configured). The trailing `Sent message …` line is suppressed. |
+| `--dry-run` | bool | `false` | Preview the outgoing call without contacting Discord — prints the payload as JSON on stdout (including an `attachments` array with `path`, `basename`, and `bytes` per file) and makes no network request. Scope and permission checks still run; no bot token is loaded (so the flag works before a bot is configured). The trailing `Sent message …` line is suppressed. |
 
 ## `zad discord read`
 
@@ -301,6 +307,10 @@ zad discord send --channel 1111111111111111 "deploy finished"
 
 # Send a multi-line body via stdin (handy for CI logs)
 tail -n 20 deploy.log | zad discord send --channel general --stdin
+
+# Attach one or more files (up to 10). Body is optional when a file is attached.
+zad discord send --channel general --file ./report.pdf "see attached"
+zad discord send --channel general --file ./a.log --file ./b.png
 
 # DM a user directly
 zad discord send --dm @alice "standup in 5 minutes"

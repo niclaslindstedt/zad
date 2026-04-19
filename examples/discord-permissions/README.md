@@ -21,6 +21,9 @@ scope is the only gate when neither file exists.
   the shared defaults further — notably a default-deny on
   `channels.manage` so the library layer cannot create or delete
   channels without an explicit opt-in.
+- A `[send.attachments]` sub-block that caps attachment count and
+  per-file size, allow-lists safe extensions, and deny-lists obvious
+  secret filenames.
 
 ## Try it out
 

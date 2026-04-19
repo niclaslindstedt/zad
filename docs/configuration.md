@@ -116,6 +116,15 @@ channels.allow = ["general", "bot-*", "team/*"]
 channels.deny  = ["*admin*", "mod-*"]
 users.allow    = ["alice", "bob"]
 
+# Per-function attachment policy. Each field is optional; an absent
+# block means "no attachment-specific restrictions". Discord hard-caps
+# attachments at 10 per message regardless of this setting.
+[send.attachments]
+max_count      = 5
+max_size_bytes = 8388608                                    # 8 MiB per file
+extensions     = { allow = ["png", "jpg", "txt", "log", "md", "json"], deny = ["exe", "dll", "sh"] }
+deny_filenames = { deny = [".env*", "id_rsa*", "*.pem"] }
+
 [read]
 channels.deny = ["*private*"]
 
@@ -313,10 +322,17 @@ with one per-verb block per runtime verb:
 
 | Block | Narrows |
 |---|---|
-| `[send]`     | `chats` allow/deny for the destination; body against `content` |
+| `[send]`     | `chats` allow/deny for the destination; body against `content`; files against `[send.attachments]` |
 | `[read]`     | `chats` allow/deny for the source |
 | `[chats]`    | `chats` allow/deny for the listing |
 | `[discover]` | `chats` allow/deny — denied chats are silently skipped in the walk |
+
+The `[send.attachments]` sub-block has the same shape and semantics as
+the Discord version documented above: optional `max_count`,
+`max_size_bytes`, `extensions = { allow, deny }`, and
+`deny_filenames = { deny }`. Telegram caps `sendMediaGroup` at 10 files
+regardless of this setting; single-file sends are routed through
+`sendDocument` (body becomes the caption, capped at 1024 characters).
 
 See [`examples/telegram-permissions/`](../examples/telegram-permissions/)
 for a worked example.

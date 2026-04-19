@@ -22,7 +22,7 @@
 //! never need to know about `reqwest::Error`.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -33,6 +33,16 @@ use crate::error::{Result, ZadError};
 /// 4096 *characters*; zad enforces the stricter codepoint count to stay
 /// safe on the server side.
 pub const TELEGRAM_MAX_MESSAGE_LEN: usize = 4096;
+
+/// Telegram's hard cap on a media caption (used by `sendDocument` and
+/// `sendMediaGroup`). Narrower than the plain text limit, so when
+/// attachments are present the CLI enforces this value instead.
+pub const TELEGRAM_MAX_CAPTION_LEN: usize = 1024;
+
+/// Upper bound on the number of files in a single `sendMediaGroup`
+/// call. The lower bound is 2 (groups of one are rejected by the API);
+/// a single file must use `sendDocument` instead.
+pub const TELEGRAM_MAX_MEDIA_GROUP: usize = 10;
 
 const API_BASE: &str = "https://api.telegram.org";
 
@@ -145,6 +155,71 @@ impl TelegramHttp {
         Ok(msg.message_id)
     }
 
+    /// POST `/sendDocument` with a single file. When `body` is
+    /// non-empty it is sent as the file's `caption` (Telegram's caption
+    /// cap is [`TELEGRAM_MAX_CAPTION_LEN`], enforced at the CLI layer
+    /// before reaching here). Scope: `messages.send`.
+    pub async fn send_document(&self, chat: i64, body: &str, file: &Path) -> Result<i64> {
+        self.require_scope("messages.send")?;
+        let part = file_part(file).await?;
+        let mut form = reqwest::multipart::Form::new()
+            .text("chat_id", chat.to_string())
+            .part("document", part);
+        if !body.is_empty() {
+            form = form.text("caption", body.to_string());
+        }
+        let envelope: ApiEnvelope<SentMessage> = self.post_multipart("sendDocument", form).await?;
+        let msg = envelope.into_result()?;
+        Ok(msg.message_id)
+    }
+
+    /// POST `/sendMediaGroup` with 2-10 files. Each file is attached as
+    /// a multipart part named `f0`, `f1`, … and referenced from the
+    /// `media` JSON via `attach://f<i>`. The caption, if non-empty, is
+    /// placed on the first item only — subsequent items carry no
+    /// caption. Returns the `message_id` of the first item in the
+    /// group (the Bot API returns a `Vec`, and the CLI surface only
+    /// prints one id). Scope: `messages.send`.
+    pub async fn send_media_group(&self, chat: i64, body: &str, files: &[PathBuf]) -> Result<i64> {
+        self.require_scope("messages.send")?;
+        if files.len() < 2 || files.len() > TELEGRAM_MAX_MEDIA_GROUP {
+            return Err(ZadError::Invalid(format!(
+                "sendMediaGroup requires 2..={TELEGRAM_MAX_MEDIA_GROUP} files, got {}",
+                files.len()
+            )));
+        }
+        let mut form = reqwest::multipart::Form::new().text("chat_id", chat.to_string());
+        let mut media_entries: Vec<serde_json::Value> = Vec::with_capacity(files.len());
+        for (i, path) in files.iter().enumerate() {
+            let name = format!("f{i}");
+            let part = file_part(path).await?;
+            form = form.part(name.clone(), part);
+            let mut entry = serde_json::json!({
+                "type": "document",
+                "media": format!("attach://{name}"),
+            });
+            if i == 0 && !body.is_empty() {
+                entry["caption"] = serde_json::Value::String(body.to_string());
+            }
+            media_entries.push(entry);
+        }
+        form = form.text(
+            "media",
+            serde_json::to_string(&serde_json::Value::Array(media_entries))
+                .expect("serde_json::Value serialization cannot fail"),
+        );
+        let envelope: ApiEnvelope<Vec<SentMessage>> =
+            self.post_multipart("sendMediaGroup", form).await?;
+        let msgs = envelope.into_result()?;
+        msgs.into_iter()
+            .next()
+            .map(|m| m.message_id)
+            .ok_or_else(|| ZadError::Service {
+                name: "telegram",
+                message: "sendMediaGroup returned an empty message list".into(),
+            })
+    }
+
     /// GET `/getUpdates`. Returns whatever updates Telegram has buffered
     /// since the last call with `timeout=0` so we never long-poll.
     ///
@@ -212,6 +287,40 @@ impl TelegramHttp {
             .map_err(network_err)?;
         decode_envelope(resp).await
     }
+
+    async fn post_multipart<T: for<'de> Deserialize<'de>>(
+        &self,
+        method: &str,
+        form: reqwest::multipart::Form,
+    ) -> Result<ApiEnvelope<T>> {
+        let resp = reqwest::Client::new()
+            .post(self.url(method))
+            .multipart(form)
+            .send()
+            .await
+            .map_err(network_err)?;
+        decode_envelope(resp).await
+    }
+}
+
+/// Load a file from disk into a multipart `Part`, carrying the basename
+/// along so Telegram stores the upload under the author-chosen name
+/// rather than `blob`. Errors map to `ZadError::Invalid` with the path
+/// embedded so the operator can fix a typo without a stack trace.
+///
+/// Buffers the whole file in memory. Fine for the practical sizes we
+/// care about here (Telegram's `sendDocument` cap is 50 MiB via the
+/// Bot API); large-file streaming would need reqwest's `stream`
+/// feature, which is not currently enabled.
+async fn file_part(path: &Path) -> Result<reqwest::multipart::Part> {
+    let bytes = tokio::fs::read(path).await.map_err(|e| {
+        ZadError::Invalid(format!("attachment `{}` not readable: {e}", path.display()))
+    })?;
+    let basename = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    Ok(reqwest::multipart::Part::bytes(bytes).file_name(basename))
 }
 
 fn network_err(e: reqwest::Error) -> ZadError {

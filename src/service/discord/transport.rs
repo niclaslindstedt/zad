@@ -13,6 +13,7 @@
 //! records into a shared [`DryRunSink`] instead of calling the remote
 //! API.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -29,7 +30,7 @@ use crate::service::{
 /// to one with a verb reachable from `zad discord …`.
 #[async_trait]
 pub trait DiscordTransport: Send + Sync {
-    async fn send(&self, target: Target, body: &str) -> Result<MessageId>;
+    async fn send(&self, target: Target, body: &str, attachments: &[PathBuf]) -> Result<MessageId>;
     async fn history(&self, channel: ChannelId, limit: usize) -> Result<Vec<Message>>;
     async fn list_channels(&self, guild: u64) -> Result<Vec<ChannelInfo>>;
     async fn list_guilds(&self) -> Result<Vec<GuildInfo>>;
@@ -42,8 +43,8 @@ pub trait DiscordTransport: Send + Sync {
 
 #[async_trait]
 impl DiscordTransport for DiscordHttp {
-    async fn send(&self, target: Target, body: &str) -> Result<MessageId> {
-        DiscordHttp::send(self, target, body).await
+    async fn send(&self, target: Target, body: &str, attachments: &[PathBuf]) -> Result<MessageId> {
+        DiscordHttp::send(self, target, body, attachments).await
     }
     async fn history(&self, channel: ChannelId, limit: usize) -> Result<Vec<Message>> {
         DiscordHttp::history(self, channel, limit).await
@@ -106,21 +107,45 @@ impl DryRunDiscordTransport {
 
 #[async_trait]
 impl DiscordTransport for DryRunDiscordTransport {
-    async fn send(&self, target: Target, body: &str) -> Result<MessageId> {
+    async fn send(&self, target: Target, body: &str, attachments: &[PathBuf]) -> Result<MessageId> {
         let (kind, id) = match &target {
             Target::Channel(ChannelId(id)) => ("channel", *id),
             Target::Dm(UserId(id)) => ("dm", *id),
         };
         let len = body.chars().count();
+        let atts: Vec<serde_json::Value> = attachments
+            .iter()
+            .map(|p| {
+                let basename = p
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| p.display().to_string());
+                let bytes = std::fs::metadata(p).map(|m| m.len()).ok();
+                json!({
+                    "path": p.display().to_string(),
+                    "basename": basename,
+                    "bytes": bytes,
+                })
+            })
+            .collect();
+        let summary = if atts.is_empty() {
+            format!("would send {len} chars to {kind} {id}")
+        } else {
+            format!(
+                "would send {len} chars + {} file(s) to {kind} {id}",
+                atts.len()
+            )
+        };
         self.record(
             "send",
-            format!("would send {len} chars to {kind} {id}"),
+            summary,
             json!({
                 "command": "discord.send",
                 "target": kind,
                 "target_id": id.to_string(),
                 "body": body,
                 "body_chars": len,
+                "attachments": atts,
             }),
         );
         Ok(MessageId(0))

@@ -47,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use crate::config;
 use crate::error::{Result, ZadError};
 use crate::permissions::{
+    attachments::{AttachmentInfo, AttachmentRules, AttachmentRulesRaw},
     content::{ContentRules, ContentRulesRaw},
     pattern::{PatternList, PatternListRaw},
     time::{TimeWindow, TimeWindowRaw},
@@ -82,6 +83,8 @@ pub struct FunctionBlockRaw {
     pub content: ContentRulesRaw,
     #[serde(default, skip_serializing_if = "TimeWindowRaw_is_default")]
     pub time: TimeWindowRaw,
+    #[serde(default, skip_serializing_if = "AttachmentRulesRaw_is_default")]
+    pub attachments: AttachmentRulesRaw,
 }
 
 #[allow(non_snake_case)]
@@ -96,6 +99,15 @@ fn ContentRulesRaw_is_default(v: &ContentRulesRaw) -> bool {
 fn TimeWindowRaw_is_default(v: &TimeWindowRaw) -> bool {
     v.days.is_empty() && v.windows.is_empty()
 }
+#[allow(non_snake_case)]
+fn AttachmentRulesRaw_is_default(v: &AttachmentRulesRaw) -> bool {
+    v.max_count.is_none()
+        && v.max_size_bytes.is_none()
+        && v.extensions.allow.is_empty()
+        && v.extensions.deny.is_empty()
+        && v.deny_filenames.allow.is_empty()
+        && v.deny_filenames.deny.is_empty()
+}
 
 // ---------------------------------------------------------------------------
 // compiled form
@@ -106,6 +118,7 @@ pub struct FunctionBlock {
     pub chats: PatternList,
     pub content: ContentRules,
     pub time: TimeWindow,
+    pub attachments: AttachmentRules,
 }
 
 impl FunctionBlock {
@@ -114,6 +127,7 @@ impl FunctionBlock {
             chats: PatternList::compile(&raw.chats).map_err(ZadError::Invalid)?,
             content: ContentRules::compile(&raw.content).map_err(ZadError::Invalid)?,
             time: TimeWindow::compile(&raw.time).map_err(ZadError::Invalid)?,
+            attachments: AttachmentRules::compile(&raw.attachments).map_err(ZadError::Invalid)?,
         })
     }
 }
@@ -248,6 +262,23 @@ impl EffectivePermissions {
         for p in self.layers() {
             let merged = p.content.clone().merge(p.send.content.clone());
             if let Err(e) = merged.evaluate(body) {
+                return Err(ZadError::PermissionDenied {
+                    function: "send",
+                    reason: e.as_sentence(),
+                    config_path: p.source.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Evaluate outbound attachments against the merged
+    /// `[send.attachments]` policy in each layer. Caps and pattern lists
+    /// apply independently per layer (global must admit, then local must
+    /// admit) so a project can only tighten the global baseline.
+    pub fn check_send_attachments(&self, files: &[AttachmentInfo]) -> Result<()> {
+        for p in self.layers() {
+            if let Err(e) = p.send.attachments.evaluate(files) {
                 return Err(ZadError::PermissionDenied {
                     function: "send",
                     reason: e.as_sentence(),
