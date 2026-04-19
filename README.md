@@ -106,14 +106,23 @@ Runtime verbs are chosen per service.
   (negative for groups/supergroups), a `@username` for public
   channels, or a directory alias seeded by `discover`. `send` takes
   `--dry-run` with the same semantics as Discord's.
+- **`gcal`** (Google Calendar): `calendars list|show`,
+  `events list|show|create|update|delete`, plus the usual
+  `permissions` and `self` subgroups. OAuth 2.0 via an interactive
+  browser loopback flow at `zad service create gcal` (PKCE + state;
+  requires a Google Cloud "Desktop app" OAuth client). The
+  permissions schema gates calendars, attendees, content, time
+  windows, `max_future_days`, `min_notice_minutes`, `max_attendees`,
+  `send_updates_allowed`, and `block_shared_calendars`. Mutating
+  verbs support `--dry-run`.
 
 Every command takes `--json` for machine-readable output.
 
-Today the shipped services are `discord` and `telegram`. See
-[`man/main.md`](man/main.md) for the top-level overview and
+Today the shipped services are `discord`, `gcal`, and `telegram`.
+See [`man/main.md`](man/main.md) for the top-level overview and
 [`man/service.md`](man/service.md), [`man/discord.md`](man/discord.md),
-and [`man/telegram.md`](man/telegram.md) for the full per-command
-reference.
+[`man/gcal.md`](man/gcal.md), and [`man/telegram.md`](man/telegram.md)
+for the full per-command reference.
 
 ### Permissions (optional second layer)
 

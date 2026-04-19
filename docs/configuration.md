@@ -380,6 +380,127 @@ previous `getUpdates` call, and `zad telegram chats` / `discover`
 likewise see only chats present in the current update batch. The
 manpage documents the "new messages only" shape explicitly.
 
+## Google Calendar service (`gcal`)
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/gcal.md`](../man/gcal.md)):
+
+- `zad service create gcal [--local]` — register OAuth credentials
+  (interactive browser flow or `--refresh-token`).
+- `zad service enable gcal` — enable the service in the current project.
+- `zad service disable gcal` — disable it again (leaves credentials intact).
+
+Every command accepts `--json` for script-friendly structured output.
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/gcal/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/gcal/config.toml`
+
+The project-local file wins over the global one for that project. The
+format is flat:
+
+```toml
+scopes          = ["calendars.read", "events.read", "events.write"]
+default_calendar = "primary"             # optional
+self_email       = "alice@example.com"   # optional — resolved from `@me` in attendee targets
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scopes` | `[string]` | `["calendars.read", "events.read", "events.write"]` | Capabilities the service is permitted to use. |
+| `default_calendar` | string? | — | Optional default calendar ID (`primary`, an email, or an alias). Runtime verbs that omit `--calendar` use this. |
+| `self_email` | string? | — | The authenticated user's email. Populated from Google's userinfo endpoint during `service create`; resolves `@me` in `--attendee` / `--add-attendee`. |
+
+Unlike the bot-token services, `gcal` stores **three** keychain
+entries per scope — the OAuth 2.0 client_id + client_secret +
+refresh_token. Access tokens are not persisted: each CLI invocation
+refreshes once and uses the token for that process lifetime.
+
+| Keychain account | Contents |
+|---|---|
+| `gcal-client-id:<scope>` | OAuth client ID. |
+| `gcal-client-secret:<scope>` | OAuth client secret. |
+| `gcal-refresh:<scope>` | Refresh token. |
+
+Scopes are **enforced at runtime, before any network call**. The
+supported values are:
+
+| Scope | Gates | Google OAuth scope |
+|---|---|---|
+| `calendars.read` | `calendars list`, `calendars show` | `calendar.calendarlist.readonly` (or a broader scope if `events.write` is also set) |
+| `events.read` | `events list`, `events show` | `calendar.events.readonly` |
+| `events.write` | `events create`, `events update`, `events delete` | `calendar.events` |
+| `events.invite` | `--add-attendee` on `events update` (plus attendee additions on `events create`) | none (pure zad policy gate) |
+| `events.remind` | `--reminder-minutes` / `--add-reminder-minutes` | none (pure zad policy gate) |
+
+When both a global and a project-local credentials file exist, the
+local file **replaces** the global one for that project — scopes are
+not merged. Write the full scope set each time.
+
+### Creating the Google OAuth client
+
+`zad service create gcal` expects a Google Cloud **"Desktop app"**
+OAuth client. Any other client type will fail at token exchange with
+`redirect_uri_mismatch`:
+
+1. Visit <https://console.cloud.google.com/apis/credentials>.
+2. **Create credentials → OAuth client ID → Application type: Desktop app.**
+3. Enable the **Google Calendar API** under "APIs & Services → Library".
+4. Copy the Client ID + Client Secret. `zad service create gcal`
+   prompts for both, then opens your browser to authorize, captures
+   the code on `http://127.0.0.1:<port>` (PKCE S256, random 32-byte
+   state), and stores the returned refresh token.
+
+For CI or non-interactive use, mint a refresh token out-of-band
+(e.g. via Google's OAuth Playground, selecting the Calendar scopes
+matching your declared zad scopes) and pass
+`--client-id`/`--client-secret`/`--refresh-token`.
+
+### Permissions file
+
+Scopes answer "is this family of operations enabled at all?".
+Permissions are a second, finer layer — *which calendars, which
+attendees, at what time, with what content, how far in the future,
+with how much notice* — and live in an optional TOML file next to
+the credentials:
+
+- Global: `~/.zad/services/gcal/permissions.toml`
+- Local:  `~/.zad/projects/<slug>/services/gcal/permissions.toml`
+
+Both files apply simultaneously — a call must pass every file that
+exists, and a missing file contributes no restrictions. This makes
+it safe to ship a strict global baseline. See
+[`examples/gcal-permissions/`](../examples/gcal-permissions/) for a
+worked example and [`man/gcal.md`](../man/gcal.md) for the per-verb
+reference. The key schema elements:
+
+| Top-level | Applies to |
+|---|---|
+| `[content]` | `deny_words` / `deny_patterns` / `max_length` against event summary + description |
+| `[time]` | UTC days + `HH:MM-HH:MM` windows — every verb |
+
+Per-verb blocks: `[list_calendars]`, `[get_calendar]`,
+`[list_events]`, `[get_event]`, `[create_event]`, `[update_event]`,
+`[delete_event]`, `[invite]`, `[remind]`. Each accepts:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `calendars` | `{ allow, deny }` pattern list | Gate the target calendar |
+| `attendees` | `{ allow, deny }` pattern list | Gate each attendee email (writes only) |
+| `content` | content rules | Narrow the top-level `[content]` defaults |
+| `time` | time window | Narrow the top-level `[time]` defaults |
+| `send_updates_allowed` | pattern list over `"none"`/`"external"`/`"all"` | Gate the `--send-updates` value |
+| `max_future_days` | integer | Refuse events starting further than N days out |
+| `min_notice_minutes` | integer | Refuse events starting in less than N minutes |
+| `max_attendees` | integer | Cap attendee count after the write |
+| `block_shared_calendars` | bool | Refuse writes on calendars where `accessRole != "owner"` |
+
+Numeric caps intersect across layers via `min()`; boolean caps via
+`OR` (strictest wins). Reminders are additionally capped at **40320
+minutes (four weeks)** by a built-in, non-configurable rule.
+
 ## Logging
 
 zad always writes a rolling daily log file at a platform-appropriate

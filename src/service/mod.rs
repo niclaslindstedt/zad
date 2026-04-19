@@ -1,4 +1,5 @@
 pub mod discord;
+pub mod gcal;
 pub mod registry;
 pub mod telegram;
 

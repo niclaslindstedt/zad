@@ -8,10 +8,10 @@ permissions. An agent drives a service by its verbs (`zad <service>
 <verb>`); a human administers it by its lifecycle commands (`zad
 service <action> <service>`).
 
-Today the shipped services are `discord` and `telegram`. This
-document describes the shape every service conforms to, so adding
-`slack`, `github`, or another provider is mechanical rather than
-speculative.
+Today the shipped services are `discord`, `gcal` (Google Calendar),
+and `telegram`. This document describes the shape every service
+conforms to, so adding `slack`, `github`, or another provider is
+mechanical rather than speculative.
 
 ## What a service is, operationally
 
