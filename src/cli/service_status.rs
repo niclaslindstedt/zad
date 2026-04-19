@@ -1,4 +1,4 @@
-//! Dispatch for `zad status` — aggregate status check across every service.
+//! Aggregate dispatch for `zad service status` (no `--service` filter).
 //!
 //! This is the agent-facing entrypoint: one command that pings every
 //! service registered in [`crate::service::registry::SERVICES`] and
@@ -7,24 +7,19 @@
 //! startup time.
 //!
 //! Each row is a [`lifecycle::ServiceStatusOutput`] — the same shape
-//! emitted by `zad service status <svc>` — so an agent that already
-//! handles the per-service command can consume this output unchanged.
+//! emitted by `zad service status --service <svc>` — so an agent that
+//! already handles the single-service form can consume this output
+//! unchanged.
 
-use clap::Args;
 use serde::Serialize;
 
 use crate::cli::lifecycle::{self, ServiceStatusOutput};
-use crate::cli::{service_discord::DiscordLifecycle, service_telegram::TelegramLifecycle};
+use crate::cli::service::StatusArgs;
+use crate::cli::{
+    service_discord::DiscordLifecycle, service_gcal::GcalLifecycle,
+    service_onepass::OnePassLifecycle, service_telegram::TelegramLifecycle,
+};
 use crate::error::Result;
-
-#[derive(Debug, Args)]
-pub struct StatusArgs {
-    /// Emit machine-readable JSON instead of human-readable text.
-    /// Recommended for agents — the envelope is stable and lists every
-    /// service by name with its ping result.
-    #[arg(long)]
-    pub json: bool,
-}
 
 #[derive(Debug, Serialize)]
 struct AggregateOutput {
@@ -37,14 +32,18 @@ struct AggregateOutput {
     services: Vec<ServiceStatusOutput>,
 }
 
-pub async fn run(args: StatusArgs) -> Result<()> {
-    // Independent network calls — fan them out. Two services today;
-    // more will slot in without restructuring.
-    let (discord, telegram) = tokio::join!(
+pub async fn run_all(args: StatusArgs) -> Result<()> {
+    // Independent network calls — fan them out. Order here matches the
+    // alphabetical order of `crate::service::registry::SERVICES`;
+    // adding a new service means adding one line here and one match
+    // arm in `service::run()`.
+    let (onepass, discord, gcal, telegram) = tokio::join!(
+        lifecycle::status_for::<OnePassLifecycle>(),
         lifecycle::status_for::<DiscordLifecycle>(),
+        lifecycle::status_for::<GcalLifecycle>(),
         lifecycle::status_for::<TelegramLifecycle>(),
     );
-    let services = vec![discord?, telegram?];
+    let services = vec![onepass?, discord?, gcal?, telegram?];
 
     let ok = services
         .iter()
@@ -53,7 +52,7 @@ pub async fn run(args: StatusArgs) -> Result<()> {
 
     if args.json {
         let out = AggregateOutput {
-            command: "status",
+            command: "service.status",
             ok,
             services,
         };
@@ -70,7 +69,7 @@ pub async fn run(args: StatusArgs) -> Result<()> {
 
 fn print_human(ok: bool, services: &[ServiceStatusOutput]) {
     println!(
-        "zad status: {}",
+        "zad service status: {}",
         if ok {
             "all configured services ok"
         } else {

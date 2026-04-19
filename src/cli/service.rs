@@ -6,12 +6,15 @@
 //! new service means adding one variant to each enum below plus one
 //! dispatch arm in `run()` — about 10 lines total.
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, builder::PossibleValuesParser};
 
-use crate::cli::lifecycle::{self, DeleteArgs, DisableArgs, EnableArgs, ShowArgs, StatusArgs};
+use crate::cli::lifecycle::{self, DeleteArgs, DisableArgs, EnableArgs, ShowArgs};
 use crate::error::Result;
+use crate::service::registry::SERVICES;
 
-use super::{service_discord, service_gcal, service_list, service_onepass, service_telegram};
+use super::{
+    service_discord, service_gcal, service_list, service_onepass, service_status, service_telegram,
+};
 use service_discord::DiscordLifecycle;
 use service_gcal::GcalLifecycle;
 use service_onepass::OnePassLifecycle;
@@ -36,8 +39,9 @@ pub enum Action {
     List(service_list::ListArgs),
     /// Show details for a configured service.
     Show(ShowAction),
-    /// Check whether a service's credentials work by pinging the provider.
-    Status(StatusAction),
+    /// Check whether service credentials work by pinging the provider.
+    /// Without `--service`, every configured service is pinged in parallel.
+    Status(StatusArgs),
     /// Delete credentials for a service (inverse of `create`).
     Delete(DeleteAction),
 }
@@ -122,24 +126,23 @@ pub enum ShowService {
     Telegram(ShowArgs),
 }
 
+/// Args for `zad service status [--service <NAME>] [--json]`.
+///
+/// Without `--service`, every service registered in
+/// [`crate::service::registry::SERVICES`] is pinged in parallel and a
+/// single aggregate envelope is emitted. With `--service`, only the
+/// named service is pinged and the per-service envelope is emitted.
 #[derive(Debug, Args)]
-pub struct StatusAction {
-    #[command(subcommand)]
-    pub service: StatusService,
-}
+pub struct StatusArgs {
+    /// Limit the check to a single service (e.g. `discord`, `telegram`).
+    /// Without this flag, every service in the registry is pinged.
+    #[arg(long, value_name = "NAME", value_parser = PossibleValuesParser::new(SERVICES))]
+    pub service: Option<String>,
 
-#[derive(Debug, Subcommand)]
-pub enum StatusService {
-    /// Check whether 1Password credentials work (pings `op whoami`).
-    #[command(name = "1pass")]
-    OnePass(StatusArgs),
-    /// Check whether Discord credentials work (pings `GET /users/@me`).
-    Discord(StatusArgs),
-    /// Check whether Google Calendar credentials work (pings the
-    /// OpenID userinfo endpoint and `calendarList`).
-    Gcal(StatusArgs),
-    /// Check whether Telegram credentials work (pings `getMe`).
-    Telegram(StatusArgs),
+    /// Emit machine-readable JSON instead of human-readable text.
+    /// Recommended for agents — the envelope is stable.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -192,11 +195,29 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             ShowService::Gcal(a) => lifecycle::run_show::<GcalLifecycle>(a),
             ShowService::Telegram(a) => lifecycle::run_show::<TelegramLifecycle>(a),
         },
-        Action::Status(s) => match s.service {
-            StatusService::OnePass(a) => lifecycle::run_status::<OnePassLifecycle>(a).await,
-            StatusService::Discord(a) => lifecycle::run_status::<DiscordLifecycle>(a).await,
-            StatusService::Gcal(a) => lifecycle::run_status::<GcalLifecycle>(a).await,
-            StatusService::Telegram(a) => lifecycle::run_status::<TelegramLifecycle>(a).await,
+        Action::Status(s) => match s.service.as_deref() {
+            None => service_status::run_all(s).await,
+            Some("1pass") => {
+                lifecycle::run_status::<OnePassLifecycle>(lifecycle::StatusArgs { json: s.json })
+                    .await
+            }
+            Some("discord") => {
+                lifecycle::run_status::<DiscordLifecycle>(lifecycle::StatusArgs { json: s.json })
+                    .await
+            }
+            Some("gcal") => {
+                lifecycle::run_status::<GcalLifecycle>(lifecycle::StatusArgs { json: s.json }).await
+            }
+            Some("telegram") => {
+                lifecycle::run_status::<TelegramLifecycle>(lifecycle::StatusArgs { json: s.json })
+                    .await
+            }
+            // PossibleValuesParser rejects unknown values before we get
+            // here, so this arm only fires if a new entry is added to
+            // `SERVICES` without a matching match arm.
+            Some(other) => Err(crate::error::ZadError::Invalid(format!(
+                "unhandled service in status dispatch: `{other}`"
+            ))),
         },
         Action::Delete(d) => match d.service {
             DeleteService::OnePass(a) => lifecycle::run_delete::<OnePassLifecycle>(a),

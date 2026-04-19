@@ -375,10 +375,10 @@ struct ScopeBlock {
     secrets: Vec<SecretRef>,
 }
 
-/// Per-service envelope for `zad service status <svc>`. Also reused
-/// verbatim inside `zad status`'s aggregate output so every service
-/// row carries the same shape whether the caller asked about one
-/// service or all of them.
+/// Per-service envelope for `zad service status --service <svc>`.
+/// Also reused verbatim inside the aggregate `zad service status`
+/// output so every service row carries the same shape whether the
+/// caller asked about one service or all of them.
 #[derive(Debug, Serialize)]
 pub struct ServiceStatusOutput {
     /// `"service.status.<name>"` for the per-service command; left
@@ -780,10 +780,10 @@ fn print_scope_block<T: LifecycleService>(
 // Generic driver: status
 // ---------------------------------------------------------------------------
 
-/// Run `zad service status <svc>` for service `T`. Emits JSON or human
-/// output, then exits the process with code 1 if the effective scope
-/// failed its live ping (or no scope is configured). Agents can branch
-/// on `$?` without parsing the output.
+/// Run `zad service status --service <svc>` for service `T`. Emits
+/// JSON or human output, then exits the process with code 1 if the
+/// effective scope failed its live ping (or no scope is configured).
+/// Agents can branch on `$?` without parsing the output.
 pub async fn run_status<T: LifecycleService>(args: StatusArgs) -> Result<()> {
     let mut out = status_for::<T>().await?;
     out.command = Some(format!("service.status.{}", T::NAME));
@@ -799,9 +799,10 @@ pub async fn run_status<T: LifecycleService>(args: StatusArgs) -> Result<()> {
 }
 
 /// Collect the status envelope for service `T` without emitting
-/// anything. Shared between the per-service command (`zad service
-/// status <svc>`) and the aggregate (`zad status`), which calls this
-/// once per service in parallel.
+/// anything. Shared between the single-service form
+/// (`zad service status --service <svc>`) and the aggregate
+/// (`zad service status`), which calls this once per service in
+/// parallel.
 pub async fn status_for<T: LifecycleService>() -> Result<ServiceStatusOutput> {
     let slug = config::path::project_slug()?;
     let global_path = config::path::global_service_config_path(T::NAME)?;
@@ -821,7 +822,7 @@ pub async fn status_for<T: LifecycleService>() -> Result<ServiceStatusOutput> {
     // Only ping the effective scope. A non-effective scope that's
     // also configured reports credential presence but is not pinged:
     // it wouldn't be used at runtime anyway, and pinging it would
-    // double the provider rate-limit cost for every `zad status`.
+    // double the provider rate-limit cost for every `zad service status`.
     let global_block = build_status_block::<T>(
         &global_path,
         global_cfg.as_ref(),
