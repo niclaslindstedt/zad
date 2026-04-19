@@ -958,9 +958,7 @@ async fn enforce_owner_only(
     match role.as_deref() {
         Some("owner") => Ok(()),
         other => {
-            let path = permissions
-                .block_shared_calendars(func)
-                .unwrap_or_default();
+            let path = permissions.block_shared_calendars(func).unwrap_or_default();
             Err(ZadError::PermissionDenied {
                 function: func.name(),
                 reason: format!(
