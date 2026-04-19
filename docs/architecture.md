@@ -16,11 +16,16 @@ src/
     lifecycle.rs  — `LifecycleService` trait + generic `run_{create,enable,disable,show,status,delete}<T>` driver shared by every service
     service.rs    — `zad service <action> <service>` group (clap enums + dispatch to the generic driver)
     service_list.rs    — `zad service list` rendering (shared across services)
-    service_discord.rs — `DiscordLifecycle` impl of `LifecycleService`; Discord-specific prompts and token validation
+    service_discord.rs  — `DiscordLifecycle` impl of `LifecycleService`; Discord-specific prompts and token validation
+    service_gcal.rs     — `GcalLifecycle` impl; OAuth 2.0 loopback + `userinfo` validation
+    service_onepass.rs  — `OnePassLifecycle` impl; 1Password Service Account token + `op whoami`
     service_telegram.rs — `TelegramLifecycle` impl; Telegram-specific prompts and token validation
     service_status.rs — `zad service status` aggregate (no `--service` filter): pings every service in parallel and emits one envelope for agents
-    discord.rs    — `zad discord <verb>` runtime handlers (send, read, channels, join, leave, discover, directory, permissions)
-    telegram.rs   — `zad telegram <verb>` runtime handlers (send, read, chats, discover, directory, permissions)
+    onepass.rs    — `zad 1pass <verb>` runtime handlers (vaults, items, tags, get, read, inject, create, whoami, permissions)
+    discord.rs    — `zad discord <verb>` runtime handlers (send, read, channels, join, leave, discover, directory, permissions, self)
+    gcal.rs       — `zad gcal <verb>` runtime handlers (calendars, events, permissions, self)
+    telegram.rs   — `zad telegram <verb>` runtime handlers (send, read, chats, discover, directory, permissions, self)
+    permissions.rs — shared `zad <svc> permissions` staged-commit driver (show, path, init, check, status, diff, discard, commit, sign, add, remove, content, time)
     commands.rs   — `zad commands [NAME]... [--examples|--json]` — clap-tree introspection for the OSS_SPEC §12.4 discovery surface
     docs.rs       — `zad docs [TOPIC]` — prints `docs/*.md` embedded via `include_str!`
     man.rs        — `zad man [COMMAND]` — prints `man/*.md` embedded via `include_str!`
@@ -28,7 +33,7 @@ src/
     debug_agent.rs — renders the troubleshooting block for `--debug-agent` (§12.2)
   config/
     path.rs       — project-slug + `~/.zad/` path resolution
-    schema.rs     — serde types: `ProjectConfig`, `ServiceProjectRef`, `DiscordServiceCfg`, `TelegramServiceCfg`
+    schema.rs     — serde types: `ProjectConfig`, `ServiceProjectRef`, `DiscordServiceCfg`, `GcalServiceCfg`, `OnePassServiceCfg`, `TelegramServiceCfg`
     directory.rs  — per-project `directory.toml` (name -> snowflake cache, Discord)
     mod.rs        — TOML read/write
   secrets/
@@ -48,6 +53,17 @@ src/
       transport.rs — `DiscordTransport` trait + live/dry-run impls for `--dry-run` preview
       gateway.rs  — gateway listener → `BoxStream<Event>`
       permissions.rs — Discord-specific `EffectivePermissions`; per-verb `check_<verb>_<target>` methods
+    gcal/
+      mod.rs      — `GcalHttp` client + domain types for Calendar v3
+      client.rs   — REST calls (`GET /users/me/calendarList`, `events.list`, `events.insert`, …) against the minted access token
+      oauth.rs    — PKCE loopback flow (`run_loopback_flow`) + refresh-token exchange
+      transport.rs — `GcalTransport` trait + live/dry-run impls
+      time.rs     — RFC 3339 / local-date parsing helpers for event windows
+      permissions.rs — Gcal-specific `EffectivePermissions`; per-verb checks + `[invite]` / `[remind]` blocks
+    onepass/
+      mod.rs      — `OnePassService` wrapper over `op` child processes
+      client.rs   — spawns `op` with `OP_SERVICE_ACCOUNT_TOKEN` injected; parses JSON stdout
+      permissions.rs — 1pass-specific filter-style permissions (hidden-target semantics)
     telegram/
       mod.rs      — `TelegramService` impl of `Service`
       client.rs   — reqwest wrapper over the Bot API (`getMe`, `sendMessage`, `getUpdates`, …)
@@ -63,10 +79,11 @@ src/
 on the `permissions` primitives. `config` depends on `error`. Each
 service's own module is the only module that links against that
 provider's SDK — `service::discord` against `serenity`,
-`service::telegram` against `reqwest` and the bare Bot API. Every
-other module is transport-agnostic, which keeps the `Service` and
-`LifecycleService` traits reusable when more services are added
-(Slack, GitHub, …).
+`service::telegram` and `service::gcal` against `reqwest` on top of
+bare REST APIs, and `service::onepass` against the external `op` CLI
+(spawned as a child process). Every other module is
+transport-agnostic, which keeps the `Service` and `LifecycleService`
+traits reusable when more services are added (Slack, GitHub, …).
 
 ## Command metadata
 
