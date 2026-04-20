@@ -1,7 +1,7 @@
 ---
 title: Open Source Project Bootstrap Specification
 description: A prescriptive, language-agnostic specification for bootstrapping a new open source project with the licensing, documentation, automation, governance, and release plumbing that users and contributors expect from a well-run OSS codebase.
-version: 2.0.1
+version: 2.3.0
 ---
 
 # Open Source Project Bootstrap Specification
@@ -340,7 +340,8 @@ Every push to a branch and every pull request must run:
 
 1. Checkout with full history (required for changelog generation).
 2. Toolchain setup (pinned minimum version — see §10.3 for the
-   per-language floor versions).
+   per-language floor versions, and §10.5 for pinning the **exact**
+   local-developer version that CI resolves against).
 3. Dependency cache restore.
 4. `make build`
 5. `make test`
@@ -659,6 +660,47 @@ in-flight deploys are never cancelled.
 The `pages` workflow is independent of the release pipeline: a
 release does not wait for Pages, and a Pages deploy does not wait for
 a release. Each delivers its own artifact to its own audience.
+
+### 10.5 Local/CI environment parity
+
+Every project must pin its language toolchain in a **repository-root
+pin file** that both the local developer's toolchain manager and the
+CI workflow read. CI's toolchain step must resolve to that same file
+(or to a literal that matches it exactly). A lint, test, or build
+that succeeds locally must not fail on CI solely because the two
+environments booted different toolchain versions.
+
+Why this matters:
+
+- Linters and compilers gain, remove, and reword diagnostics between
+  minor versions; an unpinned local toolchain produces noise that
+  only shows up on CI (the canonical failure mode: `cargo clippy`
+  passes on the contributor's Rust 1.90 install, then fails on CI's
+  pinned 1.88.0 because a new lint fired).
+- A single pin file prevents the version string from being duplicated
+  in CI YAML, where it silently drifts.
+- Contributors running `rustup show` / `pyenv install` / `nvm use` /
+  `go build` in a fresh clone pick up the correct version without
+  reading the CI config.
+
+Per-language pin file (`must`):
+
+| Language | Pin file | Example contents | CI reads it via |
+|---|---|---|---|
+| Rust | `rust-toolchain.toml` | `[toolchain]`<br>`channel = "1.88.0"`<br>`components = ["clippy", "rustfmt"]`<br>`profile = "minimal"` | `dtolnay/rust-toolchain@<channel>` matching the pin, or `rustup show` (auto-reads the file) |
+| Python | `.python-version` | `3.12` | `actions/setup-python@v5` with `python-version-file: .python-version` |
+| Node | `.nvmrc` (+ `"engines": { "node": ">=24" }` in `package.json`) | `24` | `actions/setup-node@v4` with `node-version-file: .nvmrc` |
+| Go | `go.mod` with a `toolchain` directive | `go 1.22`<br>`toolchain go1.22.6` | `actions/setup-go@v5` with `go-version-file: go.mod` |
+| Generic / polyglot | `.tool-versions` (asdf / mise) or a devcontainer | `rust 1.88.0`<br>`python 3.12.5` | Matching `asdf install` / devcontainer setup step |
+
+Floating specifiers (`stable`, `latest`, `lts`, `lts/*`, `*`) are
+**not permitted** in the pin file, same as in CI (§10.3).
+
+Enforcement: `oss-spec validate` detects the project's languages from
+their root manifest (`Cargo.toml`, `pyproject.toml`, `package.json`,
+`go.mod`) and requires the corresponding pin file for each one. It
+also cross-checks the pin-file version against the version referenced
+by `ci.yml` and reports a violation if they disagree.
 
 ## 11. Documentation and website
 
@@ -1050,24 +1092,46 @@ version inside it:
 ```
 prompts/
 ├── interpret-prompt/
-│   ├── 1_0.md
-│   └── 1_1.md
+│   ├── 1_0_0.md
+│   └── 1_1_0.md
 ├── fix-conformance/
-│   └── 1_0.md
+│   ├── 1_0_0.md
+│   └── 1_1_0.md
 └── …
 ```
 
-**File name.** `<major>_<minor>.md`. The version number is bumped on
-every meaningful change to the prompt: `1_0` → `1_1` for an in-place
-edit, `1_x` → `2_0` for a breaking rewrite. Old versions are kept on
-disk so behavior changes can be diffed and bisected. Loaders must
-always pick the highest version of a prompt unless explicitly pinned.
+**File name.** `<major>_<minor>_<patch>.md`, matching [semver]
+(https://semver.org/). Bump **patch** for wording fixes that do not
+change the contract (typos, clarifications). Bump **minor** for
+non-breaking additions (new placeholders, expanded scope, new
+guidance bullets). Bump **major** for breaking rewrites (removed
+placeholders, changed JSON schema, fundamentally new task). Loaders
+must always pick the highest version of a prompt unless explicitly
+pinned.
 
-**File content.** Each prompt file is plain Markdown with two required
-section headings, in this order:
+**Never edit an existing versioned file.** Once a `<major>_<minor>_
+<patch>.md` file is committed, its contents are immutable — every
+change, no matter how small, lands as a new file at a new version.
+This keeps every prompt a point-in-time artifact that can be diffed,
+bisected, and blamed. The only time you may edit an existing file is
+to correct a bug *before* it has ever been shipped or referenced from
+a tagged release.
+
+**Required YAML front matter.** Every prompt file must begin with a
+YAML front-matter block declaring the prompt's `name`, `description`,
+and `version`. The `version` value must match the filename stem
+(e.g. `1_0_0.md` → `version: 1.0.0`). Loaders must strip the front
+matter before passing the prompt to the model — it is metadata, not
+instruction content.
 
 ```markdown
-# <prompt-name> — v<major>.<minor>
+---
+name: <prompt-name>
+description: "<one-sentence description of what this prompt does>"
+version: <major>.<minor>.<patch>
+---
+
+# <prompt-name>
 
 ## System
 
@@ -1082,9 +1146,9 @@ loader renders with runtime values…
 The `## System` section is sent verbatim as the system prompt. The
 `## User` section is rendered with whatever templating engine the
 project already uses (this repo uses minijinja) and sent as the user
-message. Anything outside those two sections (the `# Title` line,
-notes, examples) is ignored by the loader and is purely for humans
-reading the file.
+message. The YAML front matter, the `# Title` heading, and any other
+prose outside the two required sections are ignored by the loader and
+exist purely for humans reading the file.
 
 **Why.** Inline prompts are invisible to reviewers, impossible to diff
 across versions without reading source, and indistinguishable from
@@ -1232,7 +1296,14 @@ outside the output module except for machine-readable output required by
 a contract (e.g. §12 agent discoverability surfaces, which require plain
 text on stdout with no ANSI escapes).
 
-## 20. Test organization
+## 20. Source and test organization
+
+This section covers how source code is organized — both the separation
+of tests from production source and the size of source files
+themselves. The two rules reinforce each other: keeping tests in
+dedicated files makes it easier to keep source files small, and the
+size cap in §20.5 makes it harder for inline tests to accumulate
+unnoticed.
 
 Tests must live in **dedicated test files**, separate from the source
 files they exercise. Inline test blocks embedded in production source
@@ -1308,6 +1379,84 @@ that tells agents and contributors:
 - How to run tests (`make test` at minimum, plus any subset commands).
 - Any test-specific dependencies or setup (e.g. `tempfile` crate,
   Docker containers, fixture files).
+
+### 20.5 Source file size limits
+
+No non-test source file may exceed **1000 physical lines** (raw
+newline-delimited lines, as reported by `wc -l`). Test files — those
+whose stem matches the §20.2 regex `_?[Tt]ests?$` — are exempt; their
+size is governed by whatever the test subject requires.
+
+The limit is a **size smell**, not a precise complexity metric.
+Physical lines are deliberately chosen over SLOC or cyclomatic
+complexity so the rule is trivial to measure, predictable for
+contributors, and immune to language-specific comment conventions. A
+file over 1000 lines is almost always doing too much: aggregating
+unrelated responsibilities, hiding inline tests, or waiting to be
+split by concern.
+
+**Why this rule.** Three motivations converge here:
+
+1. **Readability.** Files that fit in a single screenful of a human
+   reviewer's attention — or a single AI agent's working context —
+   get reviewed carefully. Files that exceed it get skimmed.
+2. **Decomposition pressure.** A hard line cap pushes authors to
+   extract submodules, helpers, and sibling files before a large
+   concern calcifies into an unsplittable monolith.
+3. **Teeth for §20.** The easiest way to blow the 1000-line limit is
+   to keep tests inline. §20.5 and §20 reinforce each other:
+   extracting inline test blocks to their own file is usually
+   sufficient to bring a large source file back under the cap.
+
+#### 20.5.1 Exception mechanism
+
+A file may declare itself exempt by carrying an **allow-large-file
+marker** in any comment within its **first 20 lines**:
+
+```
+oss-spec:allow-large-file: <reason>
+```
+
+The marker's comment syntax follows the host language (`//` for
+C-family, `#` for Python/Ruby/shell, `--` for SQL/Haskell, etc.) —
+only the literal `oss-spec:allow-large-file:` token and the reason
+are checked. The reason **must be non-empty**: a marker with no
+motivation does not exempt the file. Validators must reject
+`oss-spec:allow-large-file:` followed only by whitespace.
+
+Exceptions are expected to be **rare and per-file**, not a project-
+wide dial. Legitimate reasons include:
+
+- **Generated code** — a file produced by a build step (protobuf,
+  OpenAPI bindings, parser tables) that is not meant to be edited by
+  hand.
+- **Cohesive state machines** — a single enum or match tree whose
+  arms cannot be meaningfully split without obscuring the design.
+- **Third-party snapshots** — vendored code checked in verbatim.
+- **Inherent density** — a configuration schema, rule catalogue, or
+  lookup table that only grows linearly with real-world coverage.
+
+Reviewers should treat an added or edited marker the same as any
+other code change: ask whether the reason is honest, whether the
+file has since become splittable, and whether the alternative (a
+mechanical split) is genuinely worse than leaving the file oversized.
+
+#### 20.5.2 Auto-fix scope
+
+When `oss-spec fix` (or an equivalent automated refactor) encounters
+a §20.5 violation, it must only attempt an **easy** refactor:
+extracting inline test blocks (a §20 violation that commonly
+co-occurs with §20.5) into a separate file under `tests/`. In
+practice, doing so resolves both findings at once on files whose
+bulk came from tests.
+
+Automated refactors of **genuinely large source files** — splitting
+modules, extracting helpers, decomposing responsibilities — are out
+of scope. They require design judgment the tooling cannot
+responsibly make. When the auto-fixer sees a §20.5 violation on a
+file without a companion §20 violation, it must leave the file
+alone and surface the finding for a human to either split manually
+or annotate with an `oss-spec:allow-large-file:` marker.
 
 ## 21. Agent skills — maintenance playbooks for drift-prone artifacts
 
@@ -1435,6 +1584,18 @@ such as `update-bindings` (SDK bindings mirroring a core API),
 specific skills like `update-spec` (for spec repositories). Skill names
 must be kebab-case and should start with a verb.
 
+Any project that claims conformance to this spec should additionally
+ship a **`sync-oss-spec`** skill whose job is to run the project's
+conformance validator (for a repository bootstrapped by `oss-spec`,
+that is `oss-spec validate .`), walk the resulting violations, and fix
+each one until the repo is back in sync with `OSS_SPEC.md`. Unlike
+`update-spec` — which reacts to a change in the spec by propagating
+the new mandate into code — `sync-oss-spec` reacts to a change in the
+repo by bringing it back under the spec's existing mandates. Running
+`sync-oss-spec` as the final step of a drift sweep catches residual
+violations that the per-artifact skills (`update-readme`, `update-docs`,
+etc.) did not touch.
+
 The skills in §21.5 are the floor, not the ceiling. A healthy project
 adds a skill for every recurring "I forgot to update X when I changed
 Y" bug report.
@@ -1523,8 +1684,10 @@ checked before the first public tag.
 [ ] pages workflow deploys website on every main push   (§10.4, §11.2)
 [ ] Website staleness CI check                          (§11.2)
 [ ] examples/ (if applicable) exercised by CI           (§13)
-[ ] prompts/<name>/<major>_<minor>.md for every LLM
-    prompt the project sends (if applicable)            (§13.5)
+[ ] prompts/<name>/<major>_<minor>_<patch>.md for every
+    LLM prompt the project sends (if applicable)        (§13.5)
+[ ] Every prompt has YAML front matter with name,
+    description, and version fields matching the stem  (§13.5)
 [ ] Dependabot / Renovate configured                    (§14)
 [ ] Secret scanning enabled                             (§14)
 [ ] CI actions pinned by SHA                            (§14)
