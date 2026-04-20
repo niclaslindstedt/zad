@@ -4,6 +4,7 @@
 
 - chore(deps): bump actions/checkout from 4 to 6 (#2)
 - chore(deps): bump actions/setup-node from 4 to 6 (#3)
+- chore(release): update changelog and versions for v0.1.0
 - chore: bootstrap project from oss-spec
 - ci(pages): auto-enable Pages site in configure-pages (#36)
 - ci(pages): build zad binary before website extractor (#35)
