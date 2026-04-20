@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.1]
+## [0.1.2]
 
-- ci(release): short-circuit self-triggered retag run (#44)
+- fix(ci): prevent publish workflow from failing on dirty working tree (#46)
 
