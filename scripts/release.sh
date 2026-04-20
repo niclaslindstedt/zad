@@ -12,11 +12,11 @@ case "$bump" in
   auto)
     range="v${current}..HEAD"
     if git log --oneline "$range" 2>/dev/null | grep -qE '(^|: )(BREAKING CHANGE|[a-z]+!:)'; then
-      bump=major
+      bump="major"
     elif git log --oneline "$range" 2>/dev/null | grep -qE '^[a-f0-9]+ feat'; then
-      bump=minor
+      bump="minor"
     else
-      bump=patch
+      bump="patch"
     fi
     ;;
 esac

@@ -38,6 +38,25 @@ jobs:
       - name: make fmt-check
         run: make fmt-check
 
+  # Lint workflow YAML with actionlint and shell scripts with
+  # shellcheck. Catches invalid action pins, bad expressions,
+  # quoting bugs, and SC-class issues in `scripts/*.sh` before
+  # they hit `main`. (shellcheck is preinstalled on ubuntu-latest.)
+  shell-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          echo "${PWD}" >> "$GITHUB_PATH"
+      - name: actionlint
+        run: actionlint -color
+      - name: make shellcheck
+        run: make shellcheck
+
   # Verify that tool-specific agent-guidance files remain symlinks to
   # AGENTS.md (OSS_SPEC §7.1) and that `.claude/skills` resolves to
   # `.agent/skills` (OSS_SPEC §21.2).
