@@ -26,5 +26,9 @@ docs/_build/
 /target
 **/*.rs.bk
 
+# Release workflow artifacts (staged by the publish job)
+/dist
+/release
+
 # Claude Code worktrees (per-developer scratch)
 .claude/worktrees/
