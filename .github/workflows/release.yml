@@ -151,7 +151,7 @@ jobs:
           find dist -type f -exec cp {} release/ \;
           ls -l release
       - name: Generate provenance attestations
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'release/*'
       - name: Authenticate to crates.io (trusted publishing)
