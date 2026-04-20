@@ -142,7 +142,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
       - name: Flatten artifact tree
