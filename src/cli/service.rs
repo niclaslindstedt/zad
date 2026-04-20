@@ -13,10 +13,12 @@ use crate::error::Result;
 use crate::service::registry::SERVICES;
 
 use super::{
-    service_discord, service_gcal, service_list, service_onepass, service_status, service_telegram,
+    service_discord, service_gcal, service_github, service_list, service_onepass, service_status,
+    service_telegram,
 };
 use service_discord::DiscordLifecycle;
 use service_gcal::GcalLifecycle;
+use service_github::GithubLifecycle;
 use service_onepass::OnePassLifecycle;
 use service_telegram::TelegramLifecycle;
 
@@ -64,6 +66,9 @@ pub enum CreateService {
     /// Create Google Calendar credentials (global by default,
     /// `--local` for project-scoped).
     Gcal(service_gcal::CreateArgs),
+    /// Create GitHub credentials (global by default, `--local` for
+    /// project-scoped).
+    Github(service_github::CreateArgs),
     /// Create Telegram credentials (global by default, `--local` for
     /// project-scoped).
     Telegram(service_telegram::CreateArgs),
@@ -84,6 +89,8 @@ pub enum EnableService {
     Discord(EnableArgs),
     /// Enable the Google Calendar service in the current project.
     Gcal(EnableArgs),
+    /// Enable the GitHub service in the current project.
+    Github(EnableArgs),
     /// Enable the Telegram service in the current project.
     Telegram(EnableArgs),
 }
@@ -103,6 +110,8 @@ pub enum DisableService {
     Discord(DisableArgs),
     /// Disable the Google Calendar service in the current project.
     Gcal(DisableArgs),
+    /// Disable the GitHub service in the current project.
+    Github(DisableArgs),
     /// Disable the Telegram service in the current project.
     Telegram(DisableArgs),
 }
@@ -122,6 +131,8 @@ pub enum ShowService {
     Discord(ShowArgs),
     /// Show the Google Calendar service's effective configuration.
     Gcal(ShowArgs),
+    /// Show the GitHub service's effective configuration.
+    Github(ShowArgs),
     /// Show the Telegram service's effective configuration.
     Telegram(ShowArgs),
 }
@@ -163,6 +174,9 @@ pub enum DeleteService {
     /// Delete Google Calendar credentials (global by default,
     /// `--local` for project-scoped).
     Gcal(DeleteArgs),
+    /// Delete GitHub credentials (global by default, `--local` for
+    /// project-scoped).
+    Github(DeleteArgs),
     /// Delete Telegram credentials (global by default, `--local` for
     /// project-scoped).
     Telegram(DeleteArgs),
@@ -174,18 +188,21 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             CreateService::OnePass(a) => lifecycle::run_create::<OnePassLifecycle>(a).await,
             CreateService::Discord(a) => lifecycle::run_create::<DiscordLifecycle>(a).await,
             CreateService::Gcal(a) => lifecycle::run_create::<GcalLifecycle>(a).await,
+            CreateService::Github(a) => lifecycle::run_create::<GithubLifecycle>(a).await,
             CreateService::Telegram(a) => lifecycle::run_create::<TelegramLifecycle>(a).await,
         },
         Action::Enable(a) => match a.service {
             EnableService::OnePass(a) => lifecycle::run_enable::<OnePassLifecycle>(a),
             EnableService::Discord(a) => lifecycle::run_enable::<DiscordLifecycle>(a),
             EnableService::Gcal(a) => lifecycle::run_enable::<GcalLifecycle>(a),
+            EnableService::Github(a) => lifecycle::run_enable::<GithubLifecycle>(a),
             EnableService::Telegram(a) => lifecycle::run_enable::<TelegramLifecycle>(a),
         },
         Action::Disable(d) => match d.service {
             DisableService::OnePass(a) => lifecycle::run_disable::<OnePassLifecycle>(a),
             DisableService::Discord(a) => lifecycle::run_disable::<DiscordLifecycle>(a),
             DisableService::Gcal(a) => lifecycle::run_disable::<GcalLifecycle>(a),
+            DisableService::Github(a) => lifecycle::run_disable::<GithubLifecycle>(a),
             DisableService::Telegram(a) => lifecycle::run_disable::<TelegramLifecycle>(a),
         },
         Action::List(a) => service_list::run(a),
@@ -193,6 +210,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             ShowService::OnePass(a) => lifecycle::run_show::<OnePassLifecycle>(a),
             ShowService::Discord(a) => lifecycle::run_show::<DiscordLifecycle>(a),
             ShowService::Gcal(a) => lifecycle::run_show::<GcalLifecycle>(a),
+            ShowService::Github(a) => lifecycle::run_show::<GithubLifecycle>(a),
             ShowService::Telegram(a) => lifecycle::run_show::<TelegramLifecycle>(a),
         },
         Action::Status(s) => match s.service.as_deref() {
@@ -207,6 +225,10 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             }
             Some("gcal") => {
                 lifecycle::run_status::<GcalLifecycle>(lifecycle::StatusArgs { json: s.json }).await
+            }
+            Some("github") => {
+                lifecycle::run_status::<GithubLifecycle>(lifecycle::StatusArgs { json: s.json })
+                    .await
             }
             Some("telegram") => {
                 lifecycle::run_status::<TelegramLifecycle>(lifecycle::StatusArgs { json: s.json })
@@ -223,6 +245,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             DeleteService::OnePass(a) => lifecycle::run_delete::<OnePassLifecycle>(a),
             DeleteService::Discord(a) => lifecycle::run_delete::<DiscordLifecycle>(a),
             DeleteService::Gcal(a) => lifecycle::run_delete::<GcalLifecycle>(a),
+            DeleteService::Github(a) => lifecycle::run_delete::<GithubLifecycle>(a),
             DeleteService::Telegram(a) => lifecycle::run_delete::<TelegramLifecycle>(a),
         },
     }

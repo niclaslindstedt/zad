@@ -3,6 +3,7 @@ pub mod debug_agent;
 pub mod discord;
 pub mod docs;
 pub mod gcal;
+pub mod github;
 pub mod help_agent;
 pub mod lifecycle;
 pub mod man;
@@ -11,6 +12,7 @@ pub mod permissions;
 pub mod service;
 pub mod service_discord;
 pub mod service_gcal;
+pub mod service_github;
 pub mod service_list;
 pub mod service_onepass;
 pub mod service_status;
@@ -60,6 +62,8 @@ pub enum Command {
     Discord(discord::DiscordArgs),
     /// Operate the Google Calendar service (calendars, events, permissions).
     Gcal(gcal::GcalArgs),
+    /// Operate the GitHub service (issues, pull requests, files, code search, checks).
+    Github(github::GithubArgs),
     /// Operate the Telegram service (send, read, chats, discover).
     Telegram(telegram::TelegramArgs),
     /// Enumerate CLI commands, flags, and realistic examples.
@@ -89,6 +93,7 @@ pub async fn run() -> Result<()> {
         Some(Command::OnePass(args)) => onepass::run(args).await,
         Some(Command::Discord(args)) => discord::run(args).await,
         Some(Command::Gcal(args)) => gcal::run(args).await,
+        Some(Command::Github(args)) => github::run(args).await,
         Some(Command::Telegram(args)) => telegram::run(args).await,
         Some(Command::Commands(args)) => commands::run(args),
         Some(Command::Docs(args)) => docs::run(args),

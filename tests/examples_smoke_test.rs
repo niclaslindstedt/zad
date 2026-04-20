@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use zad::permissions::SigningKey;
 use zad::service::discord::permissions::{self as discord_permissions, DiscordPermissionsRaw};
 use zad::service::gcal::permissions::{self as gcal_permissions, GcalPermissionsRaw};
+use zad::service::github::permissions::{self as github_permissions, GithubPermissionsRaw};
 use zad::service::onepass::permissions::{self as onepass_permissions, OnePassPermissionsRaw};
 use zad::service::telegram::permissions::{self as telegram_permissions, TelegramPermissionsRaw};
 
@@ -89,6 +90,27 @@ fn telegram_permissions_example_loads() {
     telegram_permissions::save_file(&signed, &raw, &key).unwrap();
 
     let loaded = telegram_permissions::load_file(&signed).unwrap();
+    assert!(loaded.is_some(), "signed example must verify and compile");
+}
+
+#[test]
+fn github_permissions_example_loads() {
+    let path = example_path("github-permissions/permissions.toml");
+    assert!(
+        path.exists(),
+        "example file missing at {} — did the §13 restructure get reverted?",
+        path.display()
+    );
+    let body = std::fs::read_to_string(&path).unwrap();
+    let raw: GithubPermissionsRaw = toml::from_str(&body)
+        .expect("example permissions file must parse through the production schema");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let signed = tmp.path().join("permissions.toml");
+    let key = test_key();
+    github_permissions::save_file(&signed, &raw, &key).unwrap();
+
+    let loaded = github_permissions::load_file(&signed).unwrap();
     assert!(loaded.is_some(), "signed example must verify and compile");
 }
 

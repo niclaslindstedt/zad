@@ -1,0 +1,111 @@
+# Example GitHub permissions policy.
+#
+# Drop this at one of:
+#   ~/.zad/services/github/permissions.toml                       (global)
+#   ~/.zad/projects/<slug>/services/github/permissions.toml       (local, per project)
+#
+# When both files exist they INTERSECT: a call must pass every file
+# that is present. Missing files contribute no restrictions, so scope
+# is the only gate when neither file exists.
+#
+# Pattern grammar (used anywhere an allow/deny list appears):
+#
+#   "myorg/api"             exact repo match (owner/name)
+#   "myorg/*", "*/docs"     globs (`*` and `?`)
+#   "re:^myorg/.*-prod$"    full Rust regex (anchor it yourself)
+#
+# Evaluation order:
+#   1. Any deny match -> denied (deny always wins).
+#   2. Empty allow list -> no positive constraint on this front.
+#   3. Otherwise the call must match at least one allow pattern.
+
+# -----------------------------------------------------------------
+# Shared defaults — inherited by every per-function block below.
+# -----------------------------------------------------------------
+
+[content]
+# Crude but effective leak traps. Applied to every outbound body
+# (issue titles/bodies, PR titles/bodies, comments, review bodies).
+deny_words    = ["password", "api_key", "secret_token"]
+deny_patterns = [
+  '(?i)ghp_[A-Za-z0-9]{30,}',          # classic personal access tokens
+  '(?i)github_pat_[A-Za-z0-9_]{30,}',  # fine-grained PATs
+  '(?i)bearer\s+[A-Za-z0-9\-_.]{20,}', # pasted bearer tokens
+]
+max_length    = 20000                   # gh accepts far more; this keeps bodies sane
+
+# [time]
+# days    = ["mon","tue","wed","thu","fri"]
+# windows = ["09:00-18:00"]   # UTC. Comment in to pin runtime to business hours.
+
+# -----------------------------------------------------------------
+# Read verbs — broad allow, narrow deny.
+# -----------------------------------------------------------------
+
+[issue_list.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[issue_view.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[pr_list.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[pr_view.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[pr_diff.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[pr_checks.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[repo_view.repos]
+allow = ["*"]
+
+[file_view.repos]
+# Cross-repo file reading is the most common agent shape — allow all,
+# but deny known-sensitive repos.
+allow = ["*"]
+deny  = ["*/secrets-*", "*/vault-*"]
+
+[code_search.orgs]
+allow = ["myorg"]
+
+[run_list.repos]
+allow = ["myorg/*", "myuser/*"]
+
+[run_view.repos]
+allow = ["myorg/*", "myuser/*"]
+
+# -----------------------------------------------------------------
+# Write verbs — tight allow-list, default-deny for everything else.
+# -----------------------------------------------------------------
+
+[issue_create.repos]
+allow = ["myorg/triage", "myuser/sandbox"]
+
+[issue_comment.repos]
+allow = ["myorg/*"]
+deny  = ["myorg/*-prod", "myorg/security-*"]
+
+[issue_close.repos]
+allow = ["myuser/sandbox"]
+
+[pr_create.repos]
+# Agents open PRs only against the sandbox repo they work in.
+allow = ["myuser/sandbox"]
+
+[pr_comment.repos]
+allow = ["myorg/*", "myuser/*"]
+deny  = ["myorg/*-prod"]
+
+[pr_review.repos]
+allow = ["myorg/*"]
+deny  = ["myorg/security-*"]
+
+# Merging is always the tightest. Edit this list deliberately — an
+# empty allow-list blocks every merge, which is the safe default.
+[pr_merge.repos]
+allow = []
+deny  = ["*"]

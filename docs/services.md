@@ -9,8 +9,8 @@ permissions. An agent drives a service by its verbs (`zad <service>
 service <action> <service>`).
 
 Today the shipped services are `1pass` (1Password), `discord`, `gcal`
-(Google Calendar), and `telegram`. This document describes the shape
-every service conforms to, so adding `slack`, `github`, or another
+(Google Calendar), `github`, and `telegram`. This document describes
+the shape every service conforms to, so adding `slack` or another
 provider is mechanical rather than speculative.
 
 `1pass` is the single deliberate deviation from the pattern: its
