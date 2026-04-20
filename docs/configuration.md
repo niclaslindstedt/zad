@@ -396,6 +396,107 @@ previous `getUpdates` call, and `zad telegram chats` / `discover`
 likewise see only chats present in the current update batch. The
 manpage documents the "new messages only" shape explicitly.
 
+## GitHub service (`github`)
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/github.md`](../man/github.md)):
+
+- `zad service create github [--local]` — register a Personal Access Token.
+- `zad service enable github` — enable the service in the current project.
+- `zad service disable github` — disable it again (leaves credentials intact).
+
+Runtime verbs shell out to the [`gh`](https://cli.github.com/) CLI
+with `GH_TOKEN` set from the zad-managed keychain entry. `gh` must
+therefore be on `PATH`; zad does not read the user's own
+`gh auth login` state, so per-project credentials work even when the
+host machine is logged in as a different identity.
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/github/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/github/config.toml`
+
+The project-local file wins over the global one for that project. The
+format is flat:
+
+```toml
+scopes        = ["repo.read", "issues.read", "pulls.read", "checks.read", "search"]
+default_repo  = "myuser/sandbox"   # optional — owner/name
+default_owner = "myorg"            # optional — used by `code search --org` when omitted
+self_login    = "octocat"          # optional — populated from `gh api user` during create
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scopes` | `[string]` | read/search defaults (see below) | Capabilities the service is permitted to use. |
+| `default_repo` | string? | — | `owner/name` used when a verb omits `--repo`. |
+| `default_owner` | string? | — | Org/user used when `code search` omits `--org`. |
+| `self_login` | string? | — | The PAT's GitHub login, captured at create time. Displayed in `show`. |
+
+Scopes are **enforced at runtime, before any subprocess spawn**. The
+supported values are:
+
+| Scope | Gates |
+|---|---|
+| `repo.read` | `repo view`, `file view` |
+| `issues.read` | `issue list`, `issue view` |
+| `issues.write` | `issue create`, `issue comment`, `issue close` |
+| `pulls.read` | `pr list`, `pr view`, `pr diff` |
+| `pulls.write` | `pr create`, `pr comment`, `pr review`, `pr merge` |
+| `checks.read` | `pr checks`, `run list`, `run view` |
+| `search` | `code search` |
+
+Default scope set at `zad service create github`: `repo.read`,
+`issues.read`, `pulls.read`, `checks.read`, `search`. Write scopes
+(`issues.write`, `pulls.write`) are opt-in — pass them explicitly to
+`--scopes` at create time, or re-run create with `--force`.
+
+### Permissions file
+
+The permissions layer has the same shape as Discord's and Telegram's,
+with one per-verb block per runtime verb. Permission targets are
+`repos` (matched as `owner/name`) and `orgs`.
+
+| Block | Narrows |
+|---|---|
+| `[issue_list]` / `[issue_view]` | `repos` for the listing/view |
+| `[issue_create]` / `[issue_comment]` / `[issue_close]` | `repos` for the mutation; bodies against `content` |
+| `[pr_list]` / `[pr_view]` / `[pr_diff]` / `[pr_checks]` | `repos` |
+| `[pr_create]` / `[pr_comment]` / `[pr_review]` / `[pr_merge]` | `repos` for the mutation; bodies against `content` (except `pr_merge`) |
+| `[repo_view]` / `[file_view]` | `repos` |
+| `[code_search]` | `repos` and `orgs` |
+| `[run_list]` / `[run_view]` | `repos` |
+
+The starter policy written by `zad github permissions init`
+allow-lists `*` for every read verb and deny-lists `*` for every write
+verb, so operators opt in to mutations per repo. `pr_merge` stays
+deny-by-default even after you start adding allow entries elsewhere —
+it's the block most operators want to touch last.
+
+See [`examples/github-permissions/`](../examples/github-permissions/)
+for a worked example.
+
+### Project file
+
+The same `~/.zad/projects/<slug>/config.toml` that records Discord
+and Telegram enablement records GitHub the same way:
+
+```toml
+[service.github]
+enabled = true
+```
+
+### Token storage
+
+The Personal Access Token is stored in the OS keychain at:
+
+- **service:** `zad`
+- **account:** `github-pat:global` (global creds) or `github-pat:<slug>` (local creds).
+
+Rotate a token by re-running `zad service create github --force`
+(add `--local` to target project-local credentials).
+
 ## Google Calendar service (`gcal`)
 
 Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/gcal.md`](../man/gcal.md)):

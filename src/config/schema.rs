@@ -94,6 +94,30 @@ pub struct OnePassServiceCfg {
     pub default_vault: Option<String>,
 }
 
+/// Global GitHub service config stored at
+/// `~/.zad/services/github/config.toml`. Authentication is a single
+/// Personal Access Token held in the OS keychain; this struct carries
+/// only the non-secret metadata. Runtime verbs shell out to the `gh`
+/// CLI with `GH_TOKEN` set from the keychain entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GithubServiceCfg {
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional default repository for verbs that omit `--repo`.
+    /// Format: `owner/name` (e.g. `octocat/hello-world`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_repo: Option<String>,
+    /// Optional default owner (user or org) for verbs like `code search`
+    /// that scope to an org. Used when `--org` is omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_owner: Option<String>,
+    /// The authenticated user's GitHub login, captured during
+    /// `zad service create github` from `gh api user`. Displayed in
+    /// `show` output; not currently resolved as a target in any verb.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_login: Option<String>,
+}
+
 /// Global Telegram service config stored at
 /// `~/.zad/services/telegram/config.toml`. Telegram bots carry their
 /// identity inside the bot token itself (no separate app ID), and
@@ -170,6 +194,19 @@ impl ProjectConfig {
 
     pub fn disable_gcal(&mut self) {
         self.service.remove("gcal");
+    }
+
+    pub fn github(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("github")
+    }
+
+    pub fn enable_github(&mut self) {
+        self.service
+            .insert("github".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_github(&mut self) {
+        self.service.remove("github");
     }
 
     pub fn has_service(&self, name: &str) -> bool {

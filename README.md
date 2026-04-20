@@ -128,6 +128,16 @@ Runtime verbs are chosen per service.
   (negative for groups/supergroups), a `@username` for public
   channels, or a directory alias seeded by `discover`. `send` takes
   `--dry-run` with the same semantics as Discord's.
+- **`github`**: `issue {list,view,create,comment,close}`,
+  `pr {list,view,diff,create,comment,review,merge,checks}`,
+  `repo view`, `file view`, `code search`, `run {list,view}`, plus
+  `permissions`. Shells out to the `gh` CLI with the zad-managed PAT
+  passed via `GH_TOKEN`, so per-project credentials work independently
+  of any `gh auth login` state. The permissions schema scopes every
+  verb to `repos` (globs like `myorg/*`) and `orgs`; write verbs ship
+  deny-by-default in the starter template, and `pr merge` stays
+  deny-by-default even after you allow-list other writes. Mutating
+  verbs support `--dry-run`.
 - **`gcal`** (Google Calendar): `calendars list|show`,
   `events list|show|create|update|delete`, plus the usual
   `permissions` and `self` subgroups. OAuth 2.0 via an interactive
@@ -149,11 +159,12 @@ Runtime verbs are chosen per service.
 
 Every command takes `--json` for machine-readable output.
 
-Today the shipped services are `1pass`, `discord`, `gcal`, and
-`telegram`. See [`man/main.md`](man/main.md) for the top-level
+Today the shipped services are `1pass`, `discord`, `gcal`, `github`,
+and `telegram`. See [`man/main.md`](man/main.md) for the top-level
 overview and [`man/service.md`](man/service.md),
 [`man/1pass.md`](man/1pass.md), [`man/discord.md`](man/discord.md),
-[`man/gcal.md`](man/gcal.md), and [`man/telegram.md`](man/telegram.md)
+[`man/gcal.md`](man/gcal.md), [`man/github.md`](man/github.md),
+and [`man/telegram.md`](man/telegram.md)
 for the full per-command reference.
 
 ### Permissions (optional second layer)
