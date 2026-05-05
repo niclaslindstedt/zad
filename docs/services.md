@@ -9,9 +9,9 @@ permissions. An agent drives a service by its verbs (`zad <service>
 service <action> <service>`).
 
 Today the shipped services are `1pass` (1Password), `discord`, `gcal`
-(Google Calendar), and `telegram`. This document describes the shape
-every service conforms to, so adding `slack`, `github`, or another
-provider is mechanical rather than speculative.
+(Google Calendar), `spotify`, and `telegram`. This document describes
+the shape every service conforms to, so adding `slack`, `github`, or
+another provider is mechanical rather than speculative.
 
 `1pass` is the single deliberate deviation from the pattern: its
 read-side permissions act as **filters** rather than as
@@ -289,13 +289,21 @@ helpers you flatten in and how many keychain entries you write.
 | Shape | Example services | Helpers |
 |---|---|---|
 | One long-lived bot token | Discord, Telegram, Slack bot | `#[command(flatten)] BotTokenArgs` + one `secrets::account(NAME, "bot", scope)` entry |
-| OAuth (client_secret + refresh_token) | Reddit, Google, Spotify | Declare your own `--client-id` / `--client-secret` / `--refresh-token` flags; store two keychain entries with `kind = "client-secret"` and `kind = "refresh"` |
+| OAuth (client_secret + refresh_token) | Google Calendar (gcal), Reddit | Declare your own `--client-id` / `--client-secret` / `--refresh-token` flags; store **three** keychain entries with `kind = "client-id" / "client-secret" / "refresh"` |
+| OAuth (PKCE public client — no secret) | Spotify | Same flags minus `--client-secret`; store **two** keychain entries with `kind = "client-id"` and `kind = "refresh"`. Use [`crate::oauth`] with `client_secret: None`. |
 | Keypair / PEM | GitHub App | A `--private-key-file` flag; store the PEM bytes under `kind = "pem"` (plus `app_id`/`installation_id` as non-secret `Cfg` fields) |
 | User + password → access token | Matrix, IRC SASL | A `--username` flag + interactive password prompt; store just the derived access token under `kind = "access"` |
 
 If your provider doesn't fit, pick the nearest shape and extend — the
 trait doesn't care as long as `store_secrets` / `delete_secrets` /
 `inspect_secrets` all agree on the list of accounts they touch.
+
+The OAuth loopback flow lives at `src/oauth/` (top-level, not under
+`src/service/`) and is shared by every OAuth-based service.
+Provider-specific knobs (endpoints, public-client vs. confidential
+client, extra query params like Google's `prompt=consent` or
+Spotify's `show_dialog=true`) are threaded in via `LoopbackConfig`.
+Re-use it; do not re-implement the flow.
 
 ### 2. Checklist
 

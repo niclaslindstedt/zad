@@ -41,19 +41,23 @@ Recognised services:
 | `1pass` | 1Password service-account service. See `zad man 1pass` for the runtime verbs and credential flags. |
 | `discord` | Discord bot-token service. See `zad man discord` for the runtime verbs. |
 | `gcal` | Google Calendar (OAuth 2.0) service. See `zad man gcal` for the runtime verbs and OAuth flow. |
+| `spotify` | Spotify (OAuth 2.0 PKCE public client) service. See `zad man spotify` for the runtime verbs and OAuth flow. |
 | `telegram` | Telegram bot-token service. See `zad man telegram` for the runtime verbs. |
 
 Every command supports `--json` to emit machine-readable output
 instead of the human-readable default.
 
 The per-service `create` flags are documented in detail below for
-`discord` and `telegram`. `1pass` and `gcal` have service-specific
-`create` flags (Service Account token for 1pass; OAuth client_id /
-client_secret / refresh_token for gcal) — see [`zad man 1pass`](1pass.md)
-and [`zad man gcal`](gcal.md) for their credential and scope tables.
-All other actions (`enable`, `disable`, `list`, `show`, `status`,
-`delete`) are driven by the same generic lifecycle driver and share
-the flag shapes documented in the discord/telegram sections.
+`discord` and `telegram`. `1pass`, `gcal`, and `spotify` have
+service-specific `create` flags (Service Account token for 1pass;
+OAuth `client_id` / `client_secret` / `refresh_token` for gcal; PKCE
+public client `client_id` + `refresh_token` for spotify) — see
+[`zad man 1pass`](1pass.md), [`zad man gcal`](gcal.md), and
+[`zad man spotify`](spotify.md) for their credential and scope
+tables. All other actions (`enable`, `disable`, `list`, `show`,
+`status`, `delete`) are driven by the same generic lifecycle driver
+and share the flag shapes documented in the discord/telegram
+sections.
 
 ## `zad service create discord`
 

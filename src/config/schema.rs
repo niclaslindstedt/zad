@@ -94,6 +94,29 @@ pub struct OnePassServiceCfg {
     pub default_vault: Option<String>,
 }
 
+/// Global Spotify service config stored at
+/// `~/.zad/services/spotify/config.toml`. Spotify authenticates via
+/// OAuth 2.0 PKCE for public clients — both the `client_id` and the
+/// long-lived `refresh_token` live in the OS keychain (Spotify's
+/// PKCE flow doesn't issue or accept a client secret), so this
+/// struct carries only the non-secret metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SpotifyServiceCfg {
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional default playlist for verbs that omit `--playlist`.
+    /// Accepts a Spotify playlist ID, a `spotify:playlist:<id>` URI,
+    /// or a directory alias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_playlist: Option<String>,
+    /// The authenticated user's Spotify user ID, captured at
+    /// `zad service create spotify` time from `GET /me`. Resolves the
+    /// literal `@me` in user-target arguments and is required when
+    /// creating a playlist (the API takes a user ID in the path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_user_id: Option<String>,
+}
+
 /// Global Telegram service config stored at
 /// `~/.zad/services/telegram/config.toml`. Telegram bots carry their
 /// identity inside the bot token itself (no separate app ID), and
@@ -170,6 +193,19 @@ impl ProjectConfig {
 
     pub fn disable_gcal(&mut self) {
         self.service.remove("gcal");
+    }
+
+    pub fn spotify(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("spotify")
+    }
+
+    pub fn enable_spotify(&mut self) {
+        self.service
+            .insert("spotify".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_spotify(&mut self) {
+        self.service.remove("spotify");
     }
 
     pub fn has_service(&self, name: &str) -> bool {

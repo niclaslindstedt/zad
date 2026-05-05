@@ -2,11 +2,6 @@
 //!
 //! Submodules:
 //!
-//! - `oauth` — loopback PKCE OAuth 2.0 flow used by `zad service
-//!   create gcal` to obtain a refresh token. Kept generic over
-//!   `AuthUrl`/`TokenUrl`/`Scopes`/`ClientId`/`ClientSecret` so it can
-//!   later move under `src/service/oauth/` once Reddit/Spotify need
-//!   the same shape.
 //! - `client` — hand-rolled `reqwest` wrapper over Calendar API v3 +
 //!   the OpenID `userinfo` endpoint. Handles automatic access-token
 //!   refresh on each run.
@@ -14,6 +9,10 @@
 //! - `permissions` — per-service policy schema composed from
 //!   `src/permissions/{pattern, content, time}.rs`.
 //! - `time` — RFC3339 / bare-date parsing for `--start`/`--end`.
+//!
+//! The OAuth 2.0 loopback flow used by `zad service create gcal`
+//! lives in the shared crate-level [`crate::oauth`] module — Spotify
+//! reuses the same primitive.
 //!
 //! ## Why no `Service` trait impl?
 //!
@@ -27,7 +26,6 @@
 //! only when a concrete caller materialises.
 
 pub mod client;
-pub mod oauth;
 pub mod permissions;
 pub mod time;
 pub mod transport;

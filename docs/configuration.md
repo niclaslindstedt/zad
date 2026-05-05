@@ -517,6 +517,118 @@ Numeric caps intersect across layers via `min()`; boolean caps via
 `OR` (strictest wins). Reminders are additionally capped at **40320
 minutes (four weeks)** by a built-in, non-configurable rule.
 
+## Spotify service (`spotify`)
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/spotify.md`](../man/spotify.md)):
+
+- `zad service create spotify [--local]` — register OAuth credentials
+  (interactive browser flow or `--refresh-token`).
+- `zad service enable spotify` — enable the service in the current project.
+- `zad service disable spotify` — disable it again (leaves credentials intact).
+
+Every command accepts `--json` for script-friendly structured output.
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/spotify/config.toml`
+- Local: `~/.zad/projects/<slug>/services/spotify/config.toml`
+
+The project-local file wins over the global one for that project. The
+format is flat:
+
+```toml
+scopes           = ["search", "playlists.read", "playlists.write", "library.read"]
+default_playlist = "zad-test"     # optional
+self_user_id     = "fakeuser123"  # optional — user ID captured at create time
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scopes` | `[string]` | `["search", "playlists.read", "playlists.write", "library.read"]` | Capabilities the service is permitted to use. |
+| `default_playlist` | string? | — | Optional default playlist for verbs that omit `--playlist`. Accepts a Spotify playlist ID, a `spotify:playlist:<id>` URI, or a directory alias. |
+| `self_user_id` | string? | — | The authenticated user's Spotify user ID. Captured from `GET /me` during `service create` (or set via `--self-user`); required when creating a playlist (the API takes a user ID in the path). |
+
+Spotify uses a **PKCE-only public client** — no `client_secret` is
+issued or accepted by Spotify for desktop / CLI apps. `spotify` stores
+**two** keychain entries per scope. Access tokens are not persisted:
+each CLI invocation refreshes once and uses the token for that
+process lifetime.
+
+| Keychain account | Contents |
+|---|---|
+| `spotify-client-id:<scope>` | OAuth client ID. |
+| `spotify-refresh:<scope>` | Refresh token. |
+
+Scopes are **enforced at runtime, before any network call**. The
+supported values are:
+
+| Scope | Gates | Spotify OAuth scope |
+|---|---|---|
+| `search` | `search` | none (any authorized session works) |
+| `playlists.read` | `playlists list`, `playlists show` | `playlist-read-private`, `playlist-read-collaborative` |
+| `playlists.write` | `playlists create`, `rename`, `delete`, `add`, `remove` | `playlist-modify-private`, `playlist-modify-public` (plus the read scopes) |
+| `library.read` | `library tracks list`, `library albums list` | `user-library-read` |
+| `library.write` | `library tracks save/unsave`, `library albums save/unsave` | `user-library-modify` (plus `user-library-read`) |
+
+When both a global and a project-local credentials file exist, the
+local file **replaces** the global one for that project — scopes are
+not merged. Write the full scope set each time.
+
+### Creating the Spotify app
+
+`zad service create spotify` expects a Spotify Developer **app** with
+a registered redirect URI:
+
+1. Visit <https://developer.spotify.com/dashboard>.
+2. Click **Create app**. Name and description are arbitrary.
+3. Under **Redirect URIs**, add `http://127.0.0.1` and save. zad's
+   loopback listener picks a random port; Spotify accepts any port on
+   `127.0.0.1` once the host is registered.
+4. Copy the Client ID. `zad service create spotify` prompts for it,
+   then opens your browser to authorize, captures the code on
+   `http://127.0.0.1:<port>` (PKCE S256, random 32-byte state), and
+   stores the returned refresh token.
+
+The Spotify dashboard *also* shows a Client Secret — **you do not
+need it**. zad stores only the Client ID + the refresh token. For CI
+or non-interactive use, mint a refresh token out-of-band and pass
+`--client-id` / `--refresh-token`.
+
+### Permissions file
+
+Scopes answer "is this family of operations enabled at all?".
+Permissions are a second, finer layer — *which playlists, tracks,
+albums, or queries; at what time, with what content* — and live in
+an optional TOML file next to the credentials:
+
+- Global: `~/.zad/services/spotify/permissions.toml`
+- Local: `~/.zad/projects/<slug>/services/spotify/permissions.toml`
+
+Both files apply simultaneously — a call must pass every file that
+exists, and a missing file contributes no restrictions. See
+[`examples/spotify-permissions/`](../examples/spotify-permissions/)
+for a worked example and [`man/spotify.md`](../man/spotify.md) for
+the per-verb reference. The key schema elements:
+
+| Top-level | Applies to |
+|---|---|
+| `[content]` | `deny_words` / `deny_patterns` / `max_length` against playlist names, descriptions, and search queries |
+| `[time]` | UTC days + `HH:MM-HH:MM` windows — every verb |
+
+Per-verb blocks: `[search]`, `[playlists_read]`, `[playlists_write]`,
+`[library_read]`, `[library_write]`. Each accepts:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `targets` | `{ allow, deny }` pattern list | Gate the thing being acted on (playlist name/ID/URI, track/album URI, or query string) |
+| `content` | content rules | Narrow the top-level `[content]` defaults |
+| `time` | time window | Narrow the top-level `[time]` defaults |
+
+Deny always wins over allow; an empty allow list contributes no
+positive constraint (only the deny list applies).
+
 ## 1Password service (`1pass`)
 
 Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/1pass.md`](../man/1pass.md)):

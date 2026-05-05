@@ -40,6 +40,7 @@ and are **never** written to the TOML.
 | `1pass <VERB>` | Operate the 1Password service at runtime (vaults, items, tags, get, read, inject, create, whoami, permissions). | [`zad man 1pass`](1pass.md) |
 | `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions, self). | [`zad man discord`](discord.md) |
 | `gcal <VERB>` | Operate the Google Calendar service at runtime (calendars, events, permissions, self). | [`zad man gcal`](gcal.md) |
+| `spotify <VERB>` | Operate the Spotify service at runtime (search, playlists, library, permissions). | [`zad man spotify`](spotify.md) |
 | `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions, self). | [`zad man telegram`](telegram.md) |
 | `commands [NAME]...` | Enumerate every CLI command, flag, and realistic example; also emits a JSON dump consumed by the website extractor. | [`zad man commands`](commands.md) |
 | `docs [TOPIC]` | Print topic documentation (`docs/*.md`) embedded in the binary at build time. | [`zad man docs`](docs.md) |
@@ -93,6 +94,7 @@ claude "Help me automate X $(zad --help-agent)"
 - [`zad man 1pass`](1pass.md) — runtime verbs for the 1Password service.
 - [`zad man discord`](discord.md) — runtime verbs for the Discord service.
 - [`zad man gcal`](gcal.md) — runtime verbs for the Google Calendar service.
+- [`zad man spotify`](spotify.md) — runtime verbs for the Spotify service.
 - [`zad man telegram`](telegram.md) — runtime verbs for the Telegram service.
 - [`docs/configuration.md`](../docs/configuration.md) — config file reference.
 - [`docs/architecture.md`](../docs/architecture.md) — module layout.

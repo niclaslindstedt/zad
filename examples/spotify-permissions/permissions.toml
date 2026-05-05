@@ -1,0 +1,77 @@
+# Example Spotify permissions policy.
+#
+# Drop this at one of:
+#   ~/.zad/services/spotify/permissions.toml                       (global)
+#   ~/.zad/projects/<slug>/services/spotify/permissions.toml       (local, per project)
+#
+# When both files exist they INTERSECT: a call must pass every file
+# that is present. Missing files contribute no restrictions, so scope
+# is the only gate when neither file exists.
+
+# Pattern grammar (used anywhere an allow/deny list appears):
+#   "zad-test"                  exact name match
+#   "zad-*"                     glob (`*` and `?` wildcards)
+#   "re:^[A-Za-z0-9]{22}$"      full Rust regex (anchor it yourself)
+#   "spotify:track:5p..."       matches the resolved track / album URI
+
+# Evaluation order:
+#   1. Any deny match -> denied (deny always wins).
+#   2. Empty allow list -> no positive constraint on this front.
+#   3. Otherwise the call must match at least one allow pattern.
+
+# The `targets` patterns are evaluated against:
+#   - search          : the raw query string
+#   - playlists_*     : playlist name (when known), playlist ID, full URI
+#   - library_read    : full URI of each saved item (track/album)
+#   - library_write   : the raw input the operator passed in (URI or ID)
+
+# -----------------------------------------------------------------
+# Shared defaults. Each per-function block inherits these and can
+# narrow them further (never loosen).
+# -----------------------------------------------------------------
+
+[content]
+# Applies to playlist names, descriptions, and search queries.
+deny_words = ["password", "api_key", "secret"]
+deny_patterns = [
+    "(?i)bearer\\s+[a-z0-9._-]+",
+]
+max_length = 256
+
+[time]
+# Lock runtime to UTC business hours. `windows` is in UTC.
+days = ["mon", "tue", "wed", "thu", "fri"]
+windows = ["09:00-22:00"]
+
+# -----------------------------------------------------------------
+# Per-function overrides.
+# -----------------------------------------------------------------
+
+# Search is read-only and harmless. We don't restrict targets, but
+# inherit the global content rules so the agent can't search for
+# `password` etc.
+[search]
+
+# Read-only access to all of the user's playlists is fine.
+[playlists_read]
+
+# Write access to playlists is restricted to a couple of safe
+# prefixes. The agent cannot rename/delete/mutate any playlist
+# whose name contains "release" or "official".
+[playlists_write]
+targets.allow = ["zad-*", "scratch-*"]
+targets.deny = ["*release*", "*official*"]
+# Tighten the time window further for write operations.
+time.windows = ["10:00-18:00"]
+
+# Reading the saved-tracks / saved-albums library: no restrictions.
+[library_read]
+
+# Writing the library is allowed, but blocks a hard-coded "do not
+# touch" set. Replace these with whatever items the operator wants
+# protected.
+[library_write]
+targets.deny = [
+    "spotify:track:do-not-touch-track-id-here",
+    "spotify:album:do-not-touch-album-id-here",
+]

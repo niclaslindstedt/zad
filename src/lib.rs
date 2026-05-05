@@ -13,6 +13,7 @@ pub mod cli;
 pub mod config;
 pub mod error;
 pub mod logging;
+pub mod oauth;
 pub mod output;
 pub mod permissions;
 pub mod secrets;

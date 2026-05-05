@@ -137,6 +137,14 @@ Runtime verbs are chosen per service.
   windows, `max_future_days`, `min_notice_minutes`, `max_attendees`,
   `send_updates_allowed`, and `block_shared_calendars`. Mutating
   verbs support `--dry-run`.
+- **`spotify`**: `search`, `playlists list|show|create|rename|
+  delete|add|remove`, `library tracks|albums {list,save,unsave}`,
+  and the usual `permissions` subgroup. OAuth 2.0 PKCE public
+  client (no `client_secret`) via the same shared loopback flow as
+  gcal — `zad service create spotify` only needs a Spotify Client
+  ID. The permissions schema gates per-verb targets (playlist names
+  / track / album URIs / search queries), content, and time
+  windows.
 - **`1pass`** (1Password): `vaults`, `items`, `tags`, `get`, `read`,
   `inject`, `create`, `whoami`, and `permissions`. Wraps the official
   `op` CLI with the token stored in the OS keychain and injected as
@@ -149,12 +157,13 @@ Runtime verbs are chosen per service.
 
 Every command takes `--json` for machine-readable output.
 
-Today the shipped services are `1pass`, `discord`, `gcal`, and
-`telegram`. See [`man/main.md`](man/main.md) for the top-level
-overview and [`man/service.md`](man/service.md),
+Today the shipped services are `1pass`, `discord`, `gcal`,
+`spotify`, and `telegram`. See [`man/main.md`](man/main.md) for the
+top-level overview and [`man/service.md`](man/service.md),
 [`man/1pass.md`](man/1pass.md), [`man/discord.md`](man/discord.md),
-[`man/gcal.md`](man/gcal.md), and [`man/telegram.md`](man/telegram.md)
-for the full per-command reference.
+[`man/gcal.md`](man/gcal.md), [`man/spotify.md`](man/spotify.md),
+and [`man/telegram.md`](man/telegram.md) for the full per-command
+reference.
 
 ### Permissions (optional second layer)
 
