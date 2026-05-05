@@ -13,9 +13,11 @@ pub mod service_discord;
 pub mod service_gcal;
 pub mod service_list;
 pub mod service_onepass;
+pub mod service_slack;
 pub mod service_spotify;
 pub mod service_status;
 pub mod service_telegram;
+pub mod slack;
 pub mod spotify;
 pub mod telegram;
 
@@ -62,6 +64,8 @@ pub enum Command {
     Discord(discord::DiscordArgs),
     /// Operate the Google Calendar service (calendars, events, permissions).
     Gcal(gcal::GcalArgs),
+    /// Operate the Slack service (send, read, channels, discover).
+    Slack(slack::SlackArgs),
     /// Operate the Spotify service (search, playlists, library).
     Spotify(spotify::SpotifyArgs),
     /// Operate the Telegram service (send, read, chats, discover).
@@ -93,6 +97,7 @@ pub async fn run() -> Result<()> {
         Some(Command::OnePass(args)) => onepass::run(args).await,
         Some(Command::Discord(args)) => discord::run(args).await,
         Some(Command::Gcal(args)) => gcal::run(args).await,
+        Some(Command::Slack(args)) => slack::run(args).await,
         Some(Command::Spotify(args)) => spotify::run(args).await,
         Some(Command::Telegram(args)) => telegram::run(args).await,
         Some(Command::Commands(args)) => commands::run(args),

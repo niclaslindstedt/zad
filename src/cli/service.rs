@@ -13,12 +13,13 @@ use crate::error::Result;
 use crate::service::registry::SERVICES;
 
 use super::{
-    service_discord, service_gcal, service_list, service_onepass, service_spotify, service_status,
-    service_telegram,
+    service_discord, service_gcal, service_list, service_onepass, service_slack, service_spotify,
+    service_status, service_telegram,
 };
 use service_discord::DiscordLifecycle;
 use service_gcal::GcalLifecycle;
 use service_onepass::OnePassLifecycle;
+use service_slack::SlackLifecycle;
 use service_spotify::SpotifyLifecycle;
 use service_telegram::TelegramLifecycle;
 
@@ -69,6 +70,9 @@ pub enum CreateService {
     /// Create Spotify credentials (global by default, `--local` for
     /// project-scoped).
     Spotify(service_spotify::CreateArgs),
+    /// Create Slack credentials (global by default, `--local` for
+    /// project-scoped).
+    Slack(service_slack::CreateArgs),
     /// Create Telegram credentials (global by default, `--local` for
     /// project-scoped).
     Telegram(service_telegram::CreateArgs),
@@ -89,6 +93,8 @@ pub enum EnableService {
     Discord(EnableArgs),
     /// Enable the Google Calendar service in the current project.
     Gcal(EnableArgs),
+    /// Enable the Slack service in the current project.
+    Slack(EnableArgs),
     /// Enable the Spotify service in the current project.
     Spotify(EnableArgs),
     /// Enable the Telegram service in the current project.
@@ -110,6 +116,8 @@ pub enum DisableService {
     Discord(DisableArgs),
     /// Disable the Google Calendar service in the current project.
     Gcal(DisableArgs),
+    /// Disable the Slack service in the current project.
+    Slack(DisableArgs),
     /// Disable the Spotify service in the current project.
     Spotify(DisableArgs),
     /// Disable the Telegram service in the current project.
@@ -131,6 +139,8 @@ pub enum ShowService {
     Discord(ShowArgs),
     /// Show the Google Calendar service's effective configuration.
     Gcal(ShowArgs),
+    /// Show the Slack service's effective configuration.
+    Slack(ShowArgs),
     /// Show the Spotify service's effective configuration.
     Spotify(ShowArgs),
     /// Show the Telegram service's effective configuration.
@@ -174,6 +184,9 @@ pub enum DeleteService {
     /// Delete Google Calendar credentials (global by default,
     /// `--local` for project-scoped).
     Gcal(DeleteArgs),
+    /// Delete Slack credentials (global by default, `--local` for
+    /// project-scoped).
+    Slack(DeleteArgs),
     /// Delete Spotify credentials (global by default, `--local` for
     /// project-scoped).
     Spotify(DeleteArgs),
@@ -188,6 +201,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             CreateService::OnePass(a) => lifecycle::run_create::<OnePassLifecycle>(a).await,
             CreateService::Discord(a) => lifecycle::run_create::<DiscordLifecycle>(a).await,
             CreateService::Gcal(a) => lifecycle::run_create::<GcalLifecycle>(a).await,
+            CreateService::Slack(a) => lifecycle::run_create::<SlackLifecycle>(a).await,
             CreateService::Spotify(a) => lifecycle::run_create::<SpotifyLifecycle>(a).await,
             CreateService::Telegram(a) => lifecycle::run_create::<TelegramLifecycle>(a).await,
         },
@@ -195,6 +209,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             EnableService::OnePass(a) => lifecycle::run_enable::<OnePassLifecycle>(a),
             EnableService::Discord(a) => lifecycle::run_enable::<DiscordLifecycle>(a),
             EnableService::Gcal(a) => lifecycle::run_enable::<GcalLifecycle>(a),
+            EnableService::Slack(a) => lifecycle::run_enable::<SlackLifecycle>(a),
             EnableService::Spotify(a) => lifecycle::run_enable::<SpotifyLifecycle>(a),
             EnableService::Telegram(a) => lifecycle::run_enable::<TelegramLifecycle>(a),
         },
@@ -202,6 +217,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             DisableService::OnePass(a) => lifecycle::run_disable::<OnePassLifecycle>(a),
             DisableService::Discord(a) => lifecycle::run_disable::<DiscordLifecycle>(a),
             DisableService::Gcal(a) => lifecycle::run_disable::<GcalLifecycle>(a),
+            DisableService::Slack(a) => lifecycle::run_disable::<SlackLifecycle>(a),
             DisableService::Spotify(a) => lifecycle::run_disable::<SpotifyLifecycle>(a),
             DisableService::Telegram(a) => lifecycle::run_disable::<TelegramLifecycle>(a),
         },
@@ -210,6 +226,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             ShowService::OnePass(a) => lifecycle::run_show::<OnePassLifecycle>(a),
             ShowService::Discord(a) => lifecycle::run_show::<DiscordLifecycle>(a),
             ShowService::Gcal(a) => lifecycle::run_show::<GcalLifecycle>(a),
+            ShowService::Slack(a) => lifecycle::run_show::<SlackLifecycle>(a),
             ShowService::Spotify(a) => lifecycle::run_show::<SpotifyLifecycle>(a),
             ShowService::Telegram(a) => lifecycle::run_show::<TelegramLifecycle>(a),
         },
@@ -225,6 +242,10 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             }
             Some("gcal") => {
                 lifecycle::run_status::<GcalLifecycle>(lifecycle::StatusArgs { json: s.json }).await
+            }
+            Some("slack") => {
+                lifecycle::run_status::<SlackLifecycle>(lifecycle::StatusArgs { json: s.json })
+                    .await
             }
             Some("spotify") => {
                 lifecycle::run_status::<SpotifyLifecycle>(lifecycle::StatusArgs { json: s.json })
@@ -245,6 +266,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             DeleteService::OnePass(a) => lifecycle::run_delete::<OnePassLifecycle>(a),
             DeleteService::Discord(a) => lifecycle::run_delete::<DiscordLifecycle>(a),
             DeleteService::Gcal(a) => lifecycle::run_delete::<GcalLifecycle>(a),
+            DeleteService::Slack(a) => lifecycle::run_delete::<SlackLifecycle>(a),
             DeleteService::Spotify(a) => lifecycle::run_delete::<SpotifyLifecycle>(a),
             DeleteService::Telegram(a) => lifecycle::run_delete::<TelegramLifecycle>(a),
         },

@@ -1,0 +1,42 @@
+# Slack permissions policy example.
+#
+# Place at:
+#   ~/.zad/services/slack/permissions.toml          (global — all projects)
+#   ~/.zad/projects/<slug>/services/slack/permissions.toml  (project-local)
+#
+# When both exist, both apply — a call must pass every file that exists.
+# Local can only add restrictions, never loosen the global baseline.
+#
+# Run `zad slack permissions init` to generate this file automatically.
+# Run `zad slack permissions check --function send --channel general`
+# to dry-run a proposed action without hitting Slack.
+
+# Top-level content defaults inherited by every function block.
+[content]
+deny_words    = ["password", "api_key", "secret", "token"]
+deny_patterns = ["(?i)bearer\\s+[a-z0-9._-]+"]
+max_length    = 4000
+
+# Top-level time window: only allow calls during business hours (UTC).
+[time]
+days    = ["mon", "tue", "wed", "thu", "fri"]
+windows = ["08:00-20:00"]
+
+# --- per-function blocks ---
+
+[send]
+# Allow bot to post only to channels that match these patterns.
+# An empty allow list means "no positive constraint" (not "deny all").
+channels.allow = ["general", "bot-*", "zad-*", "team-*"]
+channels.deny  = ["*admin*", "*ops*", "*incident*", "*security*"]
+# DM targets: only allow sending to specific users.
+# users.allow = ["alice", "bob"]  # uncomment to restrict
+
+[read]
+channels.deny = ["*private*", "*confidential*"]
+
+[channels]
+# No restrictions on listing channels.
+
+[discover]
+# No restrictions on discovery.

@@ -142,6 +142,33 @@ pub struct TelegramServiceCfg {
     pub self_chat_id: Option<i64>,
 }
 
+/// Global Slack service config stored at
+/// `~/.zad/services/slack/config.toml`. Slack bots carry their identity via
+/// a bot token (`xoxb-...`). The non-secret metadata is the app ID (used to
+/// construct the install-hint URL), a display name for the workspace, the
+/// declared scopes, and optional convenience defaults.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SlackServiceCfg {
+    /// Slack App ID (e.g. `A012345678`). Used to build the install-hint URL
+    /// and for display in `zad service show slack`.
+    pub app_id: String,
+    /// Workspace team name or domain, captured from `auth.test` at create
+    /// time. Non-secret; used only for display. Example: `my-company`.
+    pub workspace: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional channel the runtime verbs default to when `--channel` is
+    /// omitted. Accepts a Slack channel ID (`C...`) or a directory alias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_channel: Option<String>,
+    /// The Slack user ID (`U...`) of the human user this bot belongs to.
+    /// Populated at `zad service create slack` time (or later via
+    /// `zad slack self set`) and resolved from the literal `@me` in
+    /// send/dm targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_user_id: Option<String>,
+}
+
 impl ProjectConfig {
     pub fn discord(&self) -> Option<&ServiceProjectRef> {
         self.service.get("discord")
@@ -206,6 +233,19 @@ impl ProjectConfig {
 
     pub fn disable_spotify(&mut self) {
         self.service.remove("spotify");
+    }
+
+    pub fn slack(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("slack")
+    }
+
+    pub fn enable_slack(&mut self) {
+        self.service
+            .insert("slack".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_slack(&mut self) {
+        self.service.remove("slack");
     }
 
     pub fn has_service(&self, name: &str) -> bool {
