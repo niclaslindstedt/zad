@@ -24,4 +24,12 @@ ignore = [
     # rustls-webpki 0.102.8 — name constraints accepted for
     # certificates asserting wildcard names. Same transitive pin.
     "RUSTSEC-2026-0099",
+
+    # rustls-webpki 0.102.8 — reachable panic in certificate
+    # revocation list parsing. Fixed in rustls-webpki 0.103.13+,
+    # which requires rustls 0.23.x — same transitive pin via
+    # serenity 0.12.5 → tokio-tungstenite 0.21.0 → rustls 0.22.4
+    # as the three RUSTSEC entries above. Revisit when serenity
+    # publishes a release that moves off rustls 0.22.
+    "RUSTSEC-2026-0104",
 ]
