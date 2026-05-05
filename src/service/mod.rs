@@ -2,6 +2,7 @@ pub mod discord;
 pub mod gcal;
 pub mod onepass;
 pub mod registry;
+pub mod spotify;
 pub mod telegram;
 
 use std::sync::Arc;

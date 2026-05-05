@@ -10,10 +10,10 @@
 //!
 //! [`GcalHttp`] always holds a *refresh* token and its OAuth client
 //! identity. The first API call in the process lifetime calls
-//! [`crate::service::gcal::oauth::refresh_access_token`] to mint a
-//! fresh access token, caches it in the struct, and reuses it for the
-//! remainder of the run. We never persist access tokens — one zad CLI
-//! invocation mints at most one.
+//! [`crate::oauth::refresh_access_token`] to mint a fresh access
+//! token, caches it in the struct, and reuses it for the remainder of
+//! the run. We never persist access tokens — one zad CLI invocation
+//! mints at most one.
 //!
 //! ## Error mapping
 //!
@@ -33,7 +33,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::{Result, ZadError};
-use crate::service::gcal::{API_BASE, TOKEN_URL, USERINFO_URL, oauth};
+use crate::oauth;
+use crate::service::gcal::{API_BASE, TOKEN_URL, USERINFO_URL};
 
 /// Thin wrapper over Google Calendar API v3. Holds a refresh token
 /// and mints an access token on demand.
@@ -100,9 +101,10 @@ impl GcalHttp {
             }
         }
         let fresh = oauth::refresh_access_token(
+            "gcal",
             TOKEN_URL,
             &self.client_id,
-            &self.client_secret,
+            Some(&self.client_secret),
             &self.refresh_token,
         )
         .await?;

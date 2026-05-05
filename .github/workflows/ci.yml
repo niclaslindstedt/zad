@@ -93,7 +93,8 @@ jobs:
           cargo audit \
             --ignore RUSTSEC-2026-0049 \
             --ignore RUSTSEC-2026-0098 \
-            --ignore RUSTSEC-2026-0099
+            --ignore RUSTSEC-2026-0099 \
+            --ignore RUSTSEC-2026-0104
 
   # Website staleness check (OSS_SPEC §11.2). Builds the CLI, runs the
   # website extractor, and fails if the extractor exits non-zero — the

@@ -21,8 +21,8 @@ use crate::cli::lifecycle::{
 };
 use crate::config::{GcalServiceCfg, ProjectConfig};
 use crate::error::{Result, ZadError};
+use crate::oauth::{LoopbackConfig, run_loopback_flow};
 use crate::secrets::{self, Scope};
-use crate::service::gcal::oauth::{LoopbackConfig, run_loopback_flow};
 use crate::service::gcal::{AUTH_URL, GcalHttp, TOKEN_URL};
 
 const DEFAULT_SCOPES: &[&str] = &["calendars.read", "events.read", "events.write"];
@@ -432,11 +432,25 @@ async fn resolve_refresh_via_loopback(
 
     let google_scopes = google_scopes_for(zad_scopes);
     let cfg = LoopbackConfig {
+        service_name: "gcal",
+        display_name: "Google Calendar",
         auth_url: AUTH_URL.to_string(),
         token_url: TOKEN_URL.to_string(),
         client_id: client_id.to_string(),
-        client_secret: client_secret.to_string(),
+        client_secret: Some(client_secret.to_string()),
         scopes: google_scopes,
+        extra_auth_params: vec![
+            // Google needs `access_type=offline` to issue a refresh
+            // token at all, and `prompt=consent` to re-issue one on
+            // any subsequent authorization (without it, a second run
+            // silently succeeds with only an access token).
+            ("access_type".into(), "offline".into()),
+            ("prompt".into(), "consent".into()),
+            // `include_granted_scopes=true` lets Google carry over
+            // previously granted scopes so a narrower second request
+            // doesn't drop capabilities already consented to.
+            ("include_granted_scopes".into(), "true".into()),
+        ],
         timeout: LOOPBACK_TIMEOUT,
     };
     let tokens = run_loopback_flow(&cfg, open_browser).await?;

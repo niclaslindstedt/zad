@@ -1,39 +1,38 @@
-//! OAuth 2.0 loopback flow with PKCE, used by `zad service create
-//! gcal`.
+//! Generic OAuth 2.0 loopback flow with PKCE.
 //!
-//! Intentionally kept **generic** over the endpoints and scopes so
-//! when Reddit / Spotify / the next OAuth service lands, this helper
-//! can move to `src/service/oauth/` without a rewrite. Google-specific
-//! constants (`AUTH_URL`, `TOKEN_URL`, scope strings) live in
-//! `src/service/gcal/mod.rs` and are threaded in via [`LoopbackConfig`].
+//! Used by every service whose credential shape is "OAuth 2.0
+//! Authorization Code with PKCE": Google Calendar, Spotify, and any
+//! future provider with the same flow. Provider-specific knobs
+//! (endpoints, scopes, public-client vs. confidential client, extra
+//! query params like Google's `prompt=consent` or Spotify's
+//! `show_dialog`) are threaded in via [`LoopbackConfig`].
 //!
 //! ## Security properties
 //!
 //! - **PKCE S256** — the verifier is a 64-byte random string; the
-//!   challenge is its URL-safe base64-encoded SHA-256. Google's
-//!   Identity Platform now effectively requires PKCE even for
-//!   "Desktop app" OAuth clients.
+//!   challenge is its URL-safe base64-encoded SHA-256.
 //! - **State parameter** — a 32-byte random token is encoded into the
 //!   auth URL and verified on the callback. Prevents a co-resident
 //!   process from racing the browser to the loopback port with a
 //!   forged `code`.
 //! - **`127.0.0.1` listener** (not `localhost`) — matches Google's
 //!   current redirect-URI guidance and sidesteps browsers that refuse
-//!   `http://localhost` redirects.
+//!   `http://localhost` redirects. Spotify also accepts this form.
 //! - **Prefetch-tolerant listener** — accepts only the first request
 //!   whose path carries `?code=` or `?error=`; probes (favicon, DNS
 //!   prefetch, HEAD) get a 404 and the listener keeps waiting.
-//! - **Deadline** — overall 120 s budget; a hung browser can't block
-//!   the CLI forever.
+//! - **Deadline** — overall 120 s budget (configurable via
+//!   [`LoopbackConfig::timeout`]); a hung browser can't block the CLI
+//!   forever.
 //!
 //! ## Failure modes the call-site should surface clearly
 //!
-//! - `redirect_uri_mismatch` on token exchange → the operator picked
-//!   the wrong Google Cloud OAuth client type. Only "Desktop app"
-//!   clients accept any `http://127.0.0.1:<port>` redirect without
-//!   pre-registration.
-//! - `invalid_grant` on token exchange → clock skew or a code reused
-//!   across runs. Tell the operator to check their machine time.
+//! - `redirect_uri_mismatch` on token exchange → the registered
+//!   redirect URI on the OAuth client does not include
+//!   `http://127.0.0.1` (or its concrete `http://127.0.0.1:<port>`
+//!   form for providers that pre-register exact URIs, like Spotify).
+//! - `invalid_grant` on token exchange → the refresh token was
+//!   revoked at the provider, or clock skew on the local machine.
 //! - Port-bind failure → another process is holding port 0 (extremely
 //!   rare); surface the error as a plain I/O error.
 
@@ -52,19 +51,41 @@ use crate::error::{Result, ZadError};
 /// Endpoints + client identity the loopback flow needs.
 #[derive(Debug, Clone)]
 pub struct LoopbackConfig {
+    /// Lowercase zad service name (`"gcal"`, `"spotify"`, …). Used as
+    /// the `name` field on `ZadError::Service` errors emitted by the
+    /// helper so a caller's error mapping doesn't have to wrap them.
+    pub service_name: &'static str,
+    /// Capitalized display name (`"Google Calendar"`, `"Spotify"`).
+    /// Surfaces in the interactive prompt printed before the browser
+    /// opens, and in the success / failure HTML rendered to the
+    /// browser tab.
+    pub display_name: &'static str,
     /// OAuth 2.0 authorization endpoint, e.g.
-    /// `https://accounts.google.com/o/oauth2/v2/auth`.
+    /// `https://accounts.google.com/o/oauth2/v2/auth` or
+    /// `https://accounts.spotify.com/authorize`.
     pub auth_url: String,
-    /// OAuth 2.0 token endpoint, e.g. `https://oauth2.googleapis.com/token`.
+    /// OAuth 2.0 token endpoint, e.g.
+    /// `https://oauth2.googleapis.com/token` or
+    /// `https://accounts.spotify.com/api/token`.
     pub token_url: String,
     /// Pre-registered OAuth client ID (non-secret).
     pub client_id: String,
     /// OAuth client secret. Google's "Desktop app" client type still
     /// issues one even though it's not strictly secret in the spec
-    /// sense — we forward it verbatim to the token endpoint.
-    pub client_secret: String,
+    /// sense — we forward it verbatim to the token endpoint. `None`
+    /// for PKCE-only public clients (e.g. Spotify) where the token
+    /// endpoint must not receive a `client_secret` form field at all.
+    pub client_secret: Option<String>,
     /// Provider scopes (space-joined in the auth URL).
     pub scopes: Vec<String>,
+    /// Extra provider-specific query params to splice into the
+    /// authorization URL (e.g. Google's `access_type=offline` /
+    /// `prompt=consent` / `include_granted_scopes=true`, or Spotify's
+    /// `show_dialog=true`). Standard params (`client_id`,
+    /// `redirect_uri`, `response_type`, `scope`, `state`,
+    /// `code_challenge`, `code_challenge_method`) are always emitted by
+    /// the helper itself — don't list them here.
+    pub extra_auth_params: Vec<(String, String)>,
     /// How long to wait for the browser callback before giving up.
     pub timeout: Duration,
 }
@@ -72,11 +93,14 @@ pub struct LoopbackConfig {
 impl Default for LoopbackConfig {
     fn default() -> Self {
         Self {
+            service_name: "",
+            display_name: "",
             auth_url: String::new(),
             token_url: String::new(),
             client_id: String::new(),
-            client_secret: String::new(),
+            client_secret: None,
             scopes: Vec::new(),
+            extra_auth_params: Vec::new(),
             timeout: Duration::from_secs(120),
         }
     }
@@ -86,17 +110,18 @@ impl Default for LoopbackConfig {
 #[derive(Debug, Clone)]
 pub struct TokenSet {
     pub access_token: String,
-    /// Google only issues refresh tokens when `access_type=offline`
-    /// **and** the user has consented — otherwise the server omits the
-    /// field entirely. We surface `Option` so the caller can produce
-    /// a useful error pointing at `prompt=consent`.
+    /// Some providers (Google) only issue refresh tokens when
+    /// `access_type=offline` is set **and** the user has consented;
+    /// otherwise the server omits the field entirely. We surface
+    /// `Option` so the caller can produce a useful error pointing at
+    /// the missing knob.
     pub refresh_token: Option<String>,
     /// Seconds until `access_token` expires. Informational only; the
     /// CLI refetches on every invocation instead of persisting this.
     pub expires_in: Option<u64>,
     /// OpenID token when the `openid` scope was requested. Contains a
-    /// JWT we don't parse locally — the separate userinfo call is the
-    /// source of truth for the authenticated email.
+    /// JWT we don't parse locally — a separate userinfo call is the
+    /// source of truth for the authenticated identity.
     pub id_token: Option<String>,
 }
 
@@ -124,7 +149,10 @@ pub async fn run_loopback_flow(cfg: &LoopbackConfig, open_browser: bool) -> Resu
     let auth_url = build_auth_url(cfg, &redirect_uri, &pkce.challenge, &state);
 
     println!();
-    println!("Opening your browser to authorize zad with Google Calendar:");
+    println!(
+        "Opening your browser to authorize zad with {}:",
+        cfg.display_name
+    );
     println!("  {auth_url}");
     println!();
     println!("Waiting up to {}s for the redirect…", cfg.timeout.as_secs());
@@ -132,7 +160,7 @@ pub async fn run_loopback_flow(cfg: &LoopbackConfig, open_browser: bool) -> Resu
         let _ = open::that(&auth_url);
     }
 
-    let callback = accept_callback(&listener, cfg.timeout)?;
+    let callback = accept_callback(&listener, cfg.timeout, cfg.display_name)?;
     if callback.state != state {
         return Err(ZadError::Invalid(
             "OAuth callback returned a state value that doesn't match the one we sent; \
@@ -142,7 +170,7 @@ pub async fn run_loopback_flow(cfg: &LoopbackConfig, open_browser: bool) -> Resu
     }
     let code = callback.code.ok_or_else(|| match callback.error {
         Some(e) => ZadError::Service {
-            name: "gcal",
+            name: cfg.service_name,
             message: format!("OAuth authorization failed: {e}"),
         },
         None => ZadError::Invalid(
@@ -154,25 +182,33 @@ pub async fn run_loopback_flow(cfg: &LoopbackConfig, open_browser: bool) -> Resu
 }
 
 /// Exchange a refresh token for a fresh access token. Called on every
-/// CLI run — we never persist access tokens.
+/// CLI run — we never persist access tokens. Pass `None` for
+/// `client_secret` when the OAuth client is a PKCE-only public client
+/// (e.g. Spotify) — the token endpoint must not receive a
+/// `client_secret` form field at all in that case. `service_name` is
+/// the lowercase zad service name; it labels the `ZadError::Service`
+/// errors emitted from this function.
 pub async fn refresh_access_token(
+    service_name: &'static str,
     token_url: &str,
     client_id: &str,
-    client_secret: &str,
+    client_secret: Option<&str>,
     refresh_token: &str,
 ) -> Result<TokenSet> {
-    let params = [
+    let mut params: Vec<(&str, &str)> = vec![
         ("client_id", client_id),
-        ("client_secret", client_secret),
         ("refresh_token", refresh_token),
         ("grant_type", "refresh_token"),
     ];
-    post_token_endpoint(token_url, &params).await
+    if let Some(secret) = client_secret {
+        params.push(("client_secret", secret));
+    }
+    post_token_endpoint(service_name, token_url, &params).await
 }
 
 /// Build the OAuth 2.0 authorization URL. Exposed as `pub(crate)` so
-/// the OAuth URL test can reconstruct and verify it without running
-/// the full flow.
+/// per-service URL tests can reconstruct and verify it without
+/// running the full flow.
 pub(crate) fn build_auth_url(
     cfg: &LoopbackConfig,
     redirect_uri: &str,
@@ -193,18 +229,12 @@ pub(crate) fn build_auth_url(
     push_param("redirect_uri", redirect_uri, &mut first);
     push_param("response_type", "code", &mut first);
     push_param("scope", &cfg.scopes.join(" "), &mut first);
-    push_param("access_type", "offline", &mut first);
-    // `prompt=consent` forces Google to re-issue a refresh token even
-    // on a second authorization — without it the second run silently
-    // succeeds with only an access token.
-    push_param("prompt", "consent", &mut first);
     push_param("state", state, &mut first);
     push_param("code_challenge", code_challenge, &mut first);
     push_param("code_challenge_method", "S256", &mut first);
-    // Unused but harmless: `include_granted_scopes=true` lets Google
-    // carry over previously granted scopes, so a narrower second
-    // request doesn't drop capabilities already consented to.
-    push_param("include_granted_scopes", "true", &mut first);
+    for (k, v) in &cfg.extra_auth_params {
+        push_param(k, v, &mut first);
+    }
     out
 }
 
@@ -218,8 +248,9 @@ pub(crate) struct Pkce {
 
 impl Pkce {
     pub(crate) fn new() -> Self {
-        // 64 bytes → ~86 chars after URL-safe base64; Google accepts
-        // 43..=128 chars.
+        // 64 bytes → ~86 chars after URL-safe base64; spec range is
+        // 43..=128 chars and every provider we target accepts that
+        // length.
         let verifier = random_url_safe(64);
         let mut hasher = Sha256::new();
         hasher.update(verifier.as_bytes());
@@ -266,7 +297,11 @@ struct Callback {
 /// Accept connections until we see the real OAuth redirect or hit the
 /// deadline. Non-callback requests (favicon, HEAD probes, DNS
 /// prefetch) get a 404 and the loop continues.
-fn accept_callback(listener: &TcpListener, timeout: Duration) -> Result<Callback> {
+fn accept_callback(
+    listener: &TcpListener,
+    timeout: Duration,
+    display_name: &str,
+) -> Result<Callback> {
     listener
         .set_nonblocking(true)
         .map_err(|e| ZadError::Invalid(format!("could not configure loopback listener: {e}")))?;
@@ -281,7 +316,7 @@ fn accept_callback(listener: &TcpListener, timeout: Duration) -> Result<Callback
         }
         match listener.accept() {
             Ok((stream, addr)) => {
-                if let Some(cb) = handle_one(stream, addr)? {
+                if let Some(cb) = handle_one(stream, addr, display_name)? {
                     return Ok(cb);
                 }
             }
@@ -297,7 +332,11 @@ fn accept_callback(listener: &TcpListener, timeout: Duration) -> Result<Callback
     }
 }
 
-fn handle_one(mut stream: TcpStream, _addr: SocketAddr) -> Result<Option<Callback>> {
+fn handle_one(
+    mut stream: TcpStream,
+    _addr: SocketAddr,
+    display_name: &str,
+) -> Result<Option<Callback>> {
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .map_err(|e| ZadError::Invalid(format!("loopback read-timeout set failed: {e}")))?;
@@ -335,7 +374,7 @@ fn handle_one(mut stream: TcpStream, _addr: SocketAddr) -> Result<Option<Callbac
         format!(
             "<!doctype html><html><body style='font-family:system-ui'>\
              <h2>zad: authorization failed</h2>\
-             <p>Google reported: <code>{err}</code></p>\
+             <p>{display_name} reported: <code>{err}</code></p>\
              <p>Return to the terminal for details.</p></body></html>"
         )
         .into_bytes()
@@ -413,15 +452,17 @@ async fn exchange_code(
     code: &str,
     verifier: &str,
 ) -> Result<TokenSet> {
-    let params = [
+    let mut params: Vec<(&str, &str)> = vec![
         ("client_id", cfg.client_id.as_str()),
-        ("client_secret", cfg.client_secret.as_str()),
         ("code", code),
         ("code_verifier", verifier),
         ("grant_type", "authorization_code"),
         ("redirect_uri", redirect_uri),
     ];
-    post_token_endpoint(&cfg.token_url, &params).await
+    if let Some(secret) = cfg.client_secret.as_deref() {
+        params.push(("client_secret", secret));
+    }
+    post_token_endpoint(cfg.service_name, &cfg.token_url, &params).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -434,27 +475,29 @@ struct RawTokenResponse {
     error_description: Option<String>,
 }
 
-async fn post_token_endpoint(url: &str, form: &[(&str, &str)]) -> Result<TokenSet> {
+async fn post_token_endpoint(
+    service_name: &'static str,
+    url: &str,
+    form: &[(&str, &str)],
+) -> Result<TokenSet> {
     let resp = reqwest::Client::new()
         .post(url)
         .form(form)
         .send()
         .await
         .map_err(|e| ZadError::Service {
-            name: "gcal",
-            message: format!("network error talking to Google's OAuth endpoint: {e}"),
+            name: service_name,
+            message: format!("network error talking to OAuth endpoint: {e}"),
         })?;
     let status = resp.status();
     let body = resp.text().await.map_err(|e| ZadError::Service {
-        name: "gcal",
-        message: format!("failed to read Google's OAuth response body: {e}"),
+        name: service_name,
+        message: format!("failed to read OAuth response body: {e}"),
     })?;
 
     let parsed: RawTokenResponse = serde_json::from_str(&body).map_err(|e| ZadError::Service {
-        name: "gcal",
-        message: format!(
-            "failed to decode Google's OAuth response (HTTP {status}): {e}; body: {body}"
-        ),
+        name: service_name,
+        message: format!("failed to decode OAuth response (HTTP {status}): {e}; body: {body}"),
     })?;
 
     if let Some(err) = parsed.error {
@@ -467,29 +510,31 @@ async fn post_token_endpoint(url: &str, form: &[(&str, &str)]) -> Result<TokenSe
         // create so the operator isn't left guessing.
         if err == "invalid_grant" {
             return Err(ZadError::Service {
-                name: "gcal",
+                name: service_name,
                 message: format!(
-                    "refresh token is no longer valid ({desc}); re-run `zad service create gcal`"
+                    "refresh token is no longer valid ({desc}); re-run `zad service create {service_name}`"
                 ),
             });
         }
         if err == "redirect_uri_mismatch" {
             return Err(ZadError::Service {
-                name: "gcal",
+                name: service_name,
                 message: format!(
-                    "Google rejected the loopback redirect URI ({desc}). The OAuth client in Google Cloud Console must be type 'Desktop app', not 'Web application' — see `zad man gcal`."
+                    "OAuth provider rejected the loopback redirect URI ({desc}). \
+                     Verify the OAuth client's allowed redirect URIs include `http://127.0.0.1` — \
+                     see `zad man {service_name}` for provider-specific guidance."
                 ),
             });
         }
         return Err(ZadError::Service {
-            name: "gcal",
+            name: service_name,
             message: format!("OAuth error `{err}`: {desc}"),
         });
     }
 
     let access_token = parsed.access_token.ok_or(ZadError::Service {
-        name: "gcal",
-        message: "Google's OAuth response contained no access_token".into(),
+        name: service_name,
+        message: "OAuth response contained no access_token".into(),
     })?;
 
     Ok(TokenSet {
