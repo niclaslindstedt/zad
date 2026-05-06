@@ -396,6 +396,161 @@ previous `getUpdates` call, and `zad telegram chats` / `discover`
 likewise see only chats present in the current update batch. The
 manpage documents the "new messages only" shape explicitly.
 
+## Slack service
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/slack.md`](../man/slack.md)):
+
+- `zad service create slack [--local]` — register credentials.
+- `zad service enable slack` — enable the service in the current project.
+- `zad service disable slack` — disable it again (leaves credentials intact).
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/slack/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/slack/config.toml`
+
+The project-local file wins over the global one for that project. The
+format is flat:
+
+```toml
+app_id          = "A012345678"
+workspace       = "my-team"
+scopes          = ["chat:write", "channels:history", "channels:read"]
+default_channel = "C1234567890"   # optional
+self_user_id    = "U9876543210"   # optional — resolved from `@me` in --dm targets
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `app_id` | string | required | Slack app ID (starts with `A`). Used to construct the install URL. |
+| `workspace` | string | required | Team/workspace name or domain (display only). |
+| `scopes` | `[string]` | `["chat:write", "channels:history", "channels:read"]` | Capabilities the service is permitted to use. |
+| `default_channel` | string? | — | Optional default destination for `send`. Accepts a `C...` channel ID or a directory alias. |
+| `self_user_id` | string? | — | Your own Slack user ID (`U...`). Resolved from the literal `@me` in `--dm` targets. Set via `zad slack self set <id>` or during `service create`. |
+
+Scopes are **enforced at runtime, before any network call**. The
+supported values are:
+
+| Scope | Gates |
+|---|---|
+| `chat:write` | `send` (channels and DMs) |
+| `channels:history` | `read` (public channels) |
+| `im:history` | `read` (DM channels) |
+| `channels:read` | `channels`, `discover` (channel listing) |
+| `im:write` | `send` DMs (`conversations.open`) |
+| `users:read` | `discover` (member listing) |
+| `channels:join` | Auto-join channels before posting |
+| `reactions:write` | Add emoji reactions |
+| `team:read` | Workspace metadata |
+
+When both a global and a project-local credentials file exist, the
+local file **replaces** the global one for that project — scopes are
+not merged.
+
+### App-Level Token (Socket Mode)
+
+Real-time event listening via `zad slack listen` requires an App-Level
+Token (`xapp-...`) in addition to the bot token. Without it,
+`listen()` returns an empty stream with a warning.
+
+To enable Socket Mode:
+
+1. In your Slack app dashboard → Socket Mode → Enable.
+2. Create an App-Level Token with `connections:write` scope.
+3. Supply it via `--app-token` when running `zad service create slack`,
+   or update it later with `zad service create slack --force --app-token <token>`.
+
+The app-level token is stored separately in the keychain (see Token
+storage below).
+
+### Permissions file
+
+The permissions layer sits on top of scopes and has the same two-scope
+structure as Discord/Telegram. Both the global and local files apply
+simultaneously — strictest wins. Initialize a starter file:
+
+```sh
+zad slack permissions init
+```
+
+Per-verb blocks:
+
+| Block | Narrows |
+|---|---|
+| `[send]` | `channels` and `users` allow/deny for the destination; body against `[content]` |
+| `[read]` | `channels` allow/deny for the source |
+| `[channels]` | workspace-level listing — `workspaces` allow/deny |
+| `[discover]` | workspace-level walk — `workspaces` allow/deny |
+
+Top-level `[content]` and `[time]` defaults apply to all verbs unless
+a per-verb block overrides them. Pattern kinds: exact name, glob
+(`*`, `?`), and `re:<regex>`.
+
+See [`examples/slack-permissions/`](../examples/slack-permissions/)
+for a worked example.
+
+### Project file
+
+The same `~/.zad/projects/<slug>/config.toml` that records Discord and
+Telegram enablement records Slack the same way:
+
+```toml
+[service.slack]
+enabled = true
+```
+
+### Token storage
+
+Bot and app-level tokens are stored in the OS keychain:
+
+| Token kind | Account key (global) | Account key (local) |
+|---|---|---|
+| Bot token (`xoxb-...`) | `slack-bot:global` | `slack-bot:<slug>` |
+| App-Level Token (`xapp-...`) | `slack-app:global` | `slack-app:<slug>` |
+
+Rotate a token by re-running `zad service create slack --force` (add
+`--local` to target project-local credentials).
+
+### Directory (name → Slack ID)
+
+`zad slack discover` walks the workspace's channels and users and
+upserts a local directory file at:
+
+```
+~/.zad/projects/<slug>/services/slack/directory.toml
+```
+
+The file splits entries by target kind:
+
+```toml
+generated_at_unix = 1713364920   # optional; set by `discover`
+
+[channels]
+"general"  = "C1234567890"
+"random"   = "C0987654321"
+"bot-ops"  = "C1111111111"
+
+[users]
+"alice"    = "U2222222222"
+"bob"      = "U3333333333"
+```
+
+Manage it from the CLI:
+
+- `zad slack directory` — list every entry.
+- `zad slack directory set channel <name> <id>` — upsert a channel mapping.
+- `zad slack directory set user <name> <id>` — upsert a user mapping.
+- `zad slack directory remove channel <name>` — idempotent delete.
+- `zad slack directory remove user <name>` — idempotent delete.
+- `zad slack directory clear --force` — wipe the file.
+
+Channel resolution order for `--channel` and `--dm`: (1) raw Slack ID
+(`C...`, `U...`, etc.), (2) the literal `default` to use
+`default_channel`, (3) directory lookup after stripping any leading `#`
+or `@`.
+
 ## Google Calendar service (`gcal`)
 
 Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/gcal.md`](../man/gcal.md)):
