@@ -23,8 +23,23 @@ A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack,
 
 ## Install
 
+Pre-built binary (Linux & macOS, x86_64 or aarch64):
+
 ```sh
-cargo install --path .
+curl -fsSL https://raw.githubusercontent.com/niclaslindstedt/zad/main/scripts/install.sh | sh
+```
+
+The script downloads the latest GitHub release for your OS/arch and
+installs into the first writable directory it finds on `$PATH`,
+preferring `~/.local/bin`, then `~/bin`, then `/usr/local/bin`. It
+prints where the binary landed. Override with `ZAD_INSTALL_DIR=/path`
+or pin a tag with `ZAD_VERSION=v0.1.2`.
+
+From source (requires Rust 1.88+):
+
+```sh
+cargo install zad           # crates.io
+cargo install --path .      # local checkout
 ```
 
 ## Quick start
