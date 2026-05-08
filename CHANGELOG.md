@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.0]
+## [0.5.0]
 
-- feat(permissions)!: move signatures to per-machine trust store (#54)
+- feat(permissions): echo would-be call when permissions are unsigned (#55)
 
