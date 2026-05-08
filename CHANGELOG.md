@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0]
+## [0.5.1]
 
-- feat(permissions): echo would-be call when permissions are unsigned (#55)
+- fix(spotify)!: switch loopback redirect URI to HTTPS (#56)
 
