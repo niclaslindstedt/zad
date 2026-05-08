@@ -42,6 +42,7 @@ and are **never** written to the TOML.
 | `gcal <VERB>` | Operate the Google Calendar service at runtime (calendars, events, permissions, self). | [`zad man gcal`](gcal.md) |
 | `spotify <VERB>` | Operate the Spotify service at runtime (search, playlists, library, permissions). | [`zad man spotify`](spotify.md) |
 | `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions, self). | [`zad man telegram`](telegram.md) |
+| `signing <ACTION>` | Manage the local Ed25519 signing key and the per-machine trust store at `~/.zad/signing/trusted.toml`. | [`zad man signing`](signing.md) |
 | `commands [NAME]...` | Enumerate every CLI command, flag, and realistic example; also emits a JSON dump consumed by the website extractor. | [`zad man commands`](commands.md) |
 | `docs [TOPIC]` | Print topic documentation (`docs/*.md`) embedded in the binary at build time. | [`zad man docs`](docs.md) |
 | `man [COMMAND]` | Print reference manpages (`man/*.md`) embedded in the binary at build time. | [`zad man man`](man.md) |

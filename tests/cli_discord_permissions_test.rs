@@ -43,6 +43,7 @@ fn enable_discord(home: &std::path::Path, project: &std::path::Path) {
 
 fn write_local_permissions(home: &std::path::Path, project: &std::path::Path, body: &str) {
     use zad::permissions::SigningKey;
+    use zad::permissions::signing::SIGNING_ACCOUNT;
     use zad::service::discord::permissions::{self as perms, DiscordPermissionsRaw};
     let slug = common::project_slug(project);
     let p = home
@@ -53,14 +54,21 @@ fn write_local_permissions(home: &std::path::Path, project: &std::path::Path, bo
         .join("discord")
         .join("permissions.toml");
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    // Parse the literal body and sign it so the CLI subprocess (which
-    // verifies every permission file on load) sees a valid signature.
-    // The subprocess runs with `ZAD_SECRETS_MEMORY=1` and no stored
-    // signing key, so the keychain cross-check is skipped and the
-    // embedded pubkey is authoritative.
+    // Parse the literal body and sign it. Set up the test process's
+    // own memory keychain to mirror the subprocess view: mirror writes
+    // to `<home>/.test-secrets.json` so subsequent `bin()` invocations
+    // (which run with `ZAD_SECRETS_MEMORY=1` + the same
+    // `ZAD_HOME_OVERRIDE`) read the same signing key.
+    zad::secrets::use_memory_backend();
+    // SAFETY: tests are #[serial], no concurrent writers.
+    unsafe {
+        std::env::set_var("ZAD_HOME_OVERRIDE", home);
+    }
+    let key = SigningKey::generate();
+    let _ = zad::secrets::delete(SIGNING_ACCOUNT);
+    zad::secrets::store(SIGNING_ACCOUNT, &key.to_keychain_encoded()).unwrap();
     let raw: DiscordPermissionsRaw =
         toml::from_str(body).expect("write_local_permissions: body must be valid TOML");
-    let key = SigningKey::generate();
     perms::save_file(&p, &raw, &key).unwrap();
 }
 

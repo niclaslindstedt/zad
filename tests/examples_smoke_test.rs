@@ -12,6 +12,9 @@
 
 use std::path::PathBuf;
 
+mod common;
+
+use serial_test::serial;
 use zad::permissions::SigningKey;
 use zad::service::discord::permissions::{self as discord_permissions, DiscordPermissionsRaw};
 use zad::service::gcal::permissions::{self as gcal_permissions, GcalPermissionsRaw};
@@ -25,11 +28,11 @@ fn example_path(rel: &str) -> PathBuf {
 }
 
 fn test_key() -> SigningKey {
-    zad::secrets::use_memory_backend();
-    SigningKey::generate()
+    common::ensure_signing_env()
 }
 
 #[test]
+#[serial]
 fn discord_permissions_example_loads() {
     let path = example_path("discord-permissions/permissions.toml");
     assert!(
@@ -51,6 +54,7 @@ fn discord_permissions_example_loads() {
 }
 
 #[test]
+#[serial]
 fn onepass_permissions_example_loads() {
     let path = example_path("1pass-permissions/permissions.toml");
     assert!(
@@ -72,6 +76,7 @@ fn onepass_permissions_example_loads() {
 }
 
 #[test]
+#[serial]
 fn telegram_permissions_example_loads() {
     let path = example_path("telegram-permissions/permissions.toml");
     assert!(
@@ -93,6 +98,7 @@ fn telegram_permissions_example_loads() {
 }
 
 #[test]
+#[serial]
 fn gcal_permissions_example_loads() {
     let path = example_path("gcal-permissions/permissions.toml");
     assert!(

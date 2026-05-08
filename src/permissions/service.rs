@@ -27,9 +27,10 @@ use crate::error::Result;
 use super::mutation::Mutation;
 use super::signing::Signature;
 
-/// Small companion trait so the generic signer can get/set the signature
-/// without knowing the concrete raw type. Each service implements it in
-/// three lines.
+/// Companion trait used by raw structs that embed their own
+/// `[signature]` block. Today this is only the trust store
+/// ([`crate::permissions::trust::TrustStoreRaw`]) — service permission
+/// files no longer carry signatures inline.
 pub trait HasSignature {
     fn signature(&self) -> Option<&Signature>;
     fn set_signature(&mut self, sig: Option<Signature>);
@@ -45,15 +46,10 @@ pub trait PermissionsService: 'static {
     /// Google Calendar `"gcal"`, etc).
     const NAME: &'static str;
 
-    /// Raw TOML schema. Carries an `Option<Signature>` so the generic
-    /// signer can verify it on load and populate it on save.
-    type Raw: Serialize
-        + DeserializeOwned
-        + HasSignature
-        + Default
-        + Clone
-        + PartialEq
-        + std::fmt::Debug;
+    /// Raw TOML schema. The shared signer signs over the canonical
+    /// serialization of this struct and stores the signature in the
+    /// per-machine trust store.
+    type Raw: Serialize + DeserializeOwned + Default + Clone + PartialEq + std::fmt::Debug;
 
     /// Starter policy emitted by `init` when no file exists at the
     /// chosen scope.

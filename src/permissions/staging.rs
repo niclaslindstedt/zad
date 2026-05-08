@@ -2,10 +2,14 @@
 //!
 //! An agent (or a human) proposes edits by running a mutator
 //! subcommand. Each mutation writes to a `<path>.pending` file next
-//! to the live policy — **unsigned**, so no keychain prompt happens.
-//! The human reviews `diff`, then runs `commit` to sign and atomically
-//! replace the live file with the pending contents. Discard throws
-//! the pending file away.
+//! to the live policy. The human reviews `diff`, then runs `commit`
+//! to atomically replace the live file with the pending contents and
+//! upsert a trust entry in `~/.zad/signing/trusted.toml`. Discard
+//! throws the pending file away.
+//!
+//! Permission files on disk are **always unsigned**. Authorization
+//! lives in the per-machine trust store, signed by the keychain key.
+//! See [`crate::permissions::trust`].
 //!
 //! The machinery is generic over [`PermissionsService`]: adding a new
 //! service doesn't require any changes here. Each service contributes
@@ -18,8 +22,9 @@ use serde::Serialize;
 use crate::error::{Result, ZadError};
 
 use super::mutation::Mutation;
-use super::service::{HasSignature, PermissionsService};
+use super::service::PermissionsService;
 use super::signing::{self, SigningKey};
+use super::trust::{TrustEntry, TrustStore, canonical_path_key};
 
 /// Two-file snapshot of a live/pending pair at a given scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,9 +87,7 @@ pub fn discard(live: &Path) -> Result<bool> {
 }
 
 /// Apply a typed mutation to the pending policy, creating a pending
-/// file from the live contents if one didn't already exist. The
-/// result is always an **unsigned** pending file — signing happens
-/// only at `commit` time.
+/// file from the live contents if one didn't already exist.
 pub fn mutate_pending<S>(live: &Path, mutation: &Mutation) -> Result<()>
 where
     S: PermissionsService,
@@ -98,13 +101,13 @@ where
         // No policy yet at this scope — start from the starter template.
         S::starter_template()
     };
-    raw.set_signature(None);
     S::apply_mutation(&mut raw, mutation)?;
     write_unsigned::<S>(&pending, &raw)
 }
 
-/// Sign the pending policy with `key` and atomically replace the live
-/// file. Removes the pending file on success.
+/// Promote the pending policy to live. The body is written unsigned;
+/// authorization is recorded by upserting a trust-store entry signed
+/// with `key`.
 pub fn commit<S>(live: &Path, key: &SigningKey) -> Result<()>
 where
     S: PermissionsService,
@@ -117,7 +120,8 @@ where
         )));
     }
     let raw = read_raw::<S>(&pending)?;
-    write_signed_atomic::<S>(live, &raw, key)?;
+    write_unsigned_atomic::<S>(live, &raw)?;
+    upsert_trust_entry(live, &raw, key)?;
     std::fs::remove_file(&pending).map_err(|e| ZadError::Io {
         path: pending,
         source: e,
@@ -125,9 +129,10 @@ where
     Ok(())
 }
 
-/// Re-sign the live file in place. Intended for the `sign` escape
-/// hatch after a hand edit (the file parses but the signature is
-/// stale).
+/// Re-sign the live file: produce a fresh trust-store entry for `live`
+/// over its current canonical bytes. Used both as the escape hatch
+/// after a hand edit and as the entry point for trusting a newly
+/// shipped, third-party permission file.
 pub fn sign_in_place<S>(live: &Path, key: &SigningKey) -> Result<()>
 where
     S: PermissionsService,
@@ -139,7 +144,7 @@ where
         )));
     }
     let raw = read_raw::<S>(live)?;
-    write_signed_atomic::<S>(live, &raw, key)
+    upsert_trust_entry(live, &raw, key)
 }
 
 // ---------------------------------------------------------------------------
@@ -164,31 +169,21 @@ fn write_unsigned<S: PermissionsService>(path: &Path, raw: &S::Raw) -> Result<()
             source: e,
         })?;
     }
-    let mut to_write = raw.clone();
-    to_write.set_signature(None);
-    let body = serialize_canonical(&to_write)?;
+    let body = serialize_canonical(raw)?;
     std::fs::write(path, body).map_err(|e| ZadError::Io {
         path: path.to_path_buf(),
         source: e,
     })
 }
 
-fn write_signed_atomic<S: PermissionsService>(
-    live: &Path,
-    raw: &S::Raw,
-    key: &SigningKey,
-) -> Result<()> {
+fn write_unsigned_atomic<S: PermissionsService>(live: &Path, raw: &S::Raw) -> Result<()> {
     if let Some(parent) = live.parent() {
         std::fs::create_dir_all(parent).map_err(|e| ZadError::Io {
             path: parent.to_path_buf(),
             source: e,
         })?;
     }
-    let mut to_write = raw.clone();
-    to_write.set_signature(None);
-    let sig = signing::sign_raw(&to_write, key)?;
-    to_write.set_signature(Some(sig));
-    let body = serialize_canonical(&to_write)?;
+    let body = serialize_canonical(raw)?;
 
     // Atomic replace via a same-directory tempfile + persist. Using
     // tempfile::persist handles the Windows MoveFileEx semantics
@@ -207,6 +202,15 @@ fn write_signed_atomic<S: PermissionsService>(
         source: e.error,
     })?;
     Ok(())
+}
+
+fn upsert_trust_entry<R: Serialize>(live: &Path, raw: &R, key: &SigningKey) -> Result<()> {
+    let sig = signing::sign_unsigned(raw, key)?;
+    let path_key = canonical_path_key(live)?;
+    let entry = TrustEntry::from_signature(path_key, sig);
+    let mut store = TrustStore::load()?;
+    store.upsert(entry);
+    store.save(key)
 }
 
 fn serialize_canonical<T: Serialize>(raw: &T) -> Result<String> {

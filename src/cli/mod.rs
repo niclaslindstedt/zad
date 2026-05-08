@@ -17,6 +17,7 @@ pub mod service_slack;
 pub mod service_spotify;
 pub mod service_status;
 pub mod service_telegram;
+pub mod signing;
 pub mod slack;
 pub mod spotify;
 pub mod telegram;
@@ -70,6 +71,8 @@ pub enum Command {
     Spotify(spotify::SpotifyArgs),
     /// Operate the Telegram service (send, read, chats, discover).
     Telegram(telegram::TelegramArgs),
+    /// Manage the local signing key and trust store.
+    Signing(signing::SigningArgs),
     /// Enumerate CLI commands, flags, and realistic examples.
     Commands(commands::CommandsArgs),
     /// Print topic documentation embedded at build time.
@@ -100,6 +103,7 @@ pub async fn run() -> Result<()> {
         Some(Command::Slack(args)) => slack::run(args).await,
         Some(Command::Spotify(args)) => spotify::run(args).await,
         Some(Command::Telegram(args)) => telegram::run(args).await,
+        Some(Command::Signing(args)) => signing::run(args),
         Some(Command::Commands(args)) => commands::run(args),
         Some(Command::Docs(args)) => docs::run(args),
         Some(Command::Man(args)) => man::run(args),

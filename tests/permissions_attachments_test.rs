@@ -6,6 +6,9 @@
 
 use std::path::PathBuf;
 
+mod common;
+
+use serial_test::serial;
 use zad::config::directory::Directory;
 use zad::permissions::attachments::{AttachmentInfo, AttachmentRules, AttachmentRulesRaw};
 use zad::permissions::pattern::PatternListRaw;
@@ -31,6 +34,7 @@ fn rules(raw: AttachmentRulesRaw) -> AttachmentRules {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn max_count_rejects_over_cap() {
     let r = rules(AttachmentRulesRaw {
         max_count: Some(2),
@@ -48,6 +52,7 @@ fn max_count_rejects_over_cap() {
 }
 
 #[test]
+#[serial]
 fn max_count_admits_at_cap() {
     let r = rules(AttachmentRulesRaw {
         max_count: Some(2),
@@ -62,6 +67,7 @@ fn max_count_admits_at_cap() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn max_size_rejects_oversized_file() {
     let r = rules(AttachmentRulesRaw {
         max_size_bytes: Some(100),
@@ -81,6 +87,7 @@ fn max_size_rejects_oversized_file() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn extensions_deny_blocks_match() {
     let r = rules(AttachmentRulesRaw {
         extensions: PatternListRaw {
@@ -96,6 +103,7 @@ fn extensions_deny_blocks_match() {
 }
 
 #[test]
+#[serial]
 fn extensions_allow_rejects_miss() {
     let r = rules(AttachmentRulesRaw {
         extensions: PatternListRaw {
@@ -111,6 +119,7 @@ fn extensions_allow_rejects_miss() {
 }
 
 #[test]
+#[serial]
 fn extensions_allow_admits_hit() {
     let r = rules(AttachmentRulesRaw {
         extensions: PatternListRaw {
@@ -127,6 +136,7 @@ fn extensions_allow_admits_hit() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn deny_filenames_matches_basename_glob() {
     let r = rules(AttachmentRulesRaw {
         deny_filenames: PatternListRaw {
@@ -146,6 +156,7 @@ fn deny_filenames_matches_basename_glob() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn merge_picks_min_cap() {
     let a = rules(AttachmentRulesRaw {
         max_count: Some(5),
@@ -160,6 +171,7 @@ fn merge_picks_min_cap() {
 }
 
 #[test]
+#[serial]
 fn merge_unions_deny_lists() {
     let a = rules(AttachmentRulesRaw {
         deny_filenames: PatternListRaw {
@@ -190,8 +202,7 @@ fn merge_unions_deny_lists() {
 // ---------------------------------------------------------------------------
 
 fn test_key() -> zad::permissions::SigningKey {
-    zad::secrets::use_memory_backend();
-    zad::permissions::SigningKey::generate()
+    common::ensure_signing_env()
 }
 
 fn write_perms(path: &std::path::Path, raw: &DiscordPermissionsRaw) {
@@ -220,6 +231,7 @@ fn raw_with_attachments(attachments: AttachmentRulesRaw) -> DiscordPermissionsRa
 }
 
 #[test]
+#[serial]
 fn layered_both_files_must_admit() {
     let tmp = tempfile::tempdir().unwrap();
     let g = tmp.path().join("g.toml");
@@ -262,6 +274,7 @@ fn layered_both_files_must_admit() {
 }
 
 #[test]
+#[serial]
 fn layered_global_deny_wins() {
     let tmp = tempfile::tempdir().unwrap();
     let g = tmp.path().join("g.toml");
@@ -289,6 +302,7 @@ fn layered_global_deny_wins() {
 }
 
 #[test]
+#[serial]
 fn layered_missing_files_admit() {
     let eff = EffectivePermissions::default();
     eff.check_send_attachments(&[info("anything.bin", "bin", 9999)])

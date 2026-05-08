@@ -38,8 +38,7 @@ use crate::permissions::{
     content::{ContentRules, ContentRulesRaw},
     mutation::{self, Mutation},
     pattern::{DenyReason, PatternList, PatternListRaw},
-    service::HasSignature,
-    signing::{self, Signature, SigningKey},
+    signing::{self, SigningKey},
     time::{TimeWindow, TimeWindowRaw},
 };
 use crate::service::onepass::client::{Item, ItemField, ItemSummary, ParsedOpRef, Vault};
@@ -95,20 +94,6 @@ pub struct OnePassPermissionsRaw {
     /// the vault(s) the agent may write to.
     #[serde(default, skip_serializing_if = "CreateBlockRaw_is_default")]
     pub create: CreateBlockRaw,
-
-    /// Ed25519 signature over the canonical serialization of every
-    /// other field. See [`crate::permissions::signing`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Signature>,
-}
-
-impl HasSignature for OnePassPermissionsRaw {
-    fn signature(&self) -> Option<&Signature> {
-        self.signature.as_ref()
-    }
-    fn set_signature(&mut self, sig: Option<Signature>) {
-        self.signature = sig;
-    }
 }
 
 /// Per-verb read-side block. Any field that's absent falls back to the
@@ -869,21 +854,13 @@ pub fn load_effective_for(slug: &str) -> Result<EffectivePermissions> {
 }
 
 pub fn save_file(path: &Path, raw: &OnePassPermissionsRaw, key: &SigningKey) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| ZadError::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-    let mut to_write = raw.clone();
-    to_write.set_signature(None);
-    let sig = signing::sign_raw(&to_write, key)?;
-    to_write.set_signature(Some(sig));
-    let body = toml::to_string_pretty(&to_write)?;
-    std::fs::write(path, body).map_err(|e| ZadError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })
+    save_unsigned(path, raw)?;
+    let sig = signing::sign_unsigned(raw, key)?;
+    let path_key = crate::permissions::trust::canonical_path_key(path)?;
+    let entry = crate::permissions::TrustEntry::from_signature(path_key, sig);
+    let mut store = crate::permissions::TrustStore::load()?;
+    store.upsert(entry);
+    store.save(key)
 }
 
 /// Write `raw` without signing. Staging-only.
@@ -894,9 +871,7 @@ pub fn save_unsigned(path: &Path, raw: &OnePassPermissionsRaw) -> Result<()> {
             source: e,
         })?;
     }
-    let mut to_write = raw.clone();
-    to_write.set_signature(None);
-    let body = toml::to_string_pretty(&to_write)?;
+    let body = toml::to_string_pretty(raw)?;
     std::fs::write(path, body).map_err(|e| ZadError::Io {
         path: path.to_path_buf(),
         source: e,
