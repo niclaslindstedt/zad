@@ -567,6 +567,9 @@ async fn run_playlists_show(args: PlaylistsShowArgs) -> Result<()> {
     if let Some(o) = &summary.owner {
         println!("owner       : {}", o.id);
     }
+    if let Some(p) = summary.public {
+        println!("privacy     : {}", if p { "public" } else { "private" });
+    }
     println!("tracks      :");
     for t in &tracks {
         print_playlist_track(t);
@@ -650,10 +653,10 @@ async fn run_playlists_delete(args: PlaylistsDeleteArgs) -> Result<()> {
     http.unfollow_playlist(&resolved).await?;
 
     if args.json {
-        let out = serde_json::json!({ "id": resolved, "unfollowed": true });
+        let out = serde_json::json!({ "id": resolved, "deleted": true });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("Unfollowed (deleted) playlist `{resolved}`");
+        println!("Deleted playlist `{resolved}`");
     }
     Ok(())
 }

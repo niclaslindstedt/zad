@@ -848,8 +848,8 @@ supported values are:
 | `search` | `search` | none beyond OpenID `email` |
 | `playlists.read` | `playlists list`, `playlists show` | `youtube.readonly` |
 | `playlists.write` | `playlists create`, `rename`, `delete`, `add`, `remove` | `youtube` (read+write superset) |
-| `library.read` | `library list` | `youtube.readonly` |
-| `library.write` | `library like`, `library unlike` | `youtube` (read+write superset) |
+| `library.read` | `library tracks list` | `youtube.readonly` |
+| `library.write` | `library tracks save`, `library tracks unsave` | `youtube` (read+write superset) |
 
 When both a global and a project-local credentials file exist, the
 local file **replaces** the global one for that project — scopes are

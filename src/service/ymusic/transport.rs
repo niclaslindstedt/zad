@@ -6,6 +6,12 @@
 //! [`YmusicHttp`]; the preview impl emits [`DryRunOp`] records to a
 //! shared sink for every mutating verb. Reads return empty vectors in
 //! preview mode by convention.
+//!
+//! Naming follows the Spotify-master contract used at the CLI layer
+//! (`name` / `new_name` / `track`) rather than YouTube's wire-level
+//! vocabulary (`title` / `video`). The thin wrappers below feed the
+//! same values into [`YmusicHttp`], which still uses the Data API
+//! field names on the wire.
 
 use std::sync::Arc;
 
@@ -28,17 +34,17 @@ pub trait YmusicTransport: Send + Sync {
     async fn get_playlist_items(&self, playlist_id: &str, limit: u32) -> Result<Vec<PlaylistItem>>;
     async fn create_playlist(
         &self,
-        title: &str,
+        name: &str,
         description: Option<&str>,
         privacy: Privacy,
     ) -> Result<PlaylistSummary>;
-    async fn rename_playlist(&self, playlist_id: &str, new_title: &str) -> Result<()>;
+    async fn rename_playlist(&self, playlist_id: &str, new_name: &str) -> Result<()>;
     async fn delete_playlist(&self, playlist_id: &str) -> Result<()>;
-    async fn add_playlist_item(&self, playlist_id: &str, video_id: &str) -> Result<String>;
+    async fn add_playlist_item(&self, playlist_id: &str, track_id: &str) -> Result<String>;
     async fn remove_playlist_item(&self, playlist_item_id: &str) -> Result<()>;
     async fn list_liked_videos(&self, limit: u32) -> Result<Vec<VideoSummary>>;
-    async fn like_video(&self, video_id: &str) -> Result<()>;
-    async fn unlike_video(&self, video_id: &str) -> Result<()>;
+    async fn like_video(&self, track_id: &str) -> Result<()>;
+    async fn unlike_video(&self, track_id: &str) -> Result<()>;
 }
 
 #[async_trait]
@@ -57,20 +63,20 @@ impl YmusicTransport for YmusicHttp {
     }
     async fn create_playlist(
         &self,
-        title: &str,
+        name: &str,
         description: Option<&str>,
         privacy: Privacy,
     ) -> Result<PlaylistSummary> {
-        YmusicHttp::create_playlist(self, title, description, privacy).await
+        YmusicHttp::create_playlist(self, name, description, privacy).await
     }
-    async fn rename_playlist(&self, playlist_id: &str, new_title: &str) -> Result<()> {
-        YmusicHttp::rename_playlist(self, playlist_id, new_title).await
+    async fn rename_playlist(&self, playlist_id: &str, new_name: &str) -> Result<()> {
+        YmusicHttp::rename_playlist(self, playlist_id, new_name).await
     }
     async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
         YmusicHttp::delete_playlist(self, playlist_id).await
     }
-    async fn add_playlist_item(&self, playlist_id: &str, video_id: &str) -> Result<String> {
-        YmusicHttp::add_playlist_item(self, playlist_id, video_id).await
+    async fn add_playlist_item(&self, playlist_id: &str, track_id: &str) -> Result<String> {
+        YmusicHttp::add_playlist_item(self, playlist_id, track_id).await
     }
     async fn remove_playlist_item(&self, playlist_item_id: &str) -> Result<()> {
         YmusicHttp::remove_playlist_item(self, playlist_item_id).await
@@ -78,11 +84,11 @@ impl YmusicTransport for YmusicHttp {
     async fn list_liked_videos(&self, limit: u32) -> Result<Vec<VideoSummary>> {
         YmusicHttp::list_liked_videos(self, limit).await
     }
-    async fn like_video(&self, video_id: &str) -> Result<()> {
-        YmusicHttp::like_video(self, video_id).await
+    async fn like_video(&self, track_id: &str) -> Result<()> {
+        YmusicHttp::like_video(self, track_id).await
     }
-    async fn unlike_video(&self, video_id: &str) -> Result<()> {
-        YmusicHttp::unlike_video(self, video_id).await
+    async fn unlike_video(&self, track_id: &str) -> Result<()> {
+        YmusicHttp::unlike_video(self, track_id).await
     }
 }
 
@@ -134,16 +140,16 @@ impl YmusicTransport for DryRunYmusicTransport {
     }
     async fn create_playlist(
         &self,
-        title: &str,
+        name: &str,
         description: Option<&str>,
         privacy: Privacy,
     ) -> Result<PlaylistSummary> {
         self.record(
             "create_playlist",
-            format!("would create playlist `{title}`"),
+            format!("would create playlist `{name}`"),
             json!({
                 "command": "ymusic.playlists.create",
-                "title": title,
+                "name": name,
                 "description": description,
                 "privacy": privacy.as_api_str(),
             }),
@@ -155,14 +161,14 @@ impl YmusicTransport for DryRunYmusicTransport {
             status: None,
         })
     }
-    async fn rename_playlist(&self, playlist_id: &str, new_title: &str) -> Result<()> {
+    async fn rename_playlist(&self, playlist_id: &str, new_name: &str) -> Result<()> {
         self.record(
             "rename_playlist",
-            format!("would rename `{playlist_id}` to `{new_title}`"),
+            format!("would rename `{playlist_id}` to `{new_name}`"),
             json!({
                 "command": "ymusic.playlists.rename",
                 "playlist": playlist_id,
-                "new_title": new_title,
+                "new_name": new_name,
             }),
         );
         Ok(())
@@ -178,14 +184,14 @@ impl YmusicTransport for DryRunYmusicTransport {
         );
         Ok(())
     }
-    async fn add_playlist_item(&self, playlist_id: &str, video_id: &str) -> Result<String> {
+    async fn add_playlist_item(&self, playlist_id: &str, track_id: &str) -> Result<String> {
         self.record(
             "add_playlist_item",
-            format!("would add video `{video_id}` to `{playlist_id}`"),
+            format!("would add track `{track_id}` to `{playlist_id}`"),
             json!({
                 "command": "ymusic.playlists.add",
                 "playlist": playlist_id,
-                "video_id": video_id,
+                "track_id": track_id,
             }),
         );
         Ok("dry-run".into())
@@ -196,7 +202,7 @@ impl YmusicTransport for DryRunYmusicTransport {
             format!("would remove playlist item `{playlist_item_id}`"),
             json!({
                 "command": "ymusic.playlists.remove",
-                "playlist_item_id": playlist_item_id,
+                "item_id": playlist_item_id,
             }),
         );
         Ok(())
@@ -204,24 +210,24 @@ impl YmusicTransport for DryRunYmusicTransport {
     async fn list_liked_videos(&self, _limit: u32) -> Result<Vec<VideoSummary>> {
         Ok(vec![])
     }
-    async fn like_video(&self, video_id: &str) -> Result<()> {
+    async fn like_video(&self, track_id: &str) -> Result<()> {
         self.record(
             "like_video",
-            format!("would like video `{video_id}`"),
+            format!("would save track `{track_id}`"),
             json!({
-                "command": "ymusic.library.like",
-                "video_id": video_id,
+                "command": "ymusic.library.tracks.save",
+                "track_id": track_id,
             }),
         );
         Ok(())
     }
-    async fn unlike_video(&self, video_id: &str) -> Result<()> {
+    async fn unlike_video(&self, track_id: &str) -> Result<()> {
         self.record(
             "unlike_video",
-            format!("would unlike video `{video_id}`"),
+            format!("would unsave track `{track_id}`"),
             json!({
-                "command": "ymusic.library.unlike",
-                "video_id": video_id,
+                "command": "ymusic.library.tracks.unsave",
+                "track_id": track_id,
             }),
         );
         Ok(())
