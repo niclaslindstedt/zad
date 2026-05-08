@@ -1,10 +1,20 @@
 //! `zad ymusic <verb>` — runtime surface for the YouTube Music
 //! service.
 //!
+//! YouTube Music shares this CLI surface with Spotify: the same
+//! verbs, the same arguments, and the same JSON / human output shape.
+//! Spotify is the master contract; concepts that exist on both
+//! providers are named the same here. The only places this surface
+//! diverges from `zad spotify` are where YouTube has a genuinely
+//! different concept (e.g. `--privacy` instead of `--public`, since
+//! YouTube has an `unlisted` state Spotify does not have) — those
+//! deviations show up as additional fields, not as renames of shared
+//! concepts.
+//!
 //! Wires together:
 //! - per-verb clap args (`search`, `playlists list/show/create/
-//!   rename/delete/add/remove`, `library {list,like,unlike}`, plus
-//!   the mandatory `permissions` subgroup);
+//!   rename/delete/add/remove`, `library tracks {list,save,unsave}`,
+//!   plus the mandatory `permissions` subgroup);
 //! - credential + scope resolution from the effective config (local
 //!   wins over global);
 //! - permission gating (time window → target → content) executed
@@ -49,7 +59,7 @@ pub enum Action {
     Search(SearchArgs),
     /// Playlist management (list, show, create, rename, delete, add, remove).
     Playlists(PlaylistsArgs),
-    /// Library management — the user's liked videos.
+    /// Library management (saved tracks).
     Library(LibraryArgs),
     /// Inspect or scaffold the permissions policy.
     Permissions(PermissionsArgs),
@@ -88,7 +98,7 @@ pub struct PlaylistsArgs {
 pub enum PlaylistsAction {
     /// List the authenticated user's playlists.
     List(PlaylistsListArgs),
-    /// Show one playlist's metadata and items.
+    /// Show one playlist's metadata and tracks.
     Show(PlaylistsShowArgs),
     /// Create a new playlist owned by the authenticated user.
     Create(PlaylistsCreateArgs),
@@ -96,11 +106,9 @@ pub enum PlaylistsAction {
     Rename(PlaylistsRenameArgs),
     /// Delete a playlist owned by the user.
     Delete(PlaylistsDeleteArgs),
-    /// Add one or more videos to a playlist.
+    /// Add one or more tracks to a playlist.
     Add(PlaylistsAddArgs),
-    /// Remove one or more items from a playlist (by playlistItem ID
-    /// or by video ID — the latter is resolved by listing the
-    /// playlist first).
+    /// Remove one or more tracks from a playlist.
     Remove(PlaylistsRemoveArgs),
 }
 
@@ -115,9 +123,9 @@ pub struct PlaylistsListArgs {
 #[derive(Debug, Args)]
 pub struct PlaylistsShowArgs {
     /// Playlist ID, full YouTube URL, or — when previously listed —
-    /// the literal title of an owned playlist.
+    /// the literal name of an owned playlist.
     pub playlist: Option<String>,
-    /// Page size for the items listing (1..=50).
+    /// Page size for the tracks listing (1..=50).
     #[arg(long, default_value_t = 50)]
     pub limit: u32,
     #[arg(long)]
@@ -126,11 +134,13 @@ pub struct PlaylistsShowArgs {
 
 #[derive(Debug, Args)]
 pub struct PlaylistsCreateArgs {
-    /// Display title for the new playlist.
-    pub title: String,
+    /// Display name for the new playlist.
+    pub name: String,
     #[arg(long)]
     pub description: Option<String>,
-    /// Privacy: `private` (default), `unlisted`, or `public`.
+    /// Privacy: `private` (default), `unlisted`, or `public`. YouTube
+    /// has an `unlisted` state Spotify does not, so this verb takes a
+    /// three-valued enum instead of Spotify's `--public` boolean.
     #[arg(long, value_parser = ["private", "unlisted", "public"], default_value = "private")]
     pub privacy: String,
     #[arg(long)]
@@ -142,7 +152,7 @@ pub struct PlaylistsCreateArgs {
 #[derive(Debug, Args)]
 pub struct PlaylistsRenameArgs {
     pub playlist: String,
-    pub new_title: String,
+    pub new_name: String,
     #[arg(long)]
     pub dry_run: bool,
     #[arg(long)]
@@ -160,11 +170,11 @@ pub struct PlaylistsDeleteArgs {
 
 #[derive(Debug, Args)]
 pub struct PlaylistsAddArgs {
-    /// Target playlist (ID, URL, or owned-playlist title).
+    /// Target playlist (ID, URL, or owned-playlist name).
     pub playlist: String,
     /// One or more video IDs (or full YouTube URLs).
     #[arg(required = true)]
-    pub videos: Vec<String>,
+    pub tracks: Vec<String>,
     #[arg(long)]
     pub dry_run: bool,
     #[arg(long)]
@@ -174,12 +184,12 @@ pub struct PlaylistsAddArgs {
 #[derive(Debug, Args)]
 pub struct PlaylistsRemoveArgs {
     pub playlist: String,
-    /// One or more playlist-item IDs *or* video IDs. When a video ID
+    /// One or more video IDs *or* playlistItem IDs. When a video ID
     /// is supplied, zad lists the playlist to find the matching
     /// item; if the same video appears multiple times, every match
     /// is removed.
     #[arg(required = true)]
-    pub items: Vec<String>,
+    pub tracks: Vec<String>,
     #[arg(long)]
     pub dry_run: bool,
     #[arg(long)]
@@ -198,12 +208,26 @@ pub struct LibraryArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum LibraryAction {
-    /// List the authenticated user's liked videos.
+    /// Saved-tracks operations (mirrors `spotify library tracks`).
+    /// YouTube has no album library, so the `albums` sub-namespace
+    /// from `spotify library` is intentionally absent here.
+    Tracks(LibraryTracksArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct LibraryTracksArgs {
+    #[command(subcommand)]
+    pub action: LibraryItemAction,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LibraryItemAction {
+    /// List saved tracks.
     List(LibraryListArgs),
-    /// Like (save) one or more videos.
-    Like(LibraryMutateArgs),
-    /// Unlike (unsave) one or more videos.
-    Unlike(LibraryMutateArgs),
+    /// Save (like) one or more tracks.
+    Save(LibraryMutateArgs),
+    /// Unsave (unlike) one or more tracks.
+    Unsave(LibraryMutateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -218,7 +242,7 @@ pub struct LibraryListArgs {
 pub struct LibraryMutateArgs {
     /// One or more video IDs (or full YouTube URLs).
     #[arg(required = true)]
-    pub videos: Vec<String>,
+    pub tracks: Vec<String>,
     #[arg(long)]
     pub dry_run: bool,
     #[arg(long)]
@@ -283,7 +307,7 @@ pub struct PermissionsCheckArgs {
     #[arg(long)]
     pub function: String,
     /// Target to check against the function's `targets` list — a
-    /// playlist title/ID, a video ID, or a search query.
+    /// playlist name/ID, a video ID, or a search query.
     #[arg(long)]
     pub target: Option<String>,
     /// Body text to evaluate against the function's content rules
@@ -311,9 +335,11 @@ pub async fn run(args: YmusicArgs) -> Result<()> {
             PlaylistsAction::Remove(a) => run_playlists_remove(a).await,
         },
         Action::Library(a) => match a.action {
-            LibraryAction::List(a) => run_library_list(a).await,
-            LibraryAction::Like(a) => run_library_mutate(a, true).await,
-            LibraryAction::Unlike(a) => run_library_mutate(a, false).await,
+            LibraryAction::Tracks(t) => match t.action {
+                LibraryItemAction::List(a) => run_library_tracks_list(a).await,
+                LibraryItemAction::Save(a) => run_library_tracks_mutate(a, true).await,
+                LibraryItemAction::Unsave(a) => run_library_tracks_mutate(a, false).await,
+            },
         },
         Action::Permissions(a) => run_permissions(a),
     }
@@ -346,72 +372,114 @@ async fn run_search(args: SearchArgs) -> Result<()> {
 
 #[derive(Debug, Serialize)]
 struct SearchOutput {
-    items: Vec<SearchItemOut>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    videos: Option<Vec<VideoSearchOut>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    playlists: Option<Vec<PlaylistSearchOut>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channels: Option<Vec<ChannelSearchOut>>,
 }
 
 #[derive(Debug, Serialize)]
-struct SearchItemOut {
-    kind: String,
+struct VideoSearchOut {
     id: String,
-    title: Option<String>,
-    channel_title: Option<String>,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PlaylistSearchOut {
+    id: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChannelSearchOut {
+    id: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
 }
 
 fn render_search(items: &[SearchItem]) -> SearchOutput {
-    SearchOutput {
-        items: items
-            .iter()
-            .filter_map(|i| {
-                let id_block = i.id.as_ref()?;
-                let (kind, id) = if let Some(v) = id_block.video_id.as_ref() {
-                    ("video", v.clone())
-                } else if let Some(p) = id_block.playlist_id.as_ref() {
-                    ("playlist", p.clone())
-                } else if let Some(c) = id_block.channel_id.as_ref() {
-                    ("channel", c.clone())
-                } else {
-                    return None;
-                };
-                Some(SearchItemOut {
-                    kind: kind.to_string(),
-                    id,
-                    title: i.snippet.as_ref().and_then(|s| s.title.clone()),
-                    channel_title: i.snippet.as_ref().and_then(|s| s.channel_title.clone()),
-                })
-            })
-            .collect(),
-    }
-}
-
-fn print_search_human(items: &[SearchItem]) {
-    if items.is_empty() {
-        println!("No results.");
-        return;
-    }
+    let mut videos: Vec<VideoSearchOut> = Vec::new();
+    let mut playlists: Vec<PlaylistSearchOut> = Vec::new();
+    let mut channels: Vec<ChannelSearchOut> = Vec::new();
     for i in items {
         let Some(id_block) = i.id.as_ref() else {
             continue;
         };
-        let (kind, id) = if let Some(v) = id_block.video_id.as_ref() {
-            ("video   ", v.as_str())
+        let snippet = i.snippet.as_ref();
+        let name = snippet
+            .and_then(|s| s.title.clone())
+            .unwrap_or_else(|| "(no title)".to_string());
+        if let Some(v) = id_block.video_id.as_ref() {
+            videos.push(VideoSearchOut {
+                id: v.clone(),
+                name,
+                channel: snippet.and_then(|s| s.channel_title.clone()),
+            });
         } else if let Some(p) = id_block.playlist_id.as_ref() {
-            ("playlist", p.as_str())
+            playlists.push(PlaylistSearchOut {
+                id: p.clone(),
+                name,
+                owner: snippet.and_then(|s| s.channel_title.clone()),
+            });
         } else if let Some(c) = id_block.channel_id.as_ref() {
-            ("channel ", c.as_str())
+            channels.push(ChannelSearchOut {
+                id: c.clone(),
+                name,
+                description: snippet.and_then(|s| s.description.clone()),
+            });
+        }
+    }
+    SearchOutput {
+        videos: if videos.is_empty() {
+            None
         } else {
-            continue;
-        };
-        let title = i
-            .snippet
-            .as_ref()
-            .and_then(|s| s.title.as_deref())
-            .unwrap_or("(no title)");
-        let channel = i
-            .snippet
-            .as_ref()
-            .and_then(|s| s.channel_title.as_deref())
-            .unwrap_or("?");
-        println!("  {kind} {id:24}  {title} [{channel}]");
+            Some(videos)
+        },
+        playlists: if playlists.is_empty() {
+            None
+        } else {
+            Some(playlists)
+        },
+        channels: if channels.is_empty() {
+            None
+        } else {
+            Some(channels)
+        },
+    }
+}
+
+fn print_search_human(items: &[SearchItem]) {
+    let out = render_search(items);
+    if out.videos.is_none() && out.playlists.is_none() && out.channels.is_none() {
+        println!("No results.");
+        return;
+    }
+    if let Some(vs) = &out.videos {
+        println!("Videos");
+        for v in vs {
+            let channel = v.channel.as_deref().unwrap_or("");
+            println!("  {:25}  {} [{channel}]", v.id, v.name);
+        }
+    }
+    if let Some(ps) = &out.playlists {
+        println!("Playlists");
+        for p in ps {
+            let owner = p.owner.as_deref().unwrap_or("?");
+            println!("  {:25}  {} (by {owner})", p.id, p.name);
+        }
+    }
+    if let Some(cs) = &out.channels {
+        println!("Channels");
+        for c in cs {
+            println!("  {:25}  {}", c.id, c.name);
+        }
     }
 }
 
@@ -428,38 +496,31 @@ async fn run_playlists_list(args: PlaylistsListArgs) -> Result<()> {
     let filtered: Vec<&PlaylistSummary> = items
         .iter()
         .filter(|p| {
-            let title = p.snippet.as_ref().map(|s| s.title.as_str()).unwrap_or("");
+            let name = p.snippet.as_ref().map(|s| s.title.as_str()).unwrap_or("");
             permissions
-                .check_target(YmusicFunction::PlaylistsRead, title)
+                .check_target(YmusicFunction::PlaylistsRead, name)
                 .is_ok()
         })
         .collect();
 
+    let out: Vec<PlaylistSummaryOut> = filtered.iter().map(|p| render_playlist(p)).collect();
+
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&filtered).unwrap());
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
         return Ok(());
     }
-    if filtered.is_empty() {
+    if out.is_empty() {
         println!("No playlists visible (or all filtered by permissions).");
         return Ok(());
     }
-    for p in &filtered {
-        let title = p
-            .snippet
+    for p in &out {
+        let total = p.tracks.as_ref().and_then(|t| t.total).unwrap_or(0);
+        let owner = p
+            .owner
             .as_ref()
-            .map(|s| s.title.as_str())
-            .unwrap_or("(no title)");
-        let total = p
-            .content_details
-            .as_ref()
-            .and_then(|c| c.item_count)
-            .unwrap_or(0);
-        let privacy = p
-            .status
-            .as_ref()
-            .and_then(|s| s.privacy_status.as_deref())
+            .map(|o| o.display_name.as_deref().unwrap_or(o.id.as_str()))
             .unwrap_or("?");
-        println!("  {:36}  {title} ({total} items, {privacy})", p.id);
+        println!("  {:25}  {} ({total} tracks, by {owner})", p.id, p.name);
     }
     Ok(())
 }
@@ -476,63 +537,50 @@ async fn run_playlists_show(args: PlaylistsShowArgs) -> Result<()> {
     let transport = transport_for(false)?;
     let summary = transport.get_playlist(&resolved).await?;
     let items = transport.get_playlist_items(&resolved, args.limit).await?;
+    let summary_out = render_playlist(&summary);
+    let tracks_out: Vec<PlaylistTrackItemOut> = items.iter().map(render_playlist_track).collect();
 
     if args.json {
-        let out = serde_json::json!({ "playlist": summary, "items": items });
+        let out = serde_json::json!({ "playlist": summary_out, "tracks": tracks_out });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
         return Ok(());
     }
-    println!("id          : {}", summary.id);
-    if let Some(s) = &summary.snippet {
-        println!("title       : {}", s.title);
-        if let Some(d) = &s.description {
-            if !d.is_empty() {
-                println!("description : {d}");
-            }
+    println!("id          : {}", summary_out.id);
+    println!("name        : {}", summary_out.name);
+    if let Some(d) = &summary_out.description {
+        if !d.is_empty() {
+            println!("description : {d}");
         }
     }
-    if let Some(s) = &summary.status {
-        if let Some(p) = &s.privacy_status {
-            println!("privacy     : {p}");
-        }
+    if let Some(o) = &summary_out.owner {
+        println!(
+            "owner       : {}",
+            o.display_name.as_deref().unwrap_or(o.id.as_str())
+        );
     }
-    println!("items       :");
-    for item in &items {
-        print_playlist_item(item);
+    if let Some(p) = &summary_out.privacy {
+        println!("privacy     : {p}");
+    }
+    println!("tracks      :");
+    for t in &tracks_out {
+        print_playlist_track_human(t);
     }
     Ok(())
 }
 
-fn print_playlist_item(item: &PlaylistItem) {
-    let video_id = item
-        .content_details
-        .as_ref()
-        .and_then(|c| c.video_id.as_deref())
-        .or_else(|| {
-            item.snippet
-                .as_ref()
-                .and_then(|s| s.resource_id.as_ref())
-                .and_then(|r| r.video_id.as_deref())
-        })
-        .unwrap_or("?");
-    let title = item
-        .snippet
-        .as_ref()
-        .and_then(|s| s.title.as_deref())
-        .unwrap_or("(no title)");
-    let owner = item
-        .snippet
-        .as_ref()
-        .and_then(|s| s.video_owner_channel_title.as_deref())
-        .unwrap_or("?");
-    println!("  item={} video={video_id}  {title} [{owner}]", item.id);
+fn print_playlist_track_human(item: &PlaylistTrackItemOut) {
+    let Some(track) = &item.track else {
+        return;
+    };
+    let channel = track.channel.as_deref().unwrap_or("");
+    println!("  {:25}  {} — {channel}", track.id, track.name);
 }
 
 async fn run_playlists_create(args: PlaylistsCreateArgs) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(YmusicFunction::PlaylistsWrite)?;
-    permissions.check_target(YmusicFunction::PlaylistsWrite, &args.title)?;
-    permissions.check_body(YmusicFunction::PlaylistsWrite, &args.title)?;
+    permissions.check_target(YmusicFunction::PlaylistsWrite, &args.name)?;
+    permissions.check_body(YmusicFunction::PlaylistsWrite, &args.name)?;
     if let Some(d) = &args.description {
         permissions.check_body(YmusicFunction::PlaylistsWrite, d)?;
     }
@@ -540,21 +588,17 @@ async fn run_playlists_create(args: PlaylistsCreateArgs) -> Result<()> {
     let privacy = parse_privacy(&args.privacy)?;
     let transport = transport_for(args.dry_run)?;
     let summary = transport
-        .create_playlist(&args.title, args.description.as_deref(), privacy)
+        .create_playlist(&args.name, args.description.as_deref(), privacy)
         .await?;
 
     if args.dry_run {
         return Ok(());
     }
+    let out = render_playlist(&summary);
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        let title = summary
-            .snippet
-            .as_ref()
-            .map(|s| s.title.as_str())
-            .unwrap_or(args.title.as_str());
-        println!("Created playlist `{title}` (id={})", summary.id);
+        println!("Created playlist `{}` (id={})", out.name, out.id);
     }
     Ok(())
 }
@@ -563,23 +607,21 @@ async fn run_playlists_rename(args: PlaylistsRenameArgs) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(YmusicFunction::PlaylistsWrite)?;
     permissions.check_target(YmusicFunction::PlaylistsWrite, &args.playlist)?;
-    permissions.check_target(YmusicFunction::PlaylistsWrite, &args.new_title)?;
-    permissions.check_body(YmusicFunction::PlaylistsWrite, &args.new_title)?;
+    permissions.check_target(YmusicFunction::PlaylistsWrite, &args.new_name)?;
+    permissions.check_body(YmusicFunction::PlaylistsWrite, &args.new_name)?;
 
     let resolved = strip_playlist_url(&args.playlist);
     let transport = transport_for(args.dry_run)?;
-    transport
-        .rename_playlist(&resolved, &args.new_title)
-        .await?;
+    transport.rename_playlist(&resolved, &args.new_name).await?;
 
     if args.dry_run {
         return Ok(());
     }
     if args.json {
-        let out = serde_json::json!({ "id": resolved, "new_title": args.new_title });
+        let out = serde_json::json!({ "id": resolved, "new_name": args.new_name });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("Renamed `{resolved}` → `{}`", args.new_title);
+        println!("Renamed `{resolved}` → `{}`", args.new_name);
     }
     Ok(())
 }
@@ -609,27 +651,31 @@ async fn run_playlists_add(args: PlaylistsAddArgs) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(YmusicFunction::PlaylistsWrite)?;
     permissions.check_target(YmusicFunction::PlaylistsWrite, &args.playlist)?;
-    for v in &args.videos {
+    for v in &args.tracks {
         permissions.check_target(YmusicFunction::PlaylistsWrite, v)?;
     }
 
     let resolved = strip_playlist_url(&args.playlist);
-    let video_ids: Vec<String> = args.videos.iter().map(|v| extract_video_id(v)).collect();
+    let video_ids: Vec<String> = args.tracks.iter().map(|v| extract_video_id(v)).collect();
     let transport = transport_for(args.dry_run)?;
-    let mut added: Vec<String> = Vec::with_capacity(video_ids.len());
+    let mut item_ids: Vec<String> = Vec::with_capacity(video_ids.len());
     for vid in &video_ids {
         let item_id = transport.add_playlist_item(&resolved, vid).await?;
-        added.push(item_id);
+        item_ids.push(item_id);
     }
 
     if args.dry_run {
         return Ok(());
     }
     if args.json {
-        let out = serde_json::json!({ "id": resolved, "added": added });
+        let out = serde_json::json!({
+            "id": resolved,
+            "added": video_ids,
+            "item_ids": item_ids,
+        });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("Added {} video(s) to `{resolved}`", added.len());
+        println!("Added {} track(s) to `{resolved}`", video_ids.len());
     }
     Ok(())
 }
@@ -638,7 +684,7 @@ async fn run_playlists_remove(args: PlaylistsRemoveArgs) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(YmusicFunction::PlaylistsWrite)?;
     permissions.check_target(YmusicFunction::PlaylistsWrite, &args.playlist)?;
-    for v in &args.items {
+    for v in &args.tracks {
         permissions.check_target(YmusicFunction::PlaylistsWrite, v)?;
     }
 
@@ -647,17 +693,17 @@ async fn run_playlists_remove(args: PlaylistsRemoveArgs) -> Result<()> {
 
     // Resolve video IDs to playlistItem IDs by listing the playlist
     // once. Anything that already looks like a playlistItem ID
-    // (length > 24, starts with `PL` or `UE` is not the rule —
-    // YouTube uses opaque IDs) is just attempted as-is and we let
-    // the API surface a 404 if it's not a real item.
-    let listing: Option<Vec<PlaylistItem>> = if args.items.iter().any(|s| is_likely_video_id(s)) {
+    // is just attempted as-is and we let the API surface a 404 if
+    // it's not a real item.
+    let listing: Option<Vec<PlaylistItem>> = if args.tracks.iter().any(|s| is_likely_video_id(s)) {
         Some(transport.get_playlist_items(&resolved, 50).await?)
     } else {
         None
     };
 
     let mut removed: Vec<String> = Vec::new();
-    for raw in &args.items {
+    let mut item_ids: Vec<String> = Vec::new();
+    for raw in &args.tracks {
         let candidate = extract_video_id(raw);
         if is_likely_video_id(raw) {
             // Map a video ID to every matching playlistItem ID.
@@ -685,12 +731,14 @@ async fn run_playlists_remove(args: PlaylistsRemoveArgs) -> Result<()> {
                 }
                 for m in matches {
                     transport.remove_playlist_item(&m.id).await?;
-                    removed.push(m.id.clone());
+                    item_ids.push(m.id.clone());
+                    removed.push(candidate.clone());
                 }
             }
         } else {
             // Treat raw as an opaque playlistItem ID.
             transport.remove_playlist_item(raw).await?;
+            item_ids.push(raw.clone());
             removed.push(raw.clone());
         }
     }
@@ -699,10 +747,14 @@ async fn run_playlists_remove(args: PlaylistsRemoveArgs) -> Result<()> {
         return Ok(());
     }
     if args.json {
-        let out = serde_json::json!({ "id": resolved, "removed": removed });
+        let out = serde_json::json!({
+            "id": resolved,
+            "removed": removed,
+            "item_ids": item_ids,
+        });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("Removed {} item(s) from `{resolved}`", removed.len());
+        println!("Removed {} track(s) from `{resolved}`", removed.len());
     }
     Ok(())
 }
@@ -711,7 +763,7 @@ async fn run_playlists_remove(args: PlaylistsRemoveArgs) -> Result<()> {
 // library
 // ---------------------------------------------------------------------------
 
-async fn run_library_list(args: LibraryListArgs) -> Result<()> {
+async fn run_library_tracks_list(args: LibraryListArgs) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(YmusicFunction::LibraryRead)?;
 
@@ -726,41 +778,40 @@ async fn run_library_list(args: LibraryListArgs) -> Result<()> {
         })
         .collect();
 
+    let out: Vec<SavedTrackOut> = filtered
+        .iter()
+        .map(|v| SavedTrackOut {
+            added_at: None,
+            track: render_video(v),
+        })
+        .collect();
+
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&filtered).unwrap());
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
         return Ok(());
     }
-    if filtered.is_empty() {
-        println!("No liked videos (or all filtered by permissions).");
+    if out.is_empty() {
+        println!("No saved tracks (or all filtered by permissions).");
         return Ok(());
     }
-    for v in &filtered {
-        let title = v
-            .snippet
-            .as_ref()
-            .map(|s| s.title.as_str())
-            .unwrap_or("(no title)");
-        let channel = v
-            .snippet
-            .as_ref()
-            .and_then(|s| s.channel_title.as_deref())
-            .unwrap_or("?");
-        println!("  {:24}  {title} [{channel}]", v.id);
+    for s in &out {
+        let channel = s.track.channel.as_deref().unwrap_or("");
+        println!("  {:25}  {} — {channel}", s.track.id, s.track.name);
     }
     Ok(())
 }
 
-async fn run_library_mutate(args: LibraryMutateArgs, like: bool) -> Result<()> {
+async fn run_library_tracks_mutate(args: LibraryMutateArgs, save: bool) -> Result<()> {
     let permissions = perms::load_effective()?;
     permissions.check_time(YmusicFunction::LibraryWrite)?;
-    for v in &args.videos {
+    for v in &args.tracks {
         permissions.check_target(YmusicFunction::LibraryWrite, v)?;
     }
 
-    let ids: Vec<String> = args.videos.iter().map(|v| extract_video_id(v)).collect();
+    let ids: Vec<String> = args.tracks.iter().map(|v| extract_video_id(v)).collect();
     let transport = transport_for(args.dry_run)?;
     for id in &ids {
-        if like {
+        if save {
             transport.like_video(id).await?;
         } else {
             transport.unlike_video(id).await?;
@@ -770,12 +821,12 @@ async fn run_library_mutate(args: LibraryMutateArgs, like: bool) -> Result<()> {
     if args.dry_run {
         return Ok(());
     }
-    let verb = if like { "liked" } else { "unliked" };
+    let verb = if save { "saved" } else { "unsaved" };
     if args.json {
         let out = serde_json::json!({ verb: ids });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("{verb} {} video(s)", ids.len());
+        println!("{verb} {} track(s)", ids.len());
     }
     Ok(())
 }
@@ -949,6 +1000,144 @@ fn parse_function(name: &str) -> Result<YmusicFunction> {
             )));
         }
     })
+}
+
+// ---------------------------------------------------------------------------
+// output normalisation — flatten YouTube's nested API shapes to the
+// Spotify-shaped contract that `zad spotify` emits. Spotify is the
+// master contract; YouTube-only concepts surface as additional
+// fields (`privacy`, `item_id`).
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct PlaylistSummaryOut {
+    id: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    public: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner: Option<UserRefOut>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tracks: Option<TracksRefOut>,
+    /// YouTube has an `unlisted` state Spotify does not — surface it
+    /// as an extra field rather than overloading `public`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    privacy: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct UserRefOut {
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TracksRefOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct PlaylistTrackItemOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    track: Option<TrackOut>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    added_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TrackOut {
+    id: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel: Option<String>,
+    /// YouTube playlist entries have an item_id distinct from the
+    /// video id; Spotify has no such concept. Set on tracks coming
+    /// from a playlist, omitted on free-floating tracks (search,
+    /// library list).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    item_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SavedTrackOut {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    added_at: Option<String>,
+    track: TrackOut,
+}
+
+fn render_playlist(p: &PlaylistSummary) -> PlaylistSummaryOut {
+    let snippet = p.snippet.as_ref();
+    let name = snippet
+        .map(|s| s.title.clone())
+        .unwrap_or_else(|| "(no title)".to_string());
+    let description = snippet.and_then(|s| s.description.clone());
+    let owner = snippet.and_then(|s| {
+        s.channel_id.as_ref().map(|cid| UserRefOut {
+            id: cid.clone(),
+            display_name: s.channel_title.clone(),
+        })
+    });
+    let total = p.content_details.as_ref().and_then(|c| c.item_count);
+    let privacy = p.status.as_ref().and_then(|s| s.privacy_status.clone());
+    let public = privacy.as_deref().and_then(|s| match s {
+        "public" => Some(true),
+        "private" => Some(false),
+        _ => None,
+    });
+    PlaylistSummaryOut {
+        id: p.id.clone(),
+        name,
+        description,
+        public,
+        owner,
+        tracks: Some(TracksRefOut { total }),
+        privacy,
+    }
+}
+
+fn render_playlist_track(item: &PlaylistItem) -> PlaylistTrackItemOut {
+    let snippet = item.snippet.as_ref();
+    let video_id = item
+        .content_details
+        .as_ref()
+        .and_then(|c| c.video_id.clone())
+        .or_else(|| {
+            snippet
+                .and_then(|s| s.resource_id.as_ref())
+                .and_then(|r| r.video_id.clone())
+        })
+        .unwrap_or_else(|| "?".to_string());
+    let name = snippet
+        .and_then(|s| s.title.clone())
+        .unwrap_or_else(|| "(no title)".to_string());
+    let channel = snippet.and_then(|s| s.video_owner_channel_title.clone());
+    PlaylistTrackItemOut {
+        track: Some(TrackOut {
+            id: video_id,
+            name,
+            channel,
+            item_id: Some(item.id.clone()),
+        }),
+        added_at: None,
+    }
+}
+
+fn render_video(v: &VideoSummary) -> TrackOut {
+    let snippet = v.snippet.as_ref();
+    let name = snippet
+        .map(|s| s.title.clone())
+        .unwrap_or_else(|| "(no title)".to_string());
+    let channel = snippet.and_then(|s| s.channel_title.clone());
+    TrackOut {
+        id: v.id.clone(),
+        name,
+        channel,
+        item_id: None,
+    }
 }
 
 // ---------------------------------------------------------------------------

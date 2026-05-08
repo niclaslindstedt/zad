@@ -1,8 +1,12 @@
 # zad ymusic
 
 > Runtime verbs for the YouTube Music service — search the catalogue,
-> manage playlists, and curate the user's liked-videos library, all
-> gated by a per-verb permissions policy.
+> manage playlists, and curate the user's saved-tracks library, all
+> gated by a per-verb permissions policy. The CLI surface and output
+> shape mirror `zad spotify` (which is the master contract); YouTube
+> exposes additional fields only where it has a genuinely distinct
+> concept (an `unlisted` privacy state, a `playlistItem`-vs-video ID
+> distinction).
 
 ## Synopsis
 
@@ -28,18 +32,19 @@ videos), and search the same way Spotify Web API v1 covers Spotify.
 |---|---|
 | `search`                                | Search YouTube (videos / playlists / channels). |
 | `playlists list`                        | List the authenticated user's playlists. |
-| `playlists show <playlist>`             | Show one playlist's metadata and items. |
-| `playlists create <title>`              | Create a new playlist owned by the authenticated user. |
+| `playlists show <playlist>`             | Show one playlist's metadata and tracks. |
+| `playlists create <name>`               | Create a new playlist owned by the authenticated user. |
 | `playlists rename <playlist> <new>`     | Rename an existing playlist. |
 | `playlists delete <playlist>`           | Delete a playlist owned by the user. |
-| `playlists add <playlist> <videos…>`    | Add one or more videos to a playlist. |
-| `playlists remove <playlist> <items…>`  | Remove one or more items (by playlistItem ID *or* video ID) from a playlist. |
-| `library {list,like,unlike}`            | List / like / unlike videos in the user's library. |
+| `playlists add <playlist> <tracks…>`    | Add one or more tracks to a playlist. |
+| `playlists remove <playlist> <tracks…>` | Remove one or more tracks (by video ID *or* playlistItem ID) from a playlist. |
+| `library tracks {list,save,unsave}`     | List / save / unsave tracks in the user's library. |
 | `permissions`                           | Inspect, scaffold, or dry-run the per-project permissions policy. |
 
 Every verb supports `--json` for machine-readable output. Mutating
 verbs (`playlists create/rename/delete/add/remove`,
-`library like/unlike`) also support `--dry-run` for offline previews.
+`library tracks save/unsave`) also support `--dry-run` for offline
+previews.
 
 ## Credentials (OAuth 2.0 Desktop app)
 
@@ -88,16 +93,18 @@ Every verb that names a playlist accepts:
 A `default_playlist` set in the service config is used by
 `playlists show` when `--playlist` is omitted.
 
-Video refs in `playlists add/remove` and `library like/unlike` accept
-either bare 11-character video IDs or full YouTube watch URLs
+Track refs in `playlists add/remove` and `library tracks save/unsave`
+accept either bare 11-character video IDs or full YouTube watch URLs
 (`https://www.youtube.com/watch?v=…`, `https://music.youtube.com/
 watch?v=…`, `https://youtu.be/…`); zad normalises every form before
 hitting the API.
 
-`playlists remove` accepts both **playlistItem IDs** (the ID of an
-entry inside a playlist) and **video IDs** (the canonical YouTube ID
-of the video itself). When a video ID is supplied, zad lists the
-playlist once, finds every matching item, and removes them all.
+`playlists remove` accepts both **video IDs** (the canonical YouTube
+ID of the video itself) and **playlistItem IDs** (the ID of an entry
+inside a playlist — surfaced as `item_id` in this command's JSON
+output and as `item_ids` in `playlists add` / `remove` responses).
+When a video ID is supplied, zad lists the playlist once, finds every
+matching item, and removes them all.
 
 ## Scope enforcement
 
@@ -111,8 +118,8 @@ file path to edit. The mapping is:
 | `search`                                          | `search`           |
 | `playlists list`, `playlists show`                | `playlists.read`   |
 | `playlists create`, `rename`, `delete`, `add`, `remove` | `playlists.write`  |
-| `library list`                                    | `library.read`     |
-| `library like`, `library unlike`                  | `library.write`    |
+| `library tracks list`                             | `library.read`     |
+| `library tracks save`, `library tracks unsave`    | `library.write`    |
 | `permissions`                                     | none (local state only) |
 
 Google-side OAuth scopes are computed from the zad scopes at create
@@ -177,9 +184,9 @@ zad ymusic playlists remove zad-test dQw4w9WgXcQ
 zad ymusic playlists delete zad-test
 
 # Library management
-zad ymusic library list --limit 5
-zad ymusic library like dQw4w9WgXcQ
-zad ymusic library unlike dQw4w9WgXcQ
+zad ymusic library tracks list --limit 5
+zad ymusic library tracks save dQw4w9WgXcQ
+zad ymusic library tracks unsave dQw4w9WgXcQ
 
 # Inspect permissions
 zad ymusic permissions show
