@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0]
+## [0.4.0]
 
-- feat(permissions): pin local permissions file via ZAD_PERMISSIONS_PATH/_ROOT (#53)
+- feat(permissions)!: move signatures to per-machine trust store (#54)
 
