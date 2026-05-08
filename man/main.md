@@ -57,6 +57,8 @@ surface.
 | Value of `--bot-token-env` | Source of a service's secret (e.g. Discord bot token). Never logged or written to the TOML. |
 | `ZAD_HOME_OVERRIDE` | Override `~/` when resolving `~/.zad/`. Tests only. |
 | `ZAD_SECRETS_MEMORY` | When `1`, store secrets in a process-local map instead of the OS keychain. Tests only. |
+| `ZAD_PERMISSIONS_PATH` | Pin the local permissions file to the given path, overriding the cwd-derived `~/.zad/projects/<slug>/services/<svc>/permissions.toml`. Schema must match the service being invoked. Wins over `ZAD_PERMISSIONS_ROOT`. |
+| `ZAD_PERMISSIONS_ROOT` | Pin the local permissions root; resolved as `<root>/<service>/permissions.toml`. Lets one env var cover every service. |
 
 ## Exit codes
 

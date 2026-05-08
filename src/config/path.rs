@@ -88,3 +88,37 @@ pub fn project_service_config_path_for(slug: &str, service: &str) -> Result<Path
 pub fn project_service_config_path(service: &str) -> Result<PathBuf> {
     project_service_config_path_for(&project_slug()?, service)
 }
+
+/// Resolve the local-permissions override declared by environment.
+///
+/// `ZAD_PERMISSIONS_PATH` (exact file) wins over `ZAD_PERMISSIONS_ROOT`
+/// (directory; `<service>/permissions.toml` is appended). The env vars
+/// let the operator pin the local permissions file regardless of the
+/// current working directory's project slug. Both forms accept a
+/// leading `~/` which is expanded against the resolved zad home.
+pub fn permissions_local_override(service: &str) -> Result<Option<PathBuf>> {
+    if let Some(p) = env_path("ZAD_PERMISSIONS_PATH")? {
+        return Ok(Some(p));
+    }
+    if let Some(root) = env_path("ZAD_PERMISSIONS_ROOT")? {
+        return Ok(Some(root.join(service).join("permissions.toml")));
+    }
+    Ok(None)
+}
+
+fn env_path(key: &str) -> Result<Option<PathBuf>> {
+    match std::env::var(key) {
+        Ok(s) if !s.is_empty() => Ok(Some(expand_tilde(&s)?)),
+        _ => Ok(None),
+    }
+}
+
+fn expand_tilde(s: &str) -> Result<PathBuf> {
+    if s == "~" {
+        return home_dir();
+    }
+    if let Some(rest) = s.strip_prefix("~/") {
+        return Ok(home_dir()?.join(rest));
+    }
+    Ok(PathBuf::from(s))
+}

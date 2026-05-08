@@ -84,7 +84,14 @@ pub fn global_path<S: PermissionsService>() -> Result<PathBuf> {
 
 /// Local path helper generic over `S`, resolved against the current
 /// project slug.
+///
+/// Honors `ZAD_PERMISSIONS_PATH` / `ZAD_PERMISSIONS_ROOT` so the
+/// operator can pin a "local" permissions file outside the cwd-derived
+/// project tree.
 pub fn local_path_current<S: PermissionsService>() -> Result<PathBuf> {
+    if let Some(p) = config::path::permissions_local_override(S::NAME)? {
+        return Ok(p);
+    }
     let slug = config::path::project_slug()?;
     local_path_for::<S>(&slug)
 }

@@ -21,6 +21,8 @@ live in the OS keychain under the `zad` service.
 |---|---|
 | `ZAD_HOME_OVERRIDE` | Replaces `~/` when computing `~/.zad/`. Tests only. |
 | `ZAD_SECRETS_MEMORY=1` | Swaps the OS keyring for a process-local in-memory store. Tests only. |
+| `ZAD_PERMISSIONS_PATH` | Pin the local permissions file to the given path. Bypasses the cwd-derived project slug so the same policy applies regardless of which directory `zad` runs from. Schema must match the service being invoked. Wins over `ZAD_PERMISSIONS_ROOT`. |
+| `ZAD_PERMISSIONS_ROOT` | Pin the local permissions root; resolved as `<root>/<service>/permissions.toml`. Lets one env var cover every service. |
 
 ## Discord service
 
