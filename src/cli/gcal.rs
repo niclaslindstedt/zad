@@ -378,8 +378,12 @@ pub async fn run(args: GcalArgs) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 async fn run_calendars_list(args: CalendarsListArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(GcalFunction::ListCalendars)?;
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     let (transport, _cfg, _config_path) = transport_for(false)?;
     let items = transport.list_calendars().await?;
@@ -422,11 +426,15 @@ async fn run_calendars_list(args: CalendarsListArgs) -> Result<()> {
 }
 
 async fn run_calendars_show(args: CalendarsShowArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(GcalFunction::GetCalendar)?;
     let (raw, resolved) = (args.calendar.clone(), args.calendar.clone());
     permissions.check_calendar(GcalFunction::GetCalendar, &raw, &resolved)?;
 
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     let (transport, _cfg, _p) = transport_for(false)?;
     let cal = transport.get_calendar(&resolved).await?;
     if args.json {
@@ -442,7 +450,7 @@ async fn run_calendars_show(args: CalendarsShowArgs) -> Result<()> {
 }
 
 async fn run_events_list(args: EventsListArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(GcalFunction::ListEvents)?;
     let (cfg, _label, _scope, _path) = effective_config()?;
     let (raw, resolved) =
@@ -455,6 +463,10 @@ async fn run_events_list(args: EventsListArgs) -> Result<()> {
         query: args.query,
         max_results: Some(args.max),
     };
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     let (transport, _cfg2, _p) = transport_for(false)?;
     let events = transport.list_events(&resolved, &params).await?;
 
@@ -475,13 +487,17 @@ async fn run_events_list(args: EventsListArgs) -> Result<()> {
 }
 
 async fn run_events_show(args: EventsShowArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(GcalFunction::GetEvent)?;
     let (cfg, _label, _scope, _path) = effective_config()?;
     let (raw, resolved) =
         resolve_calendar(args.calendar.as_deref(), cfg.default_calendar.as_deref())?;
     permissions.check_calendar(GcalFunction::GetEvent, &raw, &resolved)?;
 
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     let (transport, _c, _p) = transport_for(false)?;
     let event = transport.get_event(&resolved, &args.id).await?;
     if args.json {
@@ -552,7 +568,7 @@ fn event_end_string(e: &Event) -> String {
 // ---------------------------------------------------------------------------
 
 async fn run_events_create(args: EventsCreateArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     let func = GcalFunction::CreateEvent;
     permissions.check_time(func)?;
 
@@ -708,6 +724,10 @@ async fn run_events_create(args: EventsCreateArgs) -> Result<()> {
     if args.dry_run {
         return Ok(());
     }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     if args.json {
         println!("{}", serde_json::to_string_pretty(&event).unwrap());
     } else {
@@ -720,7 +740,7 @@ async fn run_events_create(args: EventsCreateArgs) -> Result<()> {
 }
 
 async fn run_events_update(args: EventsUpdateArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     let func = GcalFunction::UpdateEvent;
     permissions.check_time(func)?;
 
@@ -881,6 +901,10 @@ async fn run_events_update(args: EventsUpdateArgs) -> Result<()> {
     if args.dry_run {
         return Ok(());
     }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     if args.json {
         println!("{}", serde_json::to_string_pretty(&event).unwrap());
     } else {
@@ -890,7 +914,7 @@ async fn run_events_update(args: EventsUpdateArgs) -> Result<()> {
 }
 
 async fn run_events_delete(args: EventsDeleteArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     let func = GcalFunction::DeleteEvent;
     permissions.check_time(func)?;
 
@@ -929,6 +953,10 @@ async fn run_events_delete(args: EventsDeleteArgs) -> Result<()> {
         .await?;
 
     if args.dry_run {
+        return Ok(());
+    }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
         return Ok(());
     }
     if args.json {
@@ -1349,7 +1377,7 @@ pub(crate) fn effective_config() -> Result<(GcalServiceCfg, &'static str, Scope<
 pub(crate) fn transport_for(
     dry_run: bool,
 ) -> Result<(Box<dyn GcalTransport>, GcalServiceCfg, PathBuf)> {
-    if dry_run {
+    if dry_run || crate::cli::echo::echo_active() {
         // Best-effort config load for dry-run: if we have one, use it
         // for default_calendar / self_email; otherwise return a
         // synthetic stub so the preview path works uncredentialed.
@@ -1365,8 +1393,12 @@ pub(crate) fn transport_for(
                     PathBuf::new(),
                 )
             });
-        let transport: Box<dyn GcalTransport> =
-            Box::new(DryRunGcalTransport::new(default_dry_run_sink()));
+        let sink = if crate::cli::echo::echo_active() {
+            crate::cli::echo::dry_run_sink_for_echo()
+        } else {
+            default_dry_run_sink()
+        };
+        let transport: Box<dyn GcalTransport> = Box::new(DryRunGcalTransport::new(sink));
         return Ok((transport, cfg.0, cfg.1));
     }
 

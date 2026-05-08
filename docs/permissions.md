@@ -88,6 +88,71 @@ cannot, even with full read/write access to `~/.zad/`.
 | `SignatureKeyMismatch` | Trust-store entry was signed by a previous keychain key | Re-sign every permissions file with the rotated key (`zad <svc> permissions sign`), or restore the previous keychain entry |
 | `TrustStoreTampered` | `~/.zad/signing/trusted.toml` is a symlink, has a broken self-signature, or was signed by an unknown key | Run `zad signing init --force` to rotate and rebuild; you will need to re-sign every permissions file |
 
+## Echo mode for runtime verbs
+
+Runtime verbs (`zad discord send`, `zad slack send`, `zad telegram
+send`, `zad gcal events create`, …) treat the five errors above
+specially: instead of issuing the network call, the CLI **echoes the
+call that would have run** along with the reason, then exits `3`.
+That makes it possible to iterate on an unsigned permissions file
+without round-tripping through real API calls.
+
+Mechanism (no flag, always on):
+
+1. `load_effective` returns one of the signing errors above.
+2. The verb arms echo mode and falls through to the same dry-run
+   transport that powers `--dry-run`. Permission rule checks (content,
+   time, pattern) are skipped — they would be evaluated against an
+   untrustworthy file.
+3. Argument-level structural checks (channel snowflake parse, body
+   length cap, attachment count cap) still run. A failure there is a
+   normal `ZadError` (exit `1`).
+4. The verb's success print site swaps for an echo envelope and
+   `mark_echoed()` is set so `main.rs` returns exit code `3`.
+
+Output:
+
+- Human (`zad discord send --channel 12345 hi`):
+  ```
+  would have run: would send 2 chars to channel 12345
+    reason: permission denied for `load`: not trusted
+  ```
+- JSON (`--json`):
+  ```json
+  {
+    "echoed": {
+      "command": "discord.send",
+      "target": "channel",
+      "target_id": "12345",
+      "body": "hi",
+      ...
+    },
+    "error": {
+      "kind": "not_trusted",
+      "reason": "permission denied for `load`: not trusted ...",
+      "path": "/Users/me/.zad/projects/.../services/discord/permissions.toml"
+    }
+  }
+  ```
+
+`error.kind` is one of `not_trusted`, `signature_invalid`,
+`signature_key_mismatch`, `trust_store_tampered`,
+`signing_key_missing` — stable across releases so callers can switch
+on it.
+
+Diagnostic verbs (`permissions show|check|path|init|stage|commit|...`)
+do **not** participate in echo mode: signing errors there exit `1`
+with the underlying `ZadError`, because those subcommands exist to
+diagnose and fix a broken trust state.
+
+Exit codes summary:
+
+| Code | Meaning |
+|---|---|
+| `0` | The call ran (or `--dry-run` previewed it). |
+| `1` | A non-signing error stopped the call (rule denial, parse, I/O, scope, etc.). |
+| `3` | Permissions could not be trusted; the call was echoed instead of issued. |
+
 ## The staged-commit workflow
 
 Agents can **propose** policy changes, but only the user (who controls

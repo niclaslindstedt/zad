@@ -126,7 +126,7 @@ async fn run_send(args: SendArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(DiscordFunction::Send)?;
     let target = match (&args.channel, &args.dm) {
         (Some(c), None) => {
@@ -187,6 +187,10 @@ async fn run_send(args: SendArgs) -> Result<()> {
     // stdout). Skip the trailing "Sent …" / SendOutput print so we
     // never claim success for an operation we didn't actually perform.
     if args.dry_run {
+        return Ok(());
+    }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
         return Ok(());
     }
 
@@ -252,13 +256,18 @@ async fn run_read(args: ReadArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(DiscordFunction::Read)?;
     let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
     permissions.check_read_channel(&args.channel, id, &directory)?;
     let channel_id = ChannelId(id);
     let http = discord_http_for("messages.read", false)?;
     let msgs = http.history(channel_id.clone(), args.limit).await?;
+
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     if args.json {
         let out = ReadOutput {
@@ -327,7 +336,7 @@ struct ChannelRow {
 async fn run_channels(args: ChannelsArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(DiscordFunction::Channels)?;
     let guild = resolve_guild_arg(
         args.guild.as_deref(),
@@ -342,6 +351,11 @@ async fn run_channels(args: ChannelsArgs) -> Result<()> {
     permissions.check_channels_guild(&guild_input, guild, &directory)?;
     let http = discord_http_for("guilds", false)?;
     let channels = http.list_channels(guild).await?;
+
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     if args.json {
         let rows: Vec<ChannelRow> = channels
@@ -421,7 +435,7 @@ async fn run_join(args: JoinArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(DiscordFunction::Join)?;
     let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
     permissions.check_join_channel(&args.channel, id, &directory)?;
@@ -429,6 +443,10 @@ async fn run_join(args: JoinArgs) -> Result<()> {
     let http = discord_http_for("guilds", args.dry_run)?;
     http.join_channel(channel.clone()).await?;
     if args.dry_run {
+        return Ok(());
+    }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
         return Ok(());
     }
     if args.json {
@@ -447,7 +465,7 @@ async fn run_leave(args: LeaveArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
     let context_guild = default_guild_name(&cfg, &directory);
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(DiscordFunction::Leave)?;
     let id = resolve_channel(&args.channel, &directory, context_guild.as_deref())?;
     permissions.check_leave_channel(&args.channel, id, &directory)?;
@@ -455,6 +473,10 @@ async fn run_leave(args: LeaveArgs) -> Result<()> {
     let http = discord_http_for("guilds", args.dry_run)?;
     http.leave_channel(channel.clone()).await?;
     if args.dry_run {
+        return Ok(());
+    }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
         return Ok(());
     }
     if args.json {
@@ -548,10 +570,13 @@ fn discord_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn Dis
             config_path,
         });
     }
-    if dry_run {
-        return Ok(Box::new(
-            DryRunDiscordTransport::new(default_dry_run_sink()),
-        ));
+    if dry_run || crate::cli::echo::echo_active() {
+        let sink = if crate::cli::echo::echo_active() {
+            crate::cli::echo::dry_run_sink_for_echo()
+        } else {
+            default_dry_run_sink()
+        };
+        return Ok(Box::new(DryRunDiscordTransport::new(sink)));
     }
     let token = load_token(&scope)?;
     Ok(Box::new(DiscordHttp::new(&token, scopes, config_path)))
@@ -677,8 +702,16 @@ struct DiscoverOutput {
 }
 
 async fn run_discover(args: DiscoverArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(DiscordFunction::Discover)?;
+    // Discover walks the directory by issuing many read calls and writes
+    // to disk afterwards. None of that should happen against a file we
+    // can't trust, so bail out early with the echo envelope before the
+    // first network call.
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     let http = discord_http_for("guilds", false)?;
     let mut directory = dir::load().unwrap_or_default();
     let mut warnings: Vec<String> = vec![];
