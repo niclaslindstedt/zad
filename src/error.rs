@@ -75,9 +75,12 @@ pub enum ZadError {
     },
 
     #[error(
-        "permission denied for `load`: signature missing\n  config: {path}\n  tip: run `zad <service> permissions sign` to sign the file, or re-init it"
+        "permission denied for `load`: not trusted\n  config: {path}\n  trust store: {trust_store_path}\n  tip: run `zad <service> permissions sign` to sign and trust this file"
     )]
-    SignatureMissing { path: PathBuf },
+    NotTrusted {
+        path: PathBuf,
+        trust_store_path: PathBuf,
+    },
 
     #[error(
         "permission denied for `load`: signature invalid ({reason})\n  config: {path}\n  tip: the file was modified after signing; re-sign it with `zad <service> permissions sign` or revert the edit"
@@ -85,13 +88,21 @@ pub enum ZadError {
     SignatureInvalid { path: PathBuf, reason: String },
 
     #[error(
-        "permission denied for `load`: signing key mismatch (file signed with {found_fingerprint}, local keychain holds {expected_fingerprint})\n  config: {path}\n  tip: either re-sign the file with the local key or replace the keychain entry with the authoring key"
+        "permission denied for `load`: signing key mismatch (trust entry signed with {found_fingerprint}, local keychain holds {expected_fingerprint})\n  config: {path}\n  tip: either re-sign the file with the local key (`zad <service> permissions sign`) or rotate the keychain entry to the authoring key"
     )]
     SignatureKeyMismatch {
         path: PathBuf,
         expected_fingerprint: String,
         found_fingerprint: String,
     },
+
+    #[error(
+        "trust store at {path} is tampered or unreadable: {reason}\n  tip: run `zad signing init --force` to rotate the keychain key and rebuild the trust store; you will need to re-sign every permissions file"
+    )]
+    TrustStoreTampered { path: PathBuf, reason: String },
+
+    #[error("no signing key in OS keychain — {hint}")]
+    SigningKeyMissing { hint: String },
 
     #[error("invalid input: {0}")]
     Invalid(String),

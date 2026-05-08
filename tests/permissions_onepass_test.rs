@@ -7,6 +7,7 @@
 
 use std::path::PathBuf;
 
+use serial_test::serial;
 use zad::error::ZadError;
 use zad::permissions::SigningKey;
 use zad::permissions::{content::ContentRulesRaw, pattern::PatternListRaw};
@@ -16,9 +17,10 @@ use zad::service::onepass::permissions::{
     OnePassPermissionsRaw,
 };
 
+mod common;
+
 fn test_key() -> SigningKey {
-    zad::secrets::use_memory_backend();
-    SigningKey::generate()
+    common::ensure_signing_env()
 }
 
 fn toml_to_effective(global: Option<&str>, local: Option<&str>) -> EffectivePermissions {
@@ -101,6 +103,7 @@ fn item(title: &str, vault: &str, category: &str, tags: &[&str], fields: &[&str]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn filter_vaults_empty_policy_returns_all() {
     let perms = EffectivePermissions::default();
     let v = vec![vault("Personal"), vault("AgentWork")];
@@ -109,6 +112,7 @@ fn filter_vaults_empty_policy_returns_all() {
 }
 
 #[test]
+#[serial]
 fn filter_vaults_deny_strips_specific_name() {
     let perms = toml_to_effective(
         Some(
@@ -126,6 +130,7 @@ deny = ["Personal"]
 }
 
 #[test]
+#[serial]
 fn filter_vaults_allow_list_keeps_only_matches() {
     let perms = toml_to_effective(
         Some(
@@ -148,6 +153,7 @@ allow = ["AgentWork", "Shared-*"]
 }
 
 #[test]
+#[serial]
 fn filter_vaults_global_intersects_local() {
     // Global: deny Personal. Local: deny Prod. Result: neither.
     let perms = toml_to_effective(
@@ -175,6 +181,7 @@ deny = ["Prod"]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn filter_items_strips_items_in_denied_vault() {
     let perms = toml_to_effective(
         Some(
@@ -195,6 +202,7 @@ deny = ["Personal"]
 }
 
 #[test]
+#[serial]
 fn filter_items_strips_by_tag_deny() {
     let perms = toml_to_effective(
         Some(
@@ -216,6 +224,7 @@ deny = ["admin"]
 }
 
 #[test]
+#[serial]
 fn filter_items_strips_by_category_allow_list() {
     let perms = toml_to_effective(
         Some(
@@ -241,6 +250,7 @@ allow = ["Login", "API Credential"]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn filter_tags_derives_from_visible_items_and_honors_deny() {
     let perms = toml_to_effective(
         Some(
@@ -268,6 +278,7 @@ deny = ["secret"]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn check_get_hidden_item_returns_service_not_permission_denied() {
     let perms = toml_to_effective(
         Some(
@@ -293,6 +304,7 @@ deny = ["Personal"]
 }
 
 #[test]
+#[serial]
 fn check_get_allowed_item_passes() {
     let perms = toml_to_effective(
         Some(
@@ -312,6 +324,7 @@ allow = ["AgentWork"]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn filter_fields_drops_denied_fields_but_keeps_metadata() {
     let perms = toml_to_effective(
         Some(
@@ -335,6 +348,7 @@ deny = ["notesPlain", "recovery_code"]
 }
 
 #[test]
+#[serial]
 fn filter_fields_empty_policy_keeps_everything() {
     let perms = EffectivePermissions::default();
     let it = item("Foo", "V", "Login", &[], &["username", "password"]);
@@ -347,6 +361,7 @@ fn filter_fields_empty_policy_keeps_everything() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn check_read_denies_hidden_field_as_notfound() {
     let perms = toml_to_effective(
         Some(
@@ -372,6 +387,7 @@ deny = ["notesPlain"]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn check_inject_ref_denies_vault_outside_allowlist() {
     let perms = toml_to_effective(
         Some(
@@ -397,6 +413,7 @@ allow = ["AgentWork"]
 }
 
 #[test]
+#[serial]
 fn check_inject_ref_passes_inside_allowlist() {
     let perms = toml_to_effective(
         Some(
@@ -422,6 +439,7 @@ allow = ["AgentWork"]
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn check_create_no_policy_at_all_denies() {
     let perms = EffectivePermissions::default();
     let err = perms
@@ -434,6 +452,7 @@ fn check_create_no_policy_at_all_denies() {
 }
 
 #[test]
+#[serial]
 fn check_create_policy_without_vaults_allow_denies() {
     let perms = toml_to_effective(
         Some(
@@ -459,6 +478,7 @@ fn check_create_policy_without_vaults_allow_denies() {
 }
 
 #[test]
+#[serial]
 fn check_create_passes_when_vault_and_tags_match() {
     let perms = toml_to_effective(
         Some(
@@ -479,6 +499,7 @@ allow = ["Login", "API Credential"]
 }
 
 #[test]
+#[serial]
 fn check_create_denies_vault_outside_allowlist() {
     let perms = toml_to_effective(
         Some(
@@ -499,6 +520,7 @@ allow = ["AgentWork"]
 }
 
 #[test]
+#[serial]
 fn check_create_denies_disallowed_category() {
     let perms = toml_to_effective(
         Some(
@@ -526,6 +548,7 @@ allow = ["Login"]
 }
 
 #[test]
+#[serial]
 fn check_create_denies_without_required_tag() {
     let perms = toml_to_effective(
         Some(
@@ -548,6 +571,7 @@ allow = ["agent-managed"]
 }
 
 #[test]
+#[serial]
 fn check_create_local_tightens_global() {
     // Global allows both vaults; local narrows to Ops only.
     let perms = toml_to_effective(

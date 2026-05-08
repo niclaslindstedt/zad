@@ -8,6 +8,8 @@ use predicates::prelude::*;
 use predicates::str::contains;
 use serial_test::serial;
 
+mod common;
+
 fn bin() -> Command {
     let mut c = Command::cargo_bin("zad").expect("zad binary built");
     c.env("ZAD_SECRETS_MEMORY", "1");
@@ -221,7 +223,6 @@ fn permissions_deny_by_extension() {
     }
     let perms_path = perms_path.expect("local permissions file created by init");
     {
-        use zad::permissions::SigningKey;
         use zad::service::discord::permissions::{self as perms, DiscordPermissionsRaw};
         let raw: DiscordPermissionsRaw = toml::from_str(
             r#"
@@ -230,7 +231,10 @@ extensions = { allow = ["png", "jpg"], deny = [] }
 "#,
         )
         .unwrap();
-        let key = SigningKey::generate();
+        // Bootstrap the test-process keychain so save_file's
+        // trust-store update works; the binary subprocesses pick the
+        // same key up via the mirror at `<home>/.test-secrets.json`.
+        let key = common::install_signing_key(home.path());
         perms::save_file(&perms_path, &raw, &key).unwrap();
     }
 

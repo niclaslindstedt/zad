@@ -27,6 +27,7 @@ pub mod service;
 pub mod signing;
 pub mod staging;
 pub mod time;
+pub mod trust;
 
 pub use attachments::{AttachmentInfo, AttachmentRules};
 pub use content::ContentRules;
@@ -35,3 +36,4 @@ pub use pattern::{Pattern, PatternList};
 pub use service::{HasSignature, PermissionsService};
 pub use signing::{Signature, SigningKey};
 pub use time::{TimeWindow, Weekday};
+pub use trust::{TrustEntry, TrustStore};

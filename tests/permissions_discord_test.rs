@@ -6,24 +6,16 @@
 
 use std::path::PathBuf;
 
+use serial_test::serial;
 use zad::config::directory::Directory;
 use zad::error::ZadError;
-use zad::permissions::SigningKey;
 use zad::permissions::content::ContentRulesRaw;
 use zad::permissions::pattern::PatternListRaw;
 use zad::service::discord::permissions::{
     self as perms, DiscordFunction, DiscordPermissionsRaw, EffectivePermissions, FunctionBlockRaw,
 };
 
-/// A fresh signing key per test. Keeps the real OS keychain out of
-/// the test path — the secrets layer routes through the in-memory
-/// backend, and since we never store `SIGNING_ACCOUNT`, verify's
-/// keychain cross-check is a no-op and the embedded pubkey is
-/// authoritative.
-fn test_key() -> SigningKey {
-    zad::secrets::use_memory_backend();
-    SigningKey::generate()
-}
+mod common;
 
 fn raw_with_send_allow(allow: Vec<&str>) -> DiscordPermissionsRaw {
     DiscordPermissionsRaw {
@@ -39,7 +31,7 @@ fn raw_with_send_allow(allow: Vec<&str>) -> DiscordPermissionsRaw {
 }
 
 fn write_raw(path: &std::path::Path, raw: &DiscordPermissionsRaw) {
-    let key = test_key();
+    let key = common::ensure_signing_env();
     perms::save_file(path, raw, &key).unwrap();
 }
 
@@ -63,6 +55,7 @@ fn empty_directory() -> Directory {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn absent_file_loads_as_none() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -70,12 +63,12 @@ fn absent_file_loads_as_none() {
 }
 
 #[test]
+#[serial]
 fn starter_template_round_trips_through_toml() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
     let raw = perms::starter_template();
-    let key = test_key();
-    perms::save_file(&p, &raw, &key).unwrap();
+    write_raw(&p, &raw);
 
     let body = std::fs::read_to_string(&p).unwrap();
     assert!(body.contains("deny_words"), "body: {body}");
@@ -86,6 +79,7 @@ fn starter_template_round_trips_through_toml() {
 }
 
 #[test]
+#[serial]
 fn invalid_glob_surfaces_the_file_path() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -114,6 +108,7 @@ fn invalid_glob_surfaces_the_file_path() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn send_channel_is_denied_when_not_in_allow_list() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -146,6 +141,7 @@ fn send_channel_is_denied_when_not_in_allow_list() {
 }
 
 #[test]
+#[serial]
 fn deny_pattern_fires_on_reverse_lookup_name_even_when_agent_passed_id() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -178,6 +174,7 @@ fn deny_pattern_fires_on_reverse_lookup_name_even_when_agent_passed_id() {
 }
 
 #[test]
+#[serial]
 fn body_deny_words_block_send() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -206,6 +203,7 @@ fn body_deny_words_block_send() {
 }
 
 #[test]
+#[serial]
 fn per_function_content_rules_narrow_the_defaults() {
     // Top-level content rule allows everything, but `send` adds a
     // deny_word that should still fire on sends.
@@ -236,6 +234,7 @@ fn per_function_content_rules_narrow_the_defaults() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn global_and_local_both_must_admit() {
     let tmp = tempfile::tempdir().unwrap();
     let g = tmp.path().join("global.toml");
@@ -270,6 +269,7 @@ fn global_and_local_both_must_admit() {
 }
 
 #[test]
+#[serial]
 fn missing_file_contributes_no_restrictions() {
     let tmp = tempfile::tempdir().unwrap();
     let l = tmp.path().join("local.toml");
@@ -291,6 +291,7 @@ fn missing_file_contributes_no_restrictions() {
 }
 
 #[test]
+#[serial]
 fn no_files_present_means_no_permission_restrictions() {
     let effective = eff(None, None);
     assert!(!effective.any());
@@ -308,6 +309,7 @@ fn no_files_present_means_no_permission_restrictions() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn path_helpers_point_under_the_expected_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     // Use the env-var override rather than `set_home_override` to avoid

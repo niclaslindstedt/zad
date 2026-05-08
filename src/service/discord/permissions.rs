@@ -62,8 +62,7 @@ use crate::permissions::{
     content::{ContentRules, ContentRulesRaw},
     mutation::{self, Mutation},
     pattern::{PatternList, PatternListRaw},
-    service::HasSignature,
-    signing::{self, Signature, SigningKey},
+    signing::{self, SigningKey},
     time::{TimeWindow, TimeWindowRaw},
 };
 
@@ -92,22 +91,6 @@ pub struct DiscordPermissionsRaw {
     pub discover: FunctionBlockRaw,
     #[serde(default)]
     pub manage: FunctionBlockRaw,
-
-    /// Ed25519 signature over the canonical serialization of every
-    /// other field. Absent only for in-memory construction (tests,
-    /// the `starter_template` pre-sign). Load-time verification
-    /// rejects files without it; writers always populate it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Signature>,
-}
-
-impl HasSignature for DiscordPermissionsRaw {
-    fn signature(&self) -> Option<&Signature> {
-        self.signature.as_ref()
-    }
-    fn set_signature(&mut self, sig: Option<Signature>) {
-        self.signature = sig;
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -563,8 +546,10 @@ pub fn local_path_current() -> Result<PathBuf> {
 /// Load a single file by path. Absent file → `Ok(None)`. Parse/compile
 /// errors surface with the file path embedded in the message.
 ///
-/// Enforces the Ed25519 signature before compiling: a missing or
-/// invalid signature fails closed with a dedicated error variant.
+/// Enforces the trust-store check before compiling: a file with no
+/// matching trust entry fails closed with [`ZadError::NotTrusted`],
+/// and a file whose trust-store signature doesn't match its current
+/// bytes fails closed with [`ZadError::SignatureInvalid`].
 pub fn load_file(path: &Path) -> Result<Option<DiscordPermissions>> {
     if !path.exists() {
         return Ok(None);
@@ -583,9 +568,9 @@ pub fn load_file(path: &Path) -> Result<Option<DiscordPermissions>> {
     Ok(Some(compiled))
 }
 
-/// Read a file's raw policy (signature included) without compiling. Used
-/// by `sign` and staging commands that want to inspect or re-sign the
-/// existing contents.
+/// Read a file's raw policy without compiling. Used by `sign` and
+/// staging commands that want to inspect or re-sign the existing
+/// contents.
 pub fn load_raw_file(path: &Path) -> Result<Option<DiscordPermissionsRaw>> {
     if !path.exists() {
         return Ok(None);
@@ -625,31 +610,21 @@ pub fn load_effective_for(slug: &str) -> Result<EffectivePermissions> {
     Ok(EffectivePermissions { global, local })
 }
 
-/// Write `raw` atomically, signing it first with `key`. Any existing
-/// `signature` field on `raw` is replaced — the serializer always
-/// sees a freshly computed signature matching the payload bytes it
-/// emits.
+/// Write `raw` to `path` and upsert a trust-store entry signed with
+/// `key`. The file body is written unsigned; authorization lives in
+/// the trust store.
 pub fn save_file(path: &Path, raw: &DiscordPermissionsRaw, key: &SigningKey) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| ZadError::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-    let mut to_write = raw.clone();
-    to_write.set_signature(None);
-    let sig = signing::sign_raw(&to_write, key)?;
-    to_write.set_signature(Some(sig));
-    let body = toml::to_string_pretty(&to_write)?;
-    std::fs::write(path, body).map_err(|e| ZadError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })
+    save_unsigned(path, raw)?;
+    let sig = signing::sign_unsigned(raw, key)?;
+    let path_key = crate::permissions::trust::canonical_path_key(path)?;
+    let entry = crate::permissions::TrustEntry::from_signature(path_key, sig);
+    let mut store = crate::permissions::TrustStore::load()?;
+    store.upsert(entry);
+    store.save(key)
 }
 
-/// Write `raw` without signing. Used only by the staging layer to
-/// persist pending (unsigned) proposals; never call this for files
-/// that back a live enforcement path.
+/// Write `raw` without signing. Used by the staging layer to persist
+/// pending proposals and by `save_file` for the live body.
 pub fn save_unsigned(path: &Path, raw: &DiscordPermissionsRaw) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| ZadError::Io {
@@ -657,9 +632,7 @@ pub fn save_unsigned(path: &Path, raw: &DiscordPermissionsRaw) -> Result<()> {
             source: e,
         })?;
     }
-    let mut to_write = raw.clone();
-    to_write.set_signature(None);
-    let body = toml::to_string_pretty(&to_write)?;
+    let body = toml::to_string_pretty(raw)?;
     std::fs::write(path, body).map_err(|e| ZadError::Io {
         path: path.to_path_buf(),
         source: e,
@@ -697,7 +670,6 @@ pub fn starter_template() -> DiscordPermissionsRaw {
             },
             ..FunctionBlockRaw::default()
         },
-        signature: None,
     }
 }
 

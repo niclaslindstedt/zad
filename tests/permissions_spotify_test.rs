@@ -4,6 +4,7 @@
 //! Spotify API — they drive the compiled policy directly, the same
 //! way the CLI verbs do after resolving names.
 
+use serial_test::serial;
 use zad::error::ZadError;
 use zad::permissions::SigningKey;
 use zad::permissions::pattern::PatternListRaw;
@@ -12,9 +13,10 @@ use zad::service::spotify::permissions::{
     SpotifyPermissionsRaw,
 };
 
+mod common;
+
 fn test_key() -> SigningKey {
-    zad::secrets::use_memory_backend();
-    SigningKey::generate()
+    common::ensure_signing_env()
 }
 
 fn raw_with_playlists_write_allow(allow: Vec<&str>) -> SpotifyPermissionsRaw {
@@ -64,6 +66,7 @@ fn eff(
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn absent_file_loads_as_none() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -71,6 +74,7 @@ fn absent_file_loads_as_none() {
 }
 
 #[test]
+#[serial]
 fn starter_template_round_trips_through_toml() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -87,6 +91,7 @@ fn starter_template_round_trips_through_toml() {
 }
 
 #[test]
+#[serial]
 fn invalid_glob_surfaces_the_file_path() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -115,6 +120,7 @@ fn invalid_glob_surfaces_the_file_path() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn write_target_is_denied_when_not_in_allow_list() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -134,6 +140,7 @@ fn write_target_is_denied_when_not_in_allow_list() {
 }
 
 #[test]
+#[serial]
 fn write_target_is_allowed_when_pattern_matches() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -147,6 +154,7 @@ fn write_target_is_allowed_when_pattern_matches() {
 }
 
 #[test]
+#[serial]
 fn deny_always_wins_over_allow() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");
@@ -175,6 +183,7 @@ fn deny_always_wins_over_allow() {
 }
 
 #[test]
+#[serial]
 fn empty_targets_list_contributes_no_constraint() {
     // A function with no `targets` configured should accept anything,
     // so an unconfigured global ∩ unconfigured local is fully permissive.
@@ -188,6 +197,7 @@ fn empty_targets_list_contributes_no_constraint() {
 }
 
 #[test]
+#[serial]
 fn global_and_local_intersect_via_strictest_wins() {
     // Global allows zad-*; local allows scratch-*. A target must
     // pass BOTH layers, so only a target that's in both — there's no
@@ -217,6 +227,7 @@ fn global_and_local_intersect_via_strictest_wins() {
 }
 
 #[test]
+#[serial]
 fn local_deny_can_tighten_global_allow() {
     let tmp_g = tempfile::tempdir().unwrap();
     let tmp_l = tempfile::tempdir().unwrap();
@@ -242,6 +253,7 @@ fn local_deny_can_tighten_global_allow() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial]
 fn content_rules_inherit_from_top_level() {
     let tmp = tempfile::tempdir().unwrap();
     let p = tmp.path().join("permissions.toml");

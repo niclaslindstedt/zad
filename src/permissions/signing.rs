@@ -1,27 +1,30 @@
 //! Ed25519 signatures over permission files.
 //!
-//! Signatures make permission files **tamper-evident**: every write
-//! embeds a signature over the canonical TOML of the policy, and every
-//! read verifies it before compiling the rules. An agent or stray
-//! process that modifies a file on disk without re-signing will be
-//! caught on the next load — and producing a valid signature requires
-//! access to the signing key in the OS keychain.
+//! Signatures make permission files **tamper-evident**, but they no
+//! longer live inside the permissions file. Instead, the per-machine
+//! trust store at `~/.zad/signing/trusted.toml` (see
+//! [`crate::permissions::trust`]) holds one signed entry per file the
+//! operator has chosen to trust. This makes permission files
+//! shippable: another machine can `zad <svc> permissions sign` to add
+//! its own trust entry without re-authoring the file.
 //!
 //! ## Canonicalization
 //!
 //! Signing operates on the `toml::to_string_pretty` serialization of
-//! the raw struct with its `signature` field cleared — **not** the raw
-//! bytes on disk. This insulates us from whitespace-reflow by editors
-//! while still rejecting any semantic change to the policy.
+//! the raw struct — for permission files, that is the file's
+//! permissions content; for the trust store itself, the canonical
+//! bytes of the trust store with `[signature]` cleared. This insulates
+//! us from whitespace-reflow by editors while still rejecting any
+//! semantic change.
 //!
 //! ## Trust model
 //!
-//! The signing public key is embedded in each file. When the local
-//! keychain also holds a signing key, its public key is
-//! **authoritative**: a file whose embedded pubkey disagrees with the
-//! keychain fails closed. Without a keychain entry (agent-only / fresh
-//! checkout) the embedded pubkey is trusted for verification — safe,
-//! because without the private key nobody can forge a new signature.
+//! The OS keychain is the **single root of trust**. Verification
+//! refuses to proceed if the keychain has no signing key (no embedded
+//! pubkey fallback): a missing key is a hard
+//! [`ZadError::SigningKeyMissing`]. The keychain is bootstrapped only
+//! by an explicit `zad signing init`; routine sign/verify paths never
+//! create keys silently.
 //!
 //! ## Crypto choice
 //!
@@ -51,7 +54,9 @@ pub const ALGORITHM: &str = "ed25519";
 /// orphaning stored keys.
 pub const SIGNING_ACCOUNT: &str = "signing:v1";
 
-/// Top-level `[signature]` block embedded in every permissions file.
+/// A signature value carried by the trust store (and by the trust
+/// store's own self-signature). Permission files do not carry these
+/// inline anymore — the trust store does.
 ///
 /// All fields are `String` — `toml` serializes strings reliably across
 /// crate versions and the format is human-readable when the user opens
@@ -86,15 +91,15 @@ impl SigningKey {
         SigningKey { inner }
     }
 
-    /// Base64-encoded public key suitable for the `signature.public_key`
-    /// field or the `~/.zad/signing/public_key.toml` cache.
+    /// Base64-encoded public key suitable for the
+    /// `~/.zad/signing/public_key.toml` cache or a trust store entry.
     pub fn public_key_b64(&self) -> String {
         B64.encode(self.inner.verifying_key().to_bytes())
     }
 
-    /// Short fingerprint for user-facing output (first 8 hex chars of
-    /// SHA-256(public_key_bytes)). Not a security primitive — just a
-    /// readable handle.
+    /// Short fingerprint for user-facing output (first 4 bytes of
+    /// SHA-256(public_key_bytes), hex). Not a security primitive —
+    /// just a readable handle.
     pub fn fingerprint(&self) -> String {
         fingerprint_of_pubkey_bytes(&self.inner.verifying_key().to_bytes())
     }
@@ -149,9 +154,11 @@ pub fn fingerprint_of_pubkey_b64(pubkey_b64: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Load the signing key from the OS keychain, generating a fresh one
-/// if none exists yet. The first call on a given machine is the TOFU
-/// moment — the key's fingerprint is what subsequent signed files
-/// will pin to.
+/// if none exists yet. **Restricted to bootstrap call sites** — every
+/// other code path (sign, verify) uses [`load_from_keychain`] and
+/// fails closed with [`ZadError::SigningKeyMissing`]. The single
+/// caller is the `zad signing init` CLI handler, which is the only
+/// user-initiated way to mint a new key.
 pub fn load_or_create_from_keychain() -> Result<SigningKey> {
     if let Some(key) = load_from_keychain()? {
         return Ok(key);
@@ -162,8 +169,7 @@ pub fn load_or_create_from_keychain() -> Result<SigningKey> {
 }
 
 /// Load the signing key from the OS keychain. Returns `Ok(None)` if
-/// no key has been created yet — callers that only verify (and never
-/// sign) can continue without prompting the keychain further.
+/// no key has been created yet.
 pub fn load_from_keychain() -> Result<Option<SigningKey>> {
     match secrets::load(SIGNING_ACCOUNT)? {
         Some(encoded) => Ok(Some(SigningKey::from_keychain_encoded(&encoded)?)),
@@ -171,13 +177,61 @@ pub fn load_from_keychain() -> Result<Option<SigningKey>> {
     }
 }
 
+/// Load the keychain key, mapping absence to [`ZadError::SigningKeyMissing`]
+/// with the canonical bootstrap hint. Use from sign/verify call sites.
+pub fn require_keychain_key() -> Result<SigningKey> {
+    load_from_keychain()?.ok_or_else(|| ZadError::SigningKeyMissing {
+        hint: "run `zad signing init` to bootstrap the local signing key".into(),
+    })
+}
+
+/// Load the keychain key for verification. In production
+/// (real OS keychain) the key is mandatory — verification refuses to
+/// proceed without one. Under the in-memory test backend the key is
+/// optional: if the keychain is empty, the entry's embedded pubkey is
+/// authoritative for the file-content signature check (the keychain
+/// cross-check is the *production* tamper detection, and it has no
+/// real gate to enforce in a memory-backed test process).
+pub fn require_keychain_key_for_verify() -> Result<Option<SigningKey>> {
+    if let Some(k) = load_from_keychain()? {
+        return Ok(Some(k));
+    }
+    if crate::secrets::is_memory_backend() {
+        return Ok(None);
+    }
+    Err(ZadError::SigningKeyMissing {
+        hint: "run `zad signing init` to bootstrap the local signing key".into(),
+    })
+}
+
+/// Rotate the keychain signing key, replacing any existing entry.
+/// Caller must wipe the trust store afterwards (existing entries
+/// signed by the previous key will fail verification under the new
+/// keychain pubkey). The single caller is `zad signing init --force`.
+pub fn rotate_keychain_key() -> Result<SigningKey> {
+    let fresh = SigningKey::generate();
+    let _ = secrets::delete(SIGNING_ACCOUNT);
+    secrets::store(SIGNING_ACCOUNT, &fresh.to_keychain_encoded())?;
+    Ok(fresh)
+}
+
 // ---------------------------------------------------------------------------
 // canonicalization + sign/verify
 // ---------------------------------------------------------------------------
 
-/// Serialize `raw` to canonical TOML with its signature stripped. The
-/// returned bytes are what gets signed.
-fn canonical_bytes<T>(raw: &T) -> Result<Vec<u8>>
+/// Serialize `raw` to canonical TOML. Used by callers that don't
+/// embed a `[signature]` block (i.e. permission files).
+pub fn canonical_bytes_unsigned<T>(raw: &T) -> Result<Vec<u8>>
+where
+    T: Serialize,
+{
+    let s = toml::to_string_pretty(raw)?;
+    Ok(s.into_bytes())
+}
+
+/// Serialize `raw` to canonical TOML with its signature stripped. Used
+/// for raw structs that embed a self-signature (e.g. the trust store).
+fn canonical_bytes_self_signed<T>(raw: &T) -> Result<Vec<u8>>
 where
     T: Serialize + HasSignature + Clone,
 {
@@ -187,13 +241,13 @@ where
     Ok(s.into_bytes())
 }
 
-/// Sign a raw struct. The returned `Signature` is what callers embed
-/// via `set_signature(Some(sig))` before writing the file to disk.
+/// Sign a raw struct that embeds its own signature (the trust store).
+/// Returns the `Signature` ready to assign back into `raw`.
 pub fn sign_raw<T>(raw: &T, key: &SigningKey) -> Result<Signature>
 where
     T: Serialize + HasSignature + Clone,
 {
-    let bytes = canonical_bytes(raw)?;
+    let bytes = canonical_bytes_self_signed(raw)?;
     let sig = key.sign_bytes(&bytes);
     let now = jiff::Timestamp::now();
     Ok(Signature {
@@ -204,16 +258,69 @@ where
     })
 }
 
-/// Verify a raw struct carries a valid signature, enforcing the
-/// keychain-authoritative trust policy. Returns `Err` with one of
-/// [`ZadError::SignatureMissing`], [`ZadError::SignatureInvalid`], or
-/// [`ZadError::SignatureKeyMismatch`] if verification fails.
-pub fn verify_raw<T>(raw: &T, path: &Path) -> Result<()>
+/// Sign canonical bytes of a permission file's raw struct (no embedded
+/// signature). Use from sign-to-trust-store call sites.
+pub fn sign_unsigned<T>(raw: &T, key: &SigningKey) -> Result<Signature>
+where
+    T: Serialize,
+{
+    let bytes = canonical_bytes_unsigned(raw)?;
+    let sig = key.sign_bytes(&bytes);
+    let now = jiff::Timestamp::now();
+    Ok(Signature {
+        algorithm: ALGORITHM.to_string(),
+        public_key: key.public_key_b64(),
+        signed_at: now.to_string(),
+        value: B64.encode(sig.to_bytes()),
+    })
+}
+
+/// Verify a raw struct's embedded signature against the embedded
+/// pubkey *only* (no keychain cross-check). Used by `TrustStore::load`
+/// when running under the in-memory test backend where there is no
+/// real keychain to gate against.
+pub fn verify_self_signature<T>(raw: &T, path: &Path) -> Result<()>
 where
     T: Serialize + HasSignature + Clone,
 {
-    let sig = raw.signature().ok_or_else(|| ZadError::SignatureMissing {
+    let sig = raw.signature().ok_or_else(|| ZadError::SignatureInvalid {
         path: path.to_path_buf(),
+        reason: "missing [signature] block".into(),
+    })?;
+    if sig.algorithm != ALGORITHM {
+        return Err(ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: format!(
+                "unsupported algorithm `{}` (expected `{ALGORITHM}`)",
+                sig.algorithm
+            ),
+        });
+    }
+    let verifying_key = decode_verifying_key(&sig.public_key, path)?;
+    let payload = canonical_bytes_self_signed(raw)?;
+    let dalek_sig = decode_signature_value(&sig.value, path)?;
+    verifying_key
+        .verify(&payload, &dalek_sig)
+        .map_err(|_| ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: "payload does not match signature (file was modified after signing)".into(),
+        })?;
+    Ok(())
+}
+
+/// Verify a raw struct that carries its own embedded signature against
+/// an explicit key. Returns `Err` with one of [`ZadError::SignatureInvalid`]
+/// or [`ZadError::SignatureKeyMismatch`] on failure.
+///
+/// Used by [`crate::permissions::trust::TrustStore::load`] to verify
+/// the trust store against the keychain key.
+pub fn verify_with_key<T>(raw: &T, path: &Path, expected_key: &SigningKey) -> Result<()>
+where
+    T: Serialize + HasSignature + Clone,
+{
+    let sig = raw.signature().ok_or_else(|| ZadError::SignatureInvalid {
+        path: path.to_path_buf(),
+        reason: "missing [signature] block".into(),
     })?;
 
     if sig.algorithm != ALGORITHM {
@@ -226,44 +333,10 @@ where
         });
     }
 
-    let pubkey_bytes = B64
-        .decode(&sig.public_key)
-        .map_err(|e| ZadError::SignatureInvalid {
-            path: path.to_path_buf(),
-            reason: format!("public_key is not valid base64: {e}"),
-        })?;
-    let pubkey_arr: [u8; 32] =
-        pubkey_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| ZadError::SignatureInvalid {
-                path: path.to_path_buf(),
-                reason: format!("public_key is {} bytes, expected 32", pubkey_bytes.len()),
-            })?;
-    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&pubkey_arr).map_err(|e| {
-        ZadError::SignatureInvalid {
-            path: path.to_path_buf(),
-            reason: format!("public_key is not a valid Ed25519 point: {e}"),
-        }
-    })?;
+    let verifying_key = decode_verifying_key(&sig.public_key, path)?;
 
-    let sig_bytes = B64
-        .decode(&sig.value)
-        .map_err(|e| ZadError::SignatureInvalid {
-            path: path.to_path_buf(),
-            reason: format!("value is not valid base64: {e}"),
-        })?;
-    let sig_arr: [u8; 64] =
-        sig_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| ZadError::SignatureInvalid {
-                path: path.to_path_buf(),
-                reason: format!("signature value is {} bytes, expected 64", sig_bytes.len()),
-            })?;
-    let dalek_sig = ed25519_dalek::Signature::from_bytes(&sig_arr);
-
-    let payload = canonical_bytes(raw)?;
+    let payload = canonical_bytes_self_signed(raw)?;
+    let dalek_sig = decode_signature_value(&sig.value, path)?;
     verifying_key
         .verify(&payload, &dalek_sig)
         .map_err(|_| ZadError::SignatureInvalid {
@@ -271,39 +344,136 @@ where
             reason: "payload does not match signature (file was modified after signing)".into(),
         })?;
 
-    // Keychain-authoritative cross-check: if the local keychain has a
-    // signing key, its public key must match the one embedded in the
-    // file. This is what prevents an attacker from swapping *both* the
-    // body and the embedded pubkey.
-    if let Some(local) = load_from_keychain()? {
-        let local_pub = local.public_key_b64();
-        if local_pub != sig.public_key {
+    let expected_pub = expected_key.public_key_b64();
+    if expected_pub != sig.public_key {
+        return Err(ZadError::SignatureKeyMismatch {
+            path: path.to_path_buf(),
+            expected_fingerprint: fingerprint_of_pubkey_b64(&expected_pub),
+            found_fingerprint: fingerprint_of_pubkey_b64(&sig.public_key),
+        });
+    }
+    Ok(())
+}
+
+/// Verify that `raw` (a permission file's raw struct, *no* embedded
+/// signature) is trusted: there is a trust-store entry for `path`,
+/// the entry's signature matches the canonical bytes of `raw`, and the
+/// entry's pubkey matches the keychain key.
+///
+/// Failure modes:
+///
+/// - [`ZadError::SigningKeyMissing`] — keychain has no signing key.
+///   Bootstrap with `zad signing init`.
+/// - [`ZadError::TrustStoreTampered`] — the trust store exists but
+///   failed self-verification (symlink, bad signature, mismatched
+///   keychain pubkey, …). Recover with `zad signing init --force`.
+/// - [`ZadError::NotTrusted`] — no entry in the trust store for this
+///   path. Recover with `zad <service> permissions sign`.
+/// - [`ZadError::SignatureInvalid`] — the entry exists but its
+///   signature doesn't match the file's bytes (file was modified
+///   without re-signing).
+/// - [`ZadError::SignatureKeyMismatch`] — the entry's pubkey doesn't
+///   match the keychain pubkey (entry written by a previous, now
+///   rotated, keychain key).
+pub fn verify_raw<T>(raw: &T, path: &Path) -> Result<()>
+where
+    T: Serialize,
+{
+    let keychain = require_keychain_key_for_verify()?;
+    let trust = crate::permissions::trust::TrustStore::load()?;
+
+    let entry = trust.lookup(path)?.ok_or_else(|| ZadError::NotTrusted {
+        path: path.to_path_buf(),
+        trust_store_path: crate::permissions::trust::trust_store_path()
+            .unwrap_or_else(|_| PathBuf::from("(unknown)")),
+    })?;
+
+    if entry.algorithm != ALGORITHM {
+        return Err(ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: format!(
+                "unsupported algorithm `{}` (expected `{ALGORITHM}`)",
+                entry.algorithm
+            ),
+        });
+    }
+
+    let verifying_key = decode_verifying_key(&entry.public_key, path)?;
+    let dalek_sig = decode_signature_value(&entry.value, path)?;
+
+    let payload = canonical_bytes_unsigned(raw)?;
+    verifying_key
+        .verify(&payload, &dalek_sig)
+        .map_err(|_| ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason:
+                "payload does not match trust-store signature (file was modified after signing)"
+                    .into(),
+        })?;
+
+    if let Some(keychain) = keychain {
+        let keychain_pub = keychain.public_key_b64();
+        if keychain_pub != entry.public_key {
             return Err(ZadError::SignatureKeyMismatch {
                 path: path.to_path_buf(),
-                expected_fingerprint: fingerprint_of_pubkey_b64(&local_pub),
-                found_fingerprint: fingerprint_of_pubkey_b64(&sig.public_key),
+                expected_fingerprint: fingerprint_of_pubkey_b64(&keychain_pub),
+                found_fingerprint: fingerprint_of_pubkey_b64(&entry.public_key),
             });
         }
     }
-
     Ok(())
+}
+
+fn decode_verifying_key(pubkey_b64: &str, path: &Path) -> Result<ed25519_dalek::VerifyingKey> {
+    let bytes = B64
+        .decode(pubkey_b64)
+        .map_err(|e| ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: format!("public_key is not valid base64: {e}"),
+        })?;
+    let arr: [u8; 32] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: format!("public_key is {} bytes, expected 32", bytes.len()),
+        })?;
+    ed25519_dalek::VerifyingKey::from_bytes(&arr).map_err(|e| ZadError::SignatureInvalid {
+        path: path.to_path_buf(),
+        reason: format!("public_key is not a valid Ed25519 point: {e}"),
+    })
+}
+
+fn decode_signature_value(value_b64: &str, path: &Path) -> Result<ed25519_dalek::Signature> {
+    let bytes = B64
+        .decode(value_b64)
+        .map_err(|e| ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: format!("value is not valid base64: {e}"),
+        })?;
+    let arr: [u8; 64] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| ZadError::SignatureInvalid {
+            path: path.to_path_buf(),
+            reason: format!("signature value is {} bytes, expected 64", bytes.len()),
+        })?;
+    Ok(ed25519_dalek::Signature::from_bytes(&arr))
 }
 
 // ---------------------------------------------------------------------------
 // public-key cache
 // ---------------------------------------------------------------------------
 
-/// Path of the public-key cache that lets agents verify permission
-/// files without touching the keychain. Mirrors the pubkey stored
-/// alongside the private key.
+/// Path of the public-key cache. The cache is a debugging aid only —
+/// `verify_raw` consults the keychain, never the cache.
 pub fn public_key_cache_path() -> Result<PathBuf> {
     Ok(crate::config::path::zad_home()?
         .join("signing")
         .join("public_key.toml"))
 }
 
-/// Write the public-key cache next to the signing key so later reads
-/// on the same machine can cross-check without prompting the keychain.
+/// Write the public-key cache next to the signing key.
 pub fn write_public_key_cache(key: &SigningKey) -> Result<()> {
     let path = public_key_cache_path()?;
     if let Some(parent) = path.parent() {

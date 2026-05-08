@@ -275,5 +275,5 @@ fn commit_without_signing_key_errors_clearly() {
         .args(["discord", "permissions", "commit", "--local"])
         .assert()
         .failure()
-        .stderr(contains("no signing key in keychain"));
+        .stderr(contains("no signing key in OS keychain"));
 }

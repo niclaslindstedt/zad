@@ -6,13 +6,25 @@
 use serial_test::serial;
 use zad::error::ZadError;
 use zad::permissions::mutation::{ListKind, Mutation};
-use zad::permissions::signing::{self, SIGNING_ACCOUNT};
+use zad::permissions::signing::SIGNING_ACCOUNT;
 use zad::permissions::{SigningKey, staging};
 use zad::service::discord::permissions::{DiscordPermissionsRaw, PermissionsService};
+
+mod common;
 
 fn with_memory() {
     zad::secrets::use_memory_backend();
     let _ = zad::secrets::delete(SIGNING_ACCOUNT);
+}
+
+/// Set up the test process's signing context: tempdir-rooted home,
+/// keychain key installed. Returns the key. Replaces ad-hoc
+/// `SigningKey::generate()` calls — those used to work because the
+/// pre-refactor flow stored the signature inside the file; the
+/// trust-store flow needs both the file and `<home>/.zad/signing/`
+/// to be set up correctly.
+fn signed_env() -> SigningKey {
+    common::ensure_signing_env()
 }
 
 fn sample_mutation() -> Mutation {
@@ -94,7 +106,7 @@ fn discard_removes_pending_only() {
     let live = tmp.path().join("permissions.toml");
 
     // Seed live with a signed empty policy first.
-    let key = SigningKey::generate();
+    let key = signed_env();
     zad::service::discord::permissions::save_file(&live, &DiscordPermissionsRaw::default(), &key)
         .unwrap();
     assert!(live.exists());
@@ -115,7 +127,7 @@ fn commit_signs_and_replaces_live() {
     let tmp = tempfile::tempdir().unwrap();
     let live = tmp.path().join("permissions.toml");
 
-    let key = signing::load_or_create_from_keychain().unwrap();
+    let key = signed_env();
     staging::mutate_pending::<PermissionsService>(&live, &sample_mutation()).unwrap();
 
     staging::commit::<PermissionsService>(&live, &key).unwrap();
@@ -127,8 +139,8 @@ fn commit_signs_and_replaces_live() {
 
     let body = std::fs::read_to_string(&live).unwrap();
     assert!(
-        body.contains("[signature]"),
-        "committed file must be signed"
+        !body.contains("[signature]"),
+        "committed file must be unsigned (signature lives in the trust store now)"
     );
     assert!(body.contains("admin-*"), "committed body: {body}");
 
@@ -144,7 +156,7 @@ fn commit_without_pending_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let live = tmp.path().join("permissions.toml");
 
-    let key = signing::load_or_create_from_keychain().unwrap();
+    let key = signed_env();
     let err = staging::commit::<PermissionsService>(&live, &key).unwrap_err();
     assert!(
         matches!(err, ZadError::Invalid(ref msg) if msg.contains("no pending changes")),
@@ -159,7 +171,7 @@ fn sign_in_place_restores_signature_after_hand_edit() {
     let tmp = tempfile::tempdir().unwrap();
     let live = tmp.path().join("permissions.toml");
 
-    let key = signing::load_or_create_from_keychain().unwrap();
+    let key = signed_env();
     zad::service::discord::permissions::save_file(
         &live,
         &zad::service::discord::permissions::starter_template(),
@@ -206,7 +218,7 @@ fn diff_returns_body_when_pending_exists() {
     let tmp = tempfile::tempdir().unwrap();
     let live = tmp.path().join("permissions.toml");
 
-    let key = SigningKey::generate();
+    let key = signed_env();
     zad::service::discord::permissions::save_file(&live, &DiscordPermissionsRaw::default(), &key)
         .unwrap();
 
@@ -221,7 +233,7 @@ fn content_and_time_mutations_round_trip() {
     with_memory();
     let tmp = tempfile::tempdir().unwrap();
     let live = tmp.path().join("permissions.toml");
-    let key = signing::load_or_create_from_keychain().unwrap();
+    let key = signed_env();
 
     staging::mutate_pending::<PermissionsService>(
         &live,

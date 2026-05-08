@@ -29,10 +29,13 @@ pub enum StagingAction {
     Diff(ScopeArgs),
     /// Discard the pending policy without touching the live file.
     Discard(ScopeArgs),
-    /// Sign the pending policy with the keychain-held signing key and
-    /// atomically replace the live file.
+    /// Promote the pending policy to live and upsert a trust-store
+    /// entry signed with the keychain-held signing key.
     Commit(ScopeArgs),
-    /// Re-sign the live file in place. Use after a hand edit.
+    /// Sign the live file with the keychain-held signing key and
+    /// upsert its entry in the per-machine trust store. Use this to
+    /// trust a hand-edited file or a permissions file shipped from
+    /// another machine. Requires `zad signing init` to have run.
     Sign(ScopeArgs),
 
     /// Queue an allow/deny pattern change. Writes to the pending file.
@@ -279,12 +282,7 @@ fn run_discard<S: PermissionsService>(args: ScopeArgs) -> Result<()> {
 
 fn run_commit<S: PermissionsService>(args: ScopeArgs) -> Result<()> {
     let live = scope_path::<S>(args.local)?;
-    let key = signing::load_from_keychain()?.ok_or_else(|| {
-        ZadError::Invalid(format!(
-            "no signing key in keychain; run `zad {} permissions init` to generate one",
-            S::NAME
-        ))
-    })?;
+    let key = signing::require_keychain_key()?;
     staging::commit::<S>(&live, &key)?;
     if args.json {
         println!(
@@ -304,8 +302,7 @@ fn run_commit<S: PermissionsService>(args: ScopeArgs) -> Result<()> {
 
 fn run_sign<S: PermissionsService>(args: ScopeArgs) -> Result<()> {
     let live = scope_path::<S>(args.local)?;
-    let key = signing::load_or_create_from_keychain()?;
-    signing::write_public_key_cache(&key)?;
+    let key = signing::require_keychain_key()?;
     staging::sign_in_place::<S>(&live, &key)?;
     if args.json {
         println!(
@@ -314,7 +311,11 @@ fn run_sign<S: PermissionsService>(args: ScopeArgs) -> Result<()> {
             key.fingerprint()
         );
     } else {
-        println!("Re-signed: {} (key {}).", live.display(), key.fingerprint());
+        println!(
+            "Signed and trusted: {} (key {}).",
+            live.display(),
+            key.fingerprint()
+        );
     }
     Ok(())
 }

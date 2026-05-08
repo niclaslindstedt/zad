@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use serial_test::serial;
 use zad::error::ZadError;
 use zad::permissions::SigningKey;
 use zad::service::gcal::permissions::{
@@ -11,9 +12,10 @@ use zad::service::gcal::permissions::{
     HARD_REMINDER_MINUTES_CAP,
 };
 
+mod common;
+
 fn test_key() -> SigningKey {
-    zad::secrets::use_memory_backend();
-    SigningKey::generate()
+    common::ensure_signing_env()
 }
 
 fn tempfile_with(contents: &str) -> (tempfile::TempDir, PathBuf) {
@@ -46,6 +48,7 @@ fn compile_effective(
 }
 
 #[test]
+#[serial]
 fn empty_file_admits_everything() {
     let (_k, eff) = compile_effective("", None);
     assert!(
@@ -59,6 +62,7 @@ fn empty_file_admits_everything() {
 }
 
 #[test]
+#[serial]
 fn calendar_allow_restricts_to_primary() {
     let global = r#"
 [create_event]
@@ -80,6 +84,7 @@ calendars.allow = ["primary"]
 }
 
 #[test]
+#[serial]
 fn calendar_deny_beats_allow() {
     let global = r#"
 [create_event]
@@ -106,6 +111,7 @@ calendars.deny  = ["*personal*"]
 }
 
 #[test]
+#[serial]
 fn attendee_allow_matches_glob_and_self_email() {
     let global = r#"
 [create_event]
@@ -132,6 +138,7 @@ attendees.allow = ["*@mycompany.com", "@me"]
 }
 
 #[test]
+#[serial]
 fn numeric_caps_intersect_strictly_across_layers() {
     let global = r#"
 [create_event]
@@ -162,6 +169,7 @@ max_attendees   = 10
 }
 
 #[test]
+#[serial]
 fn min_notice_minutes_denies_events_too_soon() {
     let global = r#"
 [create_event]
@@ -179,6 +187,7 @@ min_notice_minutes = 60
 }
 
 #[test]
+#[serial]
 fn send_updates_allowed_restricts_value_set() {
     let global = r#"
 [create_event]
@@ -200,6 +209,7 @@ send_updates_allowed = { allow = ["none", "external"] }
 }
 
 #[test]
+#[serial]
 fn reminder_cap_is_enforced_even_without_config() {
     let (_k, eff) = compile_effective("", None);
     // Well below the cap.
@@ -220,6 +230,7 @@ fn reminder_cap_is_enforced_even_without_config() {
 }
 
 #[test]
+#[serial]
 fn block_shared_calendars_surfaces_source_path() {
     let global = r#"
 [create_event]
@@ -237,6 +248,7 @@ block_shared_calendars = true
 }
 
 #[test]
+#[serial]
 fn delete_event_default_deny_pattern_works() {
     // Matches the starter template's default-deny on delete.
     let global = r#"
@@ -252,6 +264,7 @@ calendars.deny  = ["*"]
 }
 
 #[test]
+#[serial]
 fn starter_template_round_trips_through_toml() {
     let raw = permissions::starter_template();
     let body = toml::to_string_pretty(&raw).unwrap();
@@ -260,6 +273,7 @@ fn starter_template_round_trips_through_toml() {
 }
 
 #[test]
+#[serial]
 fn function_parse_error_names_valid_verbs() {
     let err = GcalFunction::parse("nope").unwrap_err();
     match err {
@@ -272,6 +286,7 @@ fn function_parse_error_names_valid_verbs() {
 }
 
 #[test]
+#[serial]
 fn function_block_raw_default_is_empty() {
     let b = FunctionBlockRaw::default();
     assert!(b.calendars.allow.is_empty() && b.calendars.deny.is_empty());

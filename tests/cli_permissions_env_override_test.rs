@@ -41,13 +41,28 @@ fn enable_discord(home: &std::path::Path, project: &std::path::Path) {
         .success();
 }
 
-fn write_signed_permissions(path: &std::path::Path, body: &str) {
-    use zad::permissions::SigningKey;
+fn write_signed_permissions(home: &std::path::Path, path: &std::path::Path, body: &str) {
+    use zad::permissions::signing::SIGNING_ACCOUNT;
     use zad::service::discord::permissions::{self as perms, DiscordPermissionsRaw};
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // Bootstrap once, reuse across calls within a test. Generating a
+    // fresh key every call would invalidate the trust store's
+    // self-signature on the second write.
+    zad::secrets::use_memory_backend();
+    // SAFETY: tests are #[serial], no concurrent writers.
+    unsafe {
+        std::env::set_var("ZAD_HOME_OVERRIDE", home);
+    }
+    let key = match zad::secrets::load(SIGNING_ACCOUNT).unwrap() {
+        Some(encoded) => zad::permissions::SigningKey::from_keychain_encoded(&encoded).unwrap(),
+        None => {
+            let k = zad::permissions::SigningKey::generate();
+            zad::secrets::store(SIGNING_ACCOUNT, &k.to_keychain_encoded()).unwrap();
+            k
+        }
+    };
     let raw: DiscordPermissionsRaw =
         toml::from_str(body).expect("write_signed_permissions: body must be valid TOML");
-    let key = SigningKey::generate();
     perms::save_file(path, &raw, &key).unwrap();
 }
 
@@ -65,7 +80,11 @@ fn permissions_path_env_var_pins_local_file_across_directories() {
     enable_discord(home.path(), project_b.path());
 
     let pinned = pinned_dir.path().join("my-permissions.toml");
-    write_signed_permissions(&pinned, "[send]\nchannels.deny = [\"*admin*\"]\n");
+    write_signed_permissions(
+        home.path(),
+        &pinned,
+        "[send]\nchannels.deny = [\"*admin*\"]\n",
+    );
 
     // Same env var, different cwds: both should refuse the denied
     // channel because the local layer is pinned to `pinned`.
@@ -122,7 +141,11 @@ fn permissions_root_env_var_appends_service_subpath() {
     // `<root>/discord/permissions.toml` — the convention the env var
     // promises.
     let pinned = root_dir.path().join("discord").join("permissions.toml");
-    write_signed_permissions(&pinned, "[send]\nchannels.deny = [\"*admin*\"]\n");
+    write_signed_permissions(
+        home.path(),
+        &pinned,
+        "[send]\nchannels.deny = [\"*admin*\"]\n",
+    );
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
@@ -154,11 +177,15 @@ fn permissions_path_takes_precedence_over_root() {
 
     // _ROOT location: would *allow* (no rules).
     let root_file = root_dir.path().join("discord").join("permissions.toml");
-    write_signed_permissions(&root_file, "");
+    write_signed_permissions(home.path(), &root_file, "");
 
     // _PATH location: denies. _PATH must win.
     let path_file = path_dir.path().join("strict.toml");
-    write_signed_permissions(&path_file, "[send]\nchannels.deny = [\"*admin*\"]\n");
+    write_signed_permissions(
+        home.path(),
+        &path_file,
+        "[send]\nchannels.deny = [\"*admin*\"]\n",
+    );
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
