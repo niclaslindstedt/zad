@@ -68,6 +68,7 @@ surface.
 | 0 | Success. |
 | 1 | Generic error — token validation failed, keyring write failed, filesystem error, API failure. |
 | 2 | Usage error — conflicting flags, invalid numeric ID, unknown scope, missing subcommand. |
+| 3 | Echo: a runtime verb's permissions file is unsigned or has a bad signature, so the call was *not* issued — the would-be call and the reason are printed instead. See `docs/permissions.md` ("Echo mode for runtime verbs"). |
 
 ## Examples
 

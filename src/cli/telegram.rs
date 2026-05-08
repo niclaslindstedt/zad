@@ -123,7 +123,7 @@ struct SendOutput {
 async fn run_send(args: SendArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(TelegramFunction::Send)?;
 
     let (chat_input, chat_id) = resolve_chat_arg(
@@ -187,6 +187,10 @@ async fn run_send(args: SendArgs) -> Result<()> {
     if args.dry_run {
         return Ok(());
     }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     if args.json {
         let out = SendOutput {
@@ -243,7 +247,7 @@ async fn run_read(args: ReadArgs) -> Result<()> {
     }
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(TelegramFunction::Read)?;
 
     let (chat_input, chat_id) =
@@ -252,6 +256,11 @@ async fn run_read(args: ReadArgs) -> Result<()> {
 
     let http = telegram_http_for("messages.read", false)?;
     let msgs = http.history(chat_id, args.limit).await?;
+
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     if args.json {
         let out = ReadOutput {
@@ -314,8 +323,12 @@ struct ChatRow {
 async fn run_chats(args: ChatsArgs) -> Result<()> {
     let (_cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(TelegramFunction::Chats)?;
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     let http = telegram_http_for("chats", false)?;
     let observed = http.list_chats().await?;
@@ -397,8 +410,12 @@ struct DiscoverOutput {
 
 async fn run_discover(args: DiscoverArgs) -> Result<()> {
     let (_cfg, _scope) = effective_config()?;
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(TelegramFunction::Discover)?;
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     let http = telegram_http_for("chats", false)?;
     let observed = http.list_chats().await?;
@@ -539,10 +556,13 @@ fn telegram_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn Te
             config_path,
         });
     }
-    if dry_run {
-        return Ok(Box::new(DryRunTelegramTransport::new(
-            default_dry_run_sink(),
-        )));
+    if dry_run || crate::cli::echo::echo_active() {
+        let sink = if crate::cli::echo::echo_active() {
+            crate::cli::echo::dry_run_sink_for_echo()
+        } else {
+            default_dry_run_sink()
+        };
+        return Ok(Box::new(DryRunTelegramTransport::new(sink)));
     }
     let token = load_token(&scope)?;
     Ok(Box::new(TelegramHttp::new(&token, scopes, config_path)))

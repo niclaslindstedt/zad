@@ -101,7 +101,7 @@ struct SendOutput {
 async fn run_send(args: SendArgs) -> Result<()> {
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(SlackFunction::Send)?;
 
     let body = resolve_body(args.body.as_deref(), args.stdin)?;
@@ -138,6 +138,10 @@ async fn run_send(args: SendArgs) -> Result<()> {
     };
 
     if args.dry_run {
+        return Ok(());
+    }
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
         return Ok(());
     }
 
@@ -205,12 +209,17 @@ async fn run_read(args: ReadArgs) -> Result<()> {
     }
     let (cfg, _scope) = effective_config()?;
     let directory = dir::load().unwrap_or_default();
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(SlackFunction::Read)?;
     let channel_id = resolve_channel(&args.channel, &cfg, &directory)?;
     permissions.check_read_channel(&channel_id, &directory)?;
     let http = slack_http_for("channels:history", false)?;
     let msgs = http.history(&channel_id, args.limit).await?;
+
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
 
     if args.json {
         let out = ReadOutput {
@@ -267,11 +276,15 @@ struct ChannelRow {
 }
 
 async fn run_channels(args: ChannelsArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(SlackFunction::Channels)?;
     let directory = dir::load().unwrap_or_default();
     let workspace_input = "workspace";
     permissions.check_channels_workspace(workspace_input, &directory)?;
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     let http = slack_http_for("channels:read", false)?;
 
     let mut all_channels = vec![];
@@ -346,8 +359,12 @@ struct DiscoverOutput {
 }
 
 async fn run_discover(args: DiscoverArgs) -> Result<()> {
-    let permissions = perms::load_effective()?;
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
     permissions.check_time(SlackFunction::Discover)?;
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
     let http = slack_http_for("channels:read", false)?;
     let mut directory = dir::load().unwrap_or_default();
     let mut warnings: Vec<String> = vec![];
@@ -1129,8 +1146,13 @@ fn slack_http_for(required: &'static str, dry_run: bool) -> Result<Box<dyn Slack
             config_path,
         });
     }
-    if dry_run {
-        return Ok(Box::new(DryRunSlackTransport::new(default_dry_run_sink())));
+    if dry_run || crate::cli::echo::echo_active() {
+        let sink = if crate::cli::echo::echo_active() {
+            crate::cli::echo::dry_run_sink_for_echo()
+        } else {
+            default_dry_run_sink()
+        };
+        return Ok(Box::new(DryRunSlackTransport::new(sink)));
     }
     let token = load_token(&scope)?;
     Ok(Box::new(SlackHttp::new(&token, scopes, config_path)))

@@ -2,6 +2,7 @@ pub mod commands;
 pub mod debug_agent;
 pub mod discord;
 pub mod docs;
+pub mod echo;
 pub mod gcal;
 pub mod help_agent;
 pub mod lifecycle;

@@ -465,6 +465,24 @@ fn decode_signature_value(value_b64: &str, path: &Path) -> Result<ed25519_dalek:
 // public-key cache
 // ---------------------------------------------------------------------------
 
+/// `true` for the five `ZadError` variants that mean "the permissions
+/// file (or the trust store, or the keychain) can't be trusted right
+/// now": [`ZadError::NotTrusted`], [`ZadError::SignatureInvalid`],
+/// [`ZadError::SignatureKeyMismatch`], [`ZadError::TrustStoreTampered`],
+/// [`ZadError::SigningKeyMissing`]. The CLI's echo-mode short-circuit
+/// (`crate::cli::echo`) flips on for exactly these — content/time/
+/// pattern denials (`PermissionDenied`) keep their hard-fail shape.
+pub fn is_signing_error(err: &ZadError) -> bool {
+    matches!(
+        err,
+        ZadError::NotTrusted { .. }
+            | ZadError::SignatureInvalid { .. }
+            | ZadError::SignatureKeyMismatch { .. }
+            | ZadError::TrustStoreTampered { .. }
+            | ZadError::SigningKeyMissing { .. }
+    )
+}
+
 /// Path of the public-key cache. The cache is a debugging aid only —
 /// `verify_raw` consults the keychain, never the cache.
 pub fn public_key_cache_path() -> Result<PathBuf> {
