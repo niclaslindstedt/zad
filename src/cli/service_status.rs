@@ -18,6 +18,7 @@ use crate::cli::service::StatusArgs;
 use crate::cli::{
     service_discord::DiscordLifecycle, service_gcal::GcalLifecycle,
     service_onepass::OnePassLifecycle, service_telegram::TelegramLifecycle,
+    service_ymusic::YmusicLifecycle,
 };
 use crate::error::Result;
 
@@ -37,13 +38,14 @@ pub async fn run_all(args: StatusArgs) -> Result<()> {
     // alphabetical order of `crate::service::registry::SERVICES`;
     // adding a new service means adding one line here and one match
     // arm in `service::run()`.
-    let (onepass, discord, gcal, telegram) = tokio::join!(
+    let (onepass, discord, gcal, telegram, ymusic) = tokio::join!(
         lifecycle::status_for::<OnePassLifecycle>(),
         lifecycle::status_for::<DiscordLifecycle>(),
         lifecycle::status_for::<GcalLifecycle>(),
         lifecycle::status_for::<TelegramLifecycle>(),
+        lifecycle::status_for::<YmusicLifecycle>(),
     );
-    let services = vec![onepass?, discord?, gcal?, telegram?];
+    let services = vec![onepass?, discord?, gcal?, telegram?, ymusic?];
 
     let ok = services
         .iter()

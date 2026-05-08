@@ -42,6 +42,7 @@ and are **never** written to the TOML.
 | `gcal <VERB>` | Operate the Google Calendar service at runtime (calendars, events, permissions, self). | [`zad man gcal`](gcal.md) |
 | `spotify <VERB>` | Operate the Spotify service at runtime (search, playlists, library, permissions). | [`zad man spotify`](spotify.md) |
 | `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions, self). | [`zad man telegram`](telegram.md) |
+| `ymusic <VERB>` | Operate the YouTube Music service at runtime (search, playlists, library, permissions). | [`zad man ymusic`](ymusic.md) |
 | `signing <ACTION>` | Manage the local Ed25519 signing key and the per-machine trust store at `~/.zad/signing/trusted.toml`. | [`zad man signing`](signing.md) |
 | `commands [NAME]...` | Enumerate every CLI command, flag, and realistic example; also emits a JSON dump consumed by the website extractor. | [`zad man commands`](commands.md) |
 | `docs [TOPIC]` | Print topic documentation (`docs/*.md`) embedded in the binary at build time. | [`zad man docs`](docs.md) |
@@ -100,5 +101,6 @@ claude "Help me automate X $(zad --help-agent)"
 - [`zad man gcal`](gcal.md) — runtime verbs for the Google Calendar service.
 - [`zad man spotify`](spotify.md) — runtime verbs for the Spotify service.
 - [`zad man telegram`](telegram.md) — runtime verbs for the Telegram service.
+- [`zad man ymusic`](ymusic.md) — runtime verbs for the YouTube Music service.
 - [`docs/configuration.md`](../docs/configuration.md) — config file reference.
 - [`docs/architecture.md`](../docs/architecture.md) — module layout.

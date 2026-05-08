@@ -9,9 +9,10 @@ permissions. An agent drives a service by its verbs (`zad <service>
 service <action> <service>`).
 
 Today the shipped services are `1pass` (1Password), `discord`, `gcal`
-(Google Calendar), `spotify`, and `telegram`. This document describes
-the shape every service conforms to, so adding `slack`, `github`, or
-another provider is mechanical rather than speculative.
+(Google Calendar), `slack`, `spotify`, `telegram`, and `ymusic`
+(YouTube Music). This document describes the shape every service
+conforms to, so adding `github`, `matrix`, or another provider is
+mechanical rather than speculative.
 
 `1pass` is the single deliberate deviation from the pattern: its
 read-side permissions act as **filters** rather than as
@@ -289,7 +290,7 @@ helpers you flatten in and how many keychain entries you write.
 | Shape | Example services | Helpers |
 |---|---|---|
 | One long-lived bot token | Discord, Telegram, Slack bot | `#[command(flatten)] BotTokenArgs` + one `secrets::account(NAME, "bot", scope)` entry |
-| OAuth (client_secret + refresh_token) | Google Calendar (gcal), Reddit | Declare your own `--client-id` / `--client-secret` / `--refresh-token` flags; store **three** keychain entries with `kind = "client-id" / "client-secret" / "refresh"` |
+| OAuth (client_secret + refresh_token) | Google Calendar (gcal), YouTube Music (ymusic), Reddit | Declare your own `--client-id` / `--client-secret` / `--refresh-token` flags; store **three** keychain entries with `kind = "client-id" / "client-secret" / "refresh"` |
 | OAuth (PKCE public client — no secret) | Spotify | Same flags minus `--client-secret`; store **two** keychain entries with `kind = "client-id"` and `kind = "refresh"`. Use [`crate::oauth`] with `client_secret: None`. |
 | Keypair / PEM | GitHub App | A `--private-key-file` flag; store the PEM bytes under `kind = "pem"` (plus `app_id`/`installation_id` as non-secret `Cfg` fields) |
 | User + password → access token | Matrix, IRC SASL | A `--username` flag + interactive password prompt; store just the derived access token under `kind = "access"` |

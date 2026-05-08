@@ -14,7 +14,7 @@ use crate::service::registry::SERVICES;
 
 use super::{
     service_discord, service_gcal, service_list, service_onepass, service_slack, service_spotify,
-    service_status, service_telegram,
+    service_status, service_telegram, service_ymusic,
 };
 use service_discord::DiscordLifecycle;
 use service_gcal::GcalLifecycle;
@@ -22,6 +22,7 @@ use service_onepass::OnePassLifecycle;
 use service_slack::SlackLifecycle;
 use service_spotify::SpotifyLifecycle;
 use service_telegram::TelegramLifecycle;
+use service_ymusic::YmusicLifecycle;
 
 #[derive(Debug, Args)]
 pub struct ServiceArgs {
@@ -76,6 +77,9 @@ pub enum CreateService {
     /// Create Telegram credentials (global by default, `--local` for
     /// project-scoped).
     Telegram(service_telegram::CreateArgs),
+    /// Create YouTube Music credentials (global by default, `--local`
+    /// for project-scoped).
+    Ymusic(service_ymusic::CreateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -99,6 +103,8 @@ pub enum EnableService {
     Spotify(EnableArgs),
     /// Enable the Telegram service in the current project.
     Telegram(EnableArgs),
+    /// Enable the YouTube Music service in the current project.
+    Ymusic(EnableArgs),
 }
 
 #[derive(Debug, Args)]
@@ -122,6 +128,8 @@ pub enum DisableService {
     Spotify(DisableArgs),
     /// Disable the Telegram service in the current project.
     Telegram(DisableArgs),
+    /// Disable the YouTube Music service in the current project.
+    Ymusic(DisableArgs),
 }
 
 #[derive(Debug, Args)]
@@ -145,6 +153,8 @@ pub enum ShowService {
     Spotify(ShowArgs),
     /// Show the Telegram service's effective configuration.
     Telegram(ShowArgs),
+    /// Show the YouTube Music service's effective configuration.
+    Ymusic(ShowArgs),
 }
 
 /// Args for `zad service status [--service <NAME>] [--json]`.
@@ -193,6 +203,9 @@ pub enum DeleteService {
     /// Delete Telegram credentials (global by default, `--local` for
     /// project-scoped).
     Telegram(DeleteArgs),
+    /// Delete YouTube Music credentials (global by default, `--local`
+    /// for project-scoped).
+    Ymusic(DeleteArgs),
 }
 
 pub async fn run(args: ServiceArgs) -> Result<()> {
@@ -204,6 +217,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             CreateService::Slack(a) => lifecycle::run_create::<SlackLifecycle>(a).await,
             CreateService::Spotify(a) => lifecycle::run_create::<SpotifyLifecycle>(a).await,
             CreateService::Telegram(a) => lifecycle::run_create::<TelegramLifecycle>(a).await,
+            CreateService::Ymusic(a) => lifecycle::run_create::<YmusicLifecycle>(a).await,
         },
         Action::Enable(a) => match a.service {
             EnableService::OnePass(a) => lifecycle::run_enable::<OnePassLifecycle>(a),
@@ -212,6 +226,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             EnableService::Slack(a) => lifecycle::run_enable::<SlackLifecycle>(a),
             EnableService::Spotify(a) => lifecycle::run_enable::<SpotifyLifecycle>(a),
             EnableService::Telegram(a) => lifecycle::run_enable::<TelegramLifecycle>(a),
+            EnableService::Ymusic(a) => lifecycle::run_enable::<YmusicLifecycle>(a),
         },
         Action::Disable(d) => match d.service {
             DisableService::OnePass(a) => lifecycle::run_disable::<OnePassLifecycle>(a),
@@ -220,6 +235,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             DisableService::Slack(a) => lifecycle::run_disable::<SlackLifecycle>(a),
             DisableService::Spotify(a) => lifecycle::run_disable::<SpotifyLifecycle>(a),
             DisableService::Telegram(a) => lifecycle::run_disable::<TelegramLifecycle>(a),
+            DisableService::Ymusic(a) => lifecycle::run_disable::<YmusicLifecycle>(a),
         },
         Action::List(a) => service_list::run(a),
         Action::Show(s) => match s.service {
@@ -229,6 +245,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             ShowService::Slack(a) => lifecycle::run_show::<SlackLifecycle>(a),
             ShowService::Spotify(a) => lifecycle::run_show::<SpotifyLifecycle>(a),
             ShowService::Telegram(a) => lifecycle::run_show::<TelegramLifecycle>(a),
+            ShowService::Ymusic(a) => lifecycle::run_show::<YmusicLifecycle>(a),
         },
         Action::Status(s) => match s.service.as_deref() {
             None => service_status::run_all(s).await,
@@ -255,6 +272,10 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
                 lifecycle::run_status::<TelegramLifecycle>(lifecycle::StatusArgs { json: s.json })
                     .await
             }
+            Some("ymusic") => {
+                lifecycle::run_status::<YmusicLifecycle>(lifecycle::StatusArgs { json: s.json })
+                    .await
+            }
             // PossibleValuesParser rejects unknown values before we get
             // here, so this arm only fires if a new entry is added to
             // `SERVICES` without a matching match arm.
@@ -269,6 +290,7 @@ pub async fn run(args: ServiceArgs) -> Result<()> {
             DeleteService::Slack(a) => lifecycle::run_delete::<SlackLifecycle>(a),
             DeleteService::Spotify(a) => lifecycle::run_delete::<SpotifyLifecycle>(a),
             DeleteService::Telegram(a) => lifecycle::run_delete::<TelegramLifecycle>(a),
+            DeleteService::Ymusic(a) => lifecycle::run_delete::<YmusicLifecycle>(a),
         },
     }
 }

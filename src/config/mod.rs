@@ -7,7 +7,7 @@ use std::path::Path;
 pub use directory::Directory;
 pub use schema::{
     DiscordServiceCfg, GcalServiceCfg, OnePassServiceCfg, ProjectConfig, ServiceProjectRef,
-    SlackServiceCfg, SpotifyServiceCfg, TelegramServiceCfg,
+    SlackServiceCfg, SpotifyServiceCfg, TelegramServiceCfg, YmusicServiceCfg,
 };
 
 use crate::error::{Result, ZadError};
