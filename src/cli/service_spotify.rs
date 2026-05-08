@@ -22,7 +22,7 @@ use crate::cli::lifecycle::{
 };
 use crate::config::{ProjectConfig, SpotifyServiceCfg};
 use crate::error::{Result, ZadError};
-use crate::oauth::{LoopbackConfig, run_loopback_flow};
+use crate::oauth::{LoopbackConfig, RedirectScheme, run_loopback_flow};
 use crate::secrets::{self, Scope};
 use crate::service::spotify::{AUTH_URL, SpotifyHttp, TOKEN_URL, spotify_scopes_for};
 
@@ -309,7 +309,12 @@ fn resolve_client_id(
     println!("  1. Open the Spotify Developer Dashboard:");
     println!("       {SPOTIFY_DASHBOARD_URL}");
     println!("  2. Click \"Create app\". Name and description are arbitrary.");
-    println!("  3. Under \"Redirect URIs\", add `http://127.0.0.1` and save.");
+    println!("  3. Under \"Redirect URIs\", add `https://127.0.0.1` and save.");
+    println!("     (Spotify dropped HTTP for OAuth redirects — zad terminates TLS on the loopback");
+    println!("     listener with a per-session self-signed cert; your browser will show a");
+    println!(
+        "     \"connection not private\" warning the first time you authorize — click through it.)"
+    );
     println!("  4. Copy the Client ID from the app's Settings page back here.");
     println!("     (Spotify also shows a Client Secret — you do NOT need it for PKCE.)");
     if open_browser {
@@ -340,9 +345,11 @@ async fn resolve_refresh_via_loopback(
     println!();
     println!("No refresh token provided — starting the browser OAuth flow.");
     println!(
-        "Make sure your Spotify app's \"Redirect URIs\" list includes `http://127.0.0.1` \
-         (the loopback listener picks a random port; Spotify accepts any port on 127.0.0.1 \
-         once the host is registered)."
+        "Make sure your Spotify app's \"Redirect URIs\" list includes `https://127.0.0.1` \
+         (Spotify no longer accepts http://; the loopback listener picks a random port and \
+         Spotify accepts any port on 127.0.0.1 once the host is registered). zad terminates \
+         TLS on the loopback with a per-session self-signed cert, so your browser will show a \
+         \"connection not private\" warning — click through it to finish authorization."
     );
     let want = Confirm::with_theme(&theme())
         .with_prompt("Continue with the browser flow?")
@@ -369,6 +376,11 @@ async fn resolve_refresh_via_loopback(
         // grant and we never see a refresh token.
         extra_auth_params: vec![("show_dialog".into(), "true".into())],
         timeout: LOOPBACK_TIMEOUT,
+        // Spotify deprecated `http://` redirect URIs (loopback
+        // included). zad terminates TLS in-process with a self-signed
+        // cert; the browser shows a one-time warning the operator
+        // clicks through.
+        redirect_scheme: RedirectScheme::Https,
     };
     let tokens = run_loopback_flow(&cfg, open_browser).await?;
     tokens.refresh_token.ok_or_else(|| ZadError::Service {

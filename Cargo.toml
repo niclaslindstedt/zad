@@ -43,6 +43,8 @@ rand = "0.8"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 tempfile = "3"
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
 
 [dev-dependencies]
 tempfile = "3"

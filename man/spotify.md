@@ -55,13 +55,19 @@ lifetime of that process.
 1. Open the Spotify Developer Dashboard:
    `https://developer.spotify.com/dashboard`.
 2. Click **Create app**. Name and description are arbitrary.
-3. Under **Redirect URIs**, add `http://127.0.0.1` and save. zad's
-   loopback listener picks a random port, but Spotify accepts any
-   port on `127.0.0.1` once the host is registered.
+3. Under **Redirect URIs**, add `https://127.0.0.1` and save.
+   Spotify no longer accepts `http://` redirect URIs (loopback
+   addresses included); zad's loopback listener picks a random port,
+   but Spotify accepts any port on `127.0.0.1` once the host is
+   registered.
 4. Run `zad service create spotify`. zad opens your browser to
    Spotify's consent screen, accepts the redirect on
-   `http://127.0.0.1:<port>`, exchanges the authorization code for a
+   `https://127.0.0.1:<port>`, exchanges the authorization code for a
    refresh token with PKCE (S256), and stores both keychain entries.
+   The loopback callback is served over TLS using a per-session
+   self-signed certificate that never touches disk — your browser
+   will show a "connection not private" warning the first time
+   through, which you click through to finish authorization.
 
 The Spotify dashboard *also* shows a Client Secret — **you do not
 need it** for the PKCE flow. zad stores only the Client ID + the

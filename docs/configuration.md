@@ -740,13 +740,18 @@ a registered redirect URI:
 
 1. Visit <https://developer.spotify.com/dashboard>.
 2. Click **Create app**. Name and description are arbitrary.
-3. Under **Redirect URIs**, add `http://127.0.0.1` and save. zad's
-   loopback listener picks a random port; Spotify accepts any port on
-   `127.0.0.1` once the host is registered.
+3. Under **Redirect URIs**, add `https://127.0.0.1` and save.
+   Spotify no longer accepts `http://` redirect URIs for OAuth
+   (loopback addresses included). zad's loopback listener picks a
+   random port; Spotify accepts any port on `127.0.0.1` once the host
+   is registered.
 4. Copy the Client ID. `zad service create spotify` prompts for it,
    then opens your browser to authorize, captures the code on
-   `http://127.0.0.1:<port>` (PKCE S256, random 32-byte state), and
-   stores the returned refresh token.
+   `https://127.0.0.1:<port>` (PKCE S256, random 32-byte state), and
+   stores the returned refresh token. The loopback callback is served
+   over TLS using a per-session self-signed cert that never touches
+   disk — your browser shows a "connection not private" warning the
+   first time through, which you click past to finish.
 
 The Spotify dashboard *also* shows a Client Secret — **you do not
 need it**. zad stores only the Client ID + the refresh token. For CI
