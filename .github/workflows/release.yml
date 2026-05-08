@@ -146,9 +146,22 @@ jobs:
         with:
           path: dist
       - name: Flatten artifact tree
+        # Each artifact directory is named after its target triple
+        # (e.g. dist/zad-x86_64-unknown-linux-gnu/zad). Copy the binary
+        # out and rename it to the artifact name so every target ends
+        # up with a unique, arch-tagged asset on the GitHub Release —
+        # required by `scripts/install.sh`, which derives the asset
+        # name from the host's OS + arch.
         run: |
           mkdir -p release
-          find dist -type f -exec cp {} release/ \;
+          for d in dist/*/; do
+            name=$(basename "$d")
+            if [ -f "$d/zad" ]; then
+              cp "$d/zad" "release/$name"
+            elif [ -f "$d/zad.exe" ]; then
+              cp "$d/zad.exe" "release/$name.exe"
+            fi
+          done
           ls -l release
       - name: Generate provenance attestations
         uses: actions/attest-build-provenance@v1
