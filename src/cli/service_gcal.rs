@@ -21,7 +21,7 @@ use crate::cli::lifecycle::{
 };
 use crate::config::{GcalServiceCfg, ProjectConfig};
 use crate::error::{Result, ZadError};
-use crate::oauth::{LoopbackConfig, run_loopback_flow};
+use crate::oauth::{LoopbackConfig, RedirectScheme, run_loopback_flow};
 use crate::secrets::{self, Scope};
 use crate::service::gcal::{AUTH_URL, GcalHttp, TOKEN_URL};
 
@@ -452,6 +452,7 @@ async fn resolve_refresh_via_loopback(
             ("include_granted_scopes".into(), "true".into()),
         ],
         timeout: LOOPBACK_TIMEOUT,
+        redirect_scheme: RedirectScheme::Http,
     };
     let tokens = run_loopback_flow(&cfg, open_browser).await?;
     tokens.refresh_token.ok_or_else(|| ZadError::Service {
