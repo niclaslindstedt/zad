@@ -160,6 +160,14 @@ Runtime verbs are chosen per service.
   ID. The permissions schema gates per-verb targets (playlist names
   / track / album URIs / search queries), content, and time
   windows.
+- **`ymusic`** (YouTube Music): `search`, `playlists list|show|
+  create|rename|delete|add|remove`, `library {list,like,unlike}`,
+  and the usual `permissions` subgroup. Talks to the YouTube Data
+  API v3 (YouTube Music shares the same surface — there is no
+  separate API). Same Google OAuth Desktop-app shape as gcal.
+  Mutating verbs support `--dry-run`. The permissions schema gates
+  per-verb targets (playlist titles / IDs, video IDs, search
+  queries), content, and time windows.
 - **`1pass`** (1Password): `vaults`, `items`, `tags`, `get`, `read`,
   `inject`, `create`, `whoami`, and `permissions`. Wraps the official
   `op` CLI with the token stored in the OS keychain and injected as
@@ -172,12 +180,13 @@ Runtime verbs are chosen per service.
 
 Every command takes `--json` for machine-readable output.
 
-Today the shipped services are `1pass`, `discord`, `gcal`,
-`spotify`, and `telegram`. See [`man/main.md`](man/main.md) for the
-top-level overview and [`man/service.md`](man/service.md),
+Today the shipped services are `1pass`, `discord`, `gcal`, `slack`,
+`spotify`, `telegram`, and `ymusic`. See [`man/main.md`](man/main.md)
+for the top-level overview and [`man/service.md`](man/service.md),
 [`man/1pass.md`](man/1pass.md), [`man/discord.md`](man/discord.md),
-[`man/gcal.md`](man/gcal.md), [`man/spotify.md`](man/spotify.md),
-and [`man/telegram.md`](man/telegram.md) for the full per-command
+[`man/gcal.md`](man/gcal.md), [`man/slack.md`](man/slack.md),
+[`man/spotify.md`](man/spotify.md), [`man/telegram.md`](man/telegram.md),
+and [`man/ymusic.md`](man/ymusic.md) for the full per-command
 reference.
 
 ### Permissions (optional second layer)

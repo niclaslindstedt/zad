@@ -18,10 +18,12 @@ pub mod service_slack;
 pub mod service_spotify;
 pub mod service_status;
 pub mod service_telegram;
+pub mod service_ymusic;
 pub mod signing;
 pub mod slack;
 pub mod spotify;
 pub mod telegram;
+pub mod ymusic;
 
 use clap::{Parser, Subcommand};
 
@@ -72,6 +74,8 @@ pub enum Command {
     Spotify(spotify::SpotifyArgs),
     /// Operate the Telegram service (send, read, chats, discover).
     Telegram(telegram::TelegramArgs),
+    /// Operate the YouTube Music service (search, playlists, library).
+    Ymusic(ymusic::YmusicArgs),
     /// Manage the local signing key and trust store.
     Signing(signing::SigningArgs),
     /// Enumerate CLI commands, flags, and realistic examples.
@@ -104,6 +108,7 @@ pub async fn run() -> Result<()> {
         Some(Command::Slack(args)) => slack::run(args).await,
         Some(Command::Spotify(args)) => spotify::run(args).await,
         Some(Command::Telegram(args)) => telegram::run(args).await,
+        Some(Command::Ymusic(args)) => ymusic::run(args).await,
         Some(Command::Signing(args)) => signing::run(args),
         Some(Command::Commands(args)) => commands::run(args),
         Some(Command::Docs(args)) => docs::run(args),

@@ -791,6 +791,122 @@ Per-verb blocks: `[search]`, `[playlists_read]`, `[playlists_write]`,
 Deny always wins over allow; an empty allow list contributes no
 positive constraint (only the deny list applies).
 
+## YouTube Music service (`ymusic`)
+
+Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/ymusic.md`](../man/ymusic.md)):
+
+- `zad service create ymusic [--local]` — register OAuth credentials
+  (interactive browser flow or `--refresh-token`).
+- `zad service enable ymusic` — enable the service in the current project.
+- `zad service disable ymusic` — disable it again (leaves credentials intact).
+
+Every command accepts `--json` for script-friendly structured output.
+
+YouTube Music has no dedicated public API; the runtime client talks
+to the **YouTube Data API v3**, which covers playlists, library
+(rated videos), and search the same way Spotify Web API v1 covers
+Spotify.
+
+### Credentials file
+
+Stored at **one** of:
+
+- Global: `~/.zad/services/ymusic/config.toml`
+- Local:  `~/.zad/projects/<slug>/services/ymusic/config.toml`
+
+The project-local file wins over the global one for that project. The
+format is flat:
+
+```toml
+scopes           = ["search", "playlists.read", "playlists.write", "library.read"]
+default_playlist = "PLxxxxxxxxxxxxxxxxxxxxxxxxx"   # optional
+self_channel_id  = "UCxxxxxxxxxxxxxxxxxxxxxxxx"     # optional — channel captured at create time
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scopes` | `[string]` | `["search", "playlists.read", "playlists.write", "library.read"]` | Capabilities the service is permitted to use. |
+| `default_playlist` | string? | — | Optional default playlist for verbs that omit `--playlist`. Accepts a YouTube playlist ID (`PL…`) or a directory alias. |
+| `self_channel_id` | string? | — | The authenticated user's YouTube channel ID (`UC…`), captured from `channels?mine=true` during `service create`. |
+
+Like `gcal`, `ymusic` uses **Google OAuth 2.0 Desktop app** and stores
+**three** keychain entries per scope. Access tokens are not
+persisted: each CLI invocation refreshes once and uses the token for
+that process lifetime.
+
+| Keychain account | Contents |
+|---|---|
+| `ymusic-client-id:<scope>` | OAuth client ID. |
+| `ymusic-client-secret:<scope>` | OAuth client secret. |
+| `ymusic-refresh:<scope>` | Refresh token. |
+
+Scopes are **enforced at runtime, before any network call**. The
+supported values are:
+
+| Scope | Gates | Google OAuth scope |
+|---|---|---|
+| `search` | `search` | none beyond OpenID `email` |
+| `playlists.read` | `playlists list`, `playlists show` | `youtube.readonly` |
+| `playlists.write` | `playlists create`, `rename`, `delete`, `add`, `remove` | `youtube` (read+write superset) |
+| `library.read` | `library list` | `youtube.readonly` |
+| `library.write` | `library like`, `library unlike` | `youtube` (read+write superset) |
+
+When both a global and a project-local credentials file exist, the
+local file **replaces** the global one for that project — scopes are
+not merged. Write the full scope set each time.
+
+### Creating the Google OAuth client
+
+`zad service create ymusic` expects a Google Cloud **"Desktop app"**
+OAuth client:
+
+1. Visit <https://console.cloud.google.com/apis/credentials>.
+2. **Create credentials → OAuth client ID**, type **Desktop app**.
+3. Enable the **YouTube Data API v3** under **APIs & Services →
+   Library**.
+4. Run `zad service create ymusic`. zad opens your browser to
+   Google's consent screen, captures the code on
+   `http://127.0.0.1:<port>`, exchanges it for a refresh token, and
+   stores all three keychain entries.
+
+The Google account you authorize must have a **YouTube channel**
+attached (most do automatically; if not, `zad service create ymusic`
+warns at validate time and you can create a channel at
+`https://youtube.com` before retrying).
+
+### Permissions file
+
+Scopes answer "is this family of operations enabled at all?".
+Permissions are a second, finer layer — *which playlists, videos, or
+queries; at what time, with what content* — and live in an optional
+TOML file next to the credentials:
+
+- Global: `~/.zad/services/ymusic/permissions.toml`
+- Local:  `~/.zad/projects/<slug>/services/ymusic/permissions.toml`
+
+Both files apply simultaneously — a call must pass every file that
+exists, and a missing file contributes no restrictions. See
+[`examples/ymusic-permissions/`](../examples/ymusic-permissions/) for
+a worked example and [`man/ymusic.md`](../man/ymusic.md) for the
+per-verb reference. The key schema elements:
+
+| Top-level | Applies to |
+|---|---|
+| `[content]` | `deny_words` / `deny_patterns` / `max_length` against playlist titles, descriptions, and search queries |
+| `[time]` | UTC days + `HH:MM-HH:MM` windows — every verb |
+
+Per-verb blocks: `[search]`, `[playlists_read]`, `[playlists_write]`,
+`[library_read]`, `[library_write]`. Each accepts:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `targets` | `{ allow, deny }` pattern list | Gate the thing being acted on (playlist title/ID, video ID, or query string) |
+| `content` | content rules | Narrow the top-level `[content]` defaults |
+| `time` | time window | Narrow the top-level `[time]` defaults |
+
+Deny always wins over allow; an empty allow list contributes no
+positive constraint (only the deny list applies).
+
 ## 1Password service (`1pass`)
 
 Commands that drive it (documented in [`man/service.md`](../man/service.md) and [`man/1pass.md`](../man/1pass.md)):

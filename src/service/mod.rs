@@ -5,6 +5,7 @@ pub mod registry;
 pub mod slack;
 pub mod spotify;
 pub mod telegram;
+pub mod ymusic;
 
 use std::sync::Arc;
 

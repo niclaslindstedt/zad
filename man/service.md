@@ -43,21 +43,22 @@ Recognised services:
 | `gcal` | Google Calendar (OAuth 2.0) service. See `zad man gcal` for the runtime verbs and OAuth flow. |
 | `spotify` | Spotify (OAuth 2.0 PKCE public client) service. See `zad man spotify` for the runtime verbs and OAuth flow. |
 | `telegram` | Telegram bot-token service. See `zad man telegram` for the runtime verbs. |
+| `ymusic` | YouTube Music (Google OAuth 2.0 Desktop app) service. See `zad man ymusic` for the runtime verbs and OAuth flow. |
 
 Every command supports `--json` to emit machine-readable output
 instead of the human-readable default.
 
 The per-service `create` flags are documented in detail below for
-`discord` and `telegram`. `1pass`, `gcal`, and `spotify` have
-service-specific `create` flags (Service Account token for 1pass;
-OAuth `client_id` / `client_secret` / `refresh_token` for gcal; PKCE
-public client `client_id` + `refresh_token` for spotify) — see
-[`zad man 1pass`](1pass.md), [`zad man gcal`](gcal.md), and
-[`zad man spotify`](spotify.md) for their credential and scope
-tables. All other actions (`enable`, `disable`, `list`, `show`,
-`status`, `delete`) are driven by the same generic lifecycle driver
-and share the flag shapes documented in the discord/telegram
-sections.
+`discord` and `telegram`. `1pass`, `gcal`, `spotify`, and `ymusic`
+have service-specific `create` flags (Service Account token for
+1pass; OAuth `client_id` / `client_secret` / `refresh_token` for
+gcal and ymusic; PKCE public client `client_id` + `refresh_token`
+for spotify) — see [`zad man 1pass`](1pass.md),
+[`zad man gcal`](gcal.md), [`zad man spotify`](spotify.md), and
+[`zad man ymusic`](ymusic.md) for their credential and scope tables.
+All other actions (`enable`, `disable`, `list`, `show`, `status`,
+`delete`) are driven by the same generic lifecycle driver and share
+the flag shapes documented in the discord/telegram sections.
 
 ## `zad service create discord`
 
@@ -342,7 +343,7 @@ spending a second API call.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--service <NAME>` | enum | — | Limit the check to a single service (`discord`, `telegram`). Without this flag every service is pinged. Clap rejects unknown names with exit 2. |
+| `--service <NAME>` | enum | — | Limit the check to a single service (e.g. `discord`, `telegram`, `ymusic`). Without this flag every service is pinged. Clap rejects unknown names with exit 2. |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. Recommended for agents. |
 
 ### Exit codes

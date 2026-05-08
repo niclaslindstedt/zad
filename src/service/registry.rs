@@ -19,4 +19,6 @@
 //! Adding an entry is one line; see
 //! `docs/services.md#adding-a-new-service` for the full checklist.
 
-pub const SERVICES: &[&str] = &["1pass", "discord", "gcal", "slack", "spotify", "telegram"];
+pub const SERVICES: &[&str] = &[
+    "1pass", "discord", "gcal", "slack", "spotify", "telegram", "ymusic",
+];

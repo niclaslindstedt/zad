@@ -32,6 +32,7 @@ pub const PAGES: &[(&str, &str)] = &[
     ("slack", include_str!("../../man/slack.md")),
     ("spotify", include_str!("../../man/spotify.md")),
     ("telegram", include_str!("../../man/telegram.md")),
+    ("ymusic", include_str!("../../man/ymusic.md")),
 ];
 
 pub fn run(args: ManArgs) -> Result<()> {

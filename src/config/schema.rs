@@ -117,6 +117,30 @@ pub struct SpotifyServiceCfg {
     pub self_user_id: Option<String>,
 }
 
+/// Global YouTube Music (ymusic) service config stored at
+/// `~/.zad/services/ymusic/config.toml`. YouTube Music does not expose
+/// a dedicated public API — runtime verbs talk to the YouTube Data
+/// API v3 with Google OAuth, which is also the entry point for the
+/// user's YouTube Music library and playlists. The credential shape
+/// is identical to gcal (`client_id`, `client_secret`,
+/// `refresh_token`, all in the OS keychain); this struct carries only
+/// the non-secret metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct YmusicServiceCfg {
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Optional default playlist for verbs that omit `--playlist`.
+    /// Accepts a YouTube playlist ID (e.g. `PLxxxxxx…`) or a directory
+    /// alias.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_playlist: Option<String>,
+    /// The authenticated user's YouTube channel ID (`UC…`), captured
+    /// at `zad service create ymusic` time from `channels?mine=true`.
+    /// Resolves the literal `@me` in channel/user-target arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_channel_id: Option<String>,
+}
+
 /// Global Telegram service config stored at
 /// `~/.zad/services/telegram/config.toml`. Telegram bots carry their
 /// identity inside the bot token itself (no separate app ID), and
@@ -246,6 +270,19 @@ impl ProjectConfig {
 
     pub fn disable_slack(&mut self) {
         self.service.remove("slack");
+    }
+
+    pub fn ymusic(&self) -> Option<&ServiceProjectRef> {
+        self.service.get("ymusic")
+    }
+
+    pub fn enable_ymusic(&mut self) {
+        self.service
+            .insert("ymusic".to_string(), ServiceProjectRef { enabled: true });
+    }
+
+    pub fn disable_ymusic(&mut self) {
+        self.service.remove("ymusic");
     }
 
     pub fn has_service(&self, name: &str) -> bool {

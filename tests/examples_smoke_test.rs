@@ -20,6 +20,7 @@ use zad::service::discord::permissions::{self as discord_permissions, DiscordPer
 use zad::service::gcal::permissions::{self as gcal_permissions, GcalPermissionsRaw};
 use zad::service::onepass::permissions::{self as onepass_permissions, OnePassPermissionsRaw};
 use zad::service::telegram::permissions::{self as telegram_permissions, TelegramPermissionsRaw};
+use zad::service::ymusic::permissions::{self as ymusic_permissions, YmusicPermissionsRaw};
 
 fn example_path(rel: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -116,5 +117,27 @@ fn gcal_permissions_example_loads() {
     gcal_permissions::save_file(&signed, &raw, &key).unwrap();
 
     let loaded = gcal_permissions::load_file(&signed).unwrap();
+    assert!(loaded.is_some(), "signed example must verify and compile");
+}
+
+#[test]
+#[serial]
+fn ymusic_permissions_example_loads() {
+    let path = example_path("ymusic-permissions/permissions.toml");
+    assert!(
+        path.exists(),
+        "example file missing at {} — did the §13 restructure get reverted?",
+        path.display()
+    );
+    let body = std::fs::read_to_string(&path).unwrap();
+    let raw: YmusicPermissionsRaw = toml::from_str(&body)
+        .expect("example permissions file must parse through the production schema");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let signed = tmp.path().join("permissions.toml");
+    let key = test_key();
+    ymusic_permissions::save_file(&signed, &raw, &key).unwrap();
+
+    let loaded = ymusic_permissions::load_file(&signed).unwrap();
     assert!(loaded.is_some(), "signed example must verify and compile");
 }
