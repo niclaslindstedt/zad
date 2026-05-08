@@ -57,8 +57,10 @@ pub fn render() -> String {
     out.push_str("  --version        Print version and exit.\n");
     out.push('\n');
     out.push_str("Environment variables:\n");
-    out.push_str("  ZAD_HOME_OVERRIDE   Override $HOME when resolving ~/.zad (tests only).\n");
-    out.push_str("  ZAD_SECRETS_MEMORY  `1` = in-memory keychain backend (tests only).\n");
+    out.push_str("  ZAD_HOME_OVERRIDE     Override $HOME when resolving ~/.zad (tests only).\n");
+    out.push_str("  ZAD_SECRETS_MEMORY    `1` = in-memory keychain backend (tests only).\n");
+    out.push_str("  ZAD_PERMISSIONS_PATH  Pin the local permissions file to this exact path (per-service schema).\n");
+    out.push_str("  ZAD_PERMISSIONS_ROOT  Pin the local permissions root; resolved as <root>/<service>/permissions.toml.\n");
     out.push('\n');
 
     // (4) Pointer to `commands`, (5) pointer to `docs` / `man`.

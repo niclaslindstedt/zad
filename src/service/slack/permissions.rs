@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{self, directory::Directory};
+use crate::config::directory::Directory;
 use crate::error::{Result, ZadError};
 use crate::permissions::{
     content::{ContentRules, ContentRulesRaw},
@@ -360,15 +360,15 @@ impl TargetKind {
 // ---------------------------------------------------------------------------
 
 pub fn global_path() -> Result<PathBuf> {
-    Ok(config::path::global_service_dir("slack")?.join("permissions.toml"))
+    crate::permissions::service::global_path::<PermissionsService>()
 }
 
 pub fn local_path_for(slug: &str) -> Result<PathBuf> {
-    Ok(config::path::project_service_dir_for(slug, "slack")?.join("permissions.toml"))
+    crate::permissions::service::local_path_for::<PermissionsService>(slug)
 }
 
 pub fn local_path_current() -> Result<PathBuf> {
-    local_path_for(&config::path::project_slug()?)
+    crate::permissions::service::local_path_current::<PermissionsService>()
 }
 
 pub fn load_file(path: &Path) -> Result<Option<SlackPermissions>> {
@@ -415,8 +415,9 @@ fn wrap_compile_error(err: ZadError, path: &Path) -> ZadError {
 }
 
 pub fn load_effective() -> Result<EffectivePermissions> {
-    let slug = config::path::project_slug()?;
-    load_effective_for(&slug)
+    let global = load_file(&global_path()?)?;
+    let local = load_file(&local_path_current()?)?;
+    Ok(EffectivePermissions { global, local })
 }
 
 pub fn load_effective_for(slug: &str) -> Result<EffectivePermissions> {
