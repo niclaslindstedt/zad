@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.1]
+## [0.6.0]
 
-- fix(spotify)!: switch loopback redirect URI to HTTPS (#56)
+- feat(ymusic): add YouTube Music service (#58)
 
