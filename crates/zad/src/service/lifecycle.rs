@@ -76,7 +76,17 @@ pub trait LifecycleService: Send + Sync + 'static {
 
     /// Confirm the credentials work by pinging the provider. Returns
     /// a short identifier (bot username, GitHub App slug) on success.
-    async fn validate(cfg: &Self::Cfg, secrets: &Self::Secrets) -> Result<String>;
+    ///
+    /// `secrets` is mutable because the validate ping can itself
+    /// cause a credential rotation: Spotify's PKCE flow rotates the
+    /// refresh token on every `/api/token` call. Impls that talk to
+    /// rotating providers wire a [`crate::oauth::RefreshTokenStore`]
+    /// into the underlying client and update `secrets` in place; impls
+    /// that don't simply ignore the mutability and behave as before.
+    /// The driver uses the (possibly-mutated) `secrets` for the
+    /// subsequent `store_secrets` call so the keychain ends up holding
+    /// the latest token instead of the pre-rotation one.
+    async fn validate(cfg: &Self::Cfg, secrets: &mut Self::Secrets) -> Result<String>;
 
     /// Write each piece of secret material to the OS keychain at
     /// `scope`. Returns one `SecretRef` per account written.
@@ -281,7 +291,7 @@ pub struct DeleteOutcome {
 /// uses interactive prompts; library callers construct them directly).
 pub async fn create<T: LifecycleService>(
     cfg: &T::Cfg,
-    secrets: &T::Secrets,
+    secrets: &mut T::Secrets,
     opts: CreateOpts<'_>,
 ) -> Result<CreateOutcome> {
     let existing: Option<T::Cfg> = config::load_flat(&opts.config_path)?;
@@ -291,6 +301,11 @@ pub async fn create<T: LifecycleService>(
         });
     }
 
+    // Validate before persisting so a bad credential never lands in
+    // the keychain. The trait deliberately takes `&mut secrets` so
+    // rotating providers (Spotify) can update the refresh token in
+    // place — `store_secrets` below then writes the rotated value
+    // instead of the pre-rotation one.
     let authenticated_as = if opts.validate {
         Some(T::validate(cfg, secrets).await?)
     } else {
@@ -568,7 +583,7 @@ async fn build_status_block<T: LifecycleService>(
         return block;
     };
 
-    let secrets = match T::load_secrets(scope) {
+    let secrets = match T::load_secrets(scope.clone()) {
         Ok(s) => s,
         Err(e) => {
             block.check = Some(StatusCheck {
@@ -591,12 +606,20 @@ async fn build_status_block<T: LifecycleService>(
             authenticated_as: None,
             error: Some("credentials missing from keychain".into()),
         },
-        Some(s) => match T::validate(cfg, &s).await {
-            Ok(name) => StatusCheck {
-                ok: true,
-                authenticated_as: Some(name),
-                error: None,
-            },
+        Some(mut s) => match T::validate(cfg, &mut s).await {
+            Ok(name) => {
+                // Validate may have rotated credentials in place
+                // (Spotify PKCE). Flush the mutated secrets back to
+                // the keychain so the next call doesn't replay a
+                // stale token. `store_secrets` is idempotent — when
+                // nothing rotated this just rewrites the same values.
+                let _ = T::store_secrets(&s, scope);
+                StatusCheck {
+                    ok: true,
+                    authenticated_as: Some(name),
+                    error: None,
+                }
+            }
             Err(e) => StatusCheck {
                 ok: false,
                 authenticated_as: None,

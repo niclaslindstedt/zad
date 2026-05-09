@@ -99,7 +99,7 @@ impl LifecycleService for OnePassLifecycle {
         cfg.disable_one_pass();
     }
 
-    async fn validate(cfg: &OnePassServiceCfg, creds: &OnePassSecrets) -> Result<String> {
+    async fn validate(cfg: &OnePassServiceCfg, creds: &mut OnePassSecrets) -> Result<String> {
         let client = OnePassClient::new(creds.service_account_token.clone(), cfg.account.clone());
         let me = client.whoami().await?;
         // Prefer the sign-in URL (which names the account domain) when

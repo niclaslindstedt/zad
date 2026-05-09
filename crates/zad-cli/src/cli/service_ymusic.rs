@@ -22,9 +22,11 @@ use crate::cli::lifecycle::{
     CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
     resolve_scopes,
 };
+use std::sync::{Arc, Mutex};
+
 use zad::config::{ProjectConfig, YmusicServiceCfg};
 use zad::error::{Result, ZadError};
-use zad::oauth::{LoopbackConfig, RedirectScheme, run_loopback_flow};
+use zad::oauth::{LoopbackConfig, RedirectScheme, RefreshTokenStore, run_loopback_flow};
 use zad::secrets::{self, Scope};
 use zad::service::ymusic::{AUTH_URL, TOKEN_URL, YmusicHttp, youtube_scopes_for};
 
@@ -145,31 +147,46 @@ impl LifecycleService for YmusicLifecycle {
         cfg.disable_ymusic();
     }
 
-    async fn validate(_cfg: &YmusicServiceCfg, creds: &YmusicSecrets) -> Result<String> {
-        let http = YmusicHttp::unscoped(
+    async fn validate(_cfg: &YmusicServiceCfg, creds: &mut YmusicSecrets) -> Result<String> {
+        // Google's confidential-client flow does not currently rotate
+        // refresh tokens, but the symmetric capture-on-validate is
+        // wired up the same way as Spotify so a future provider
+        // change can't silently revoke a user's session at create
+        // time.
+        let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let store = Arc::new(CaptureRefreshToken(captured.clone()));
+        let http = YmusicHttp::with_store(
             creds.client_id.clone(),
             creds.client_secret.clone(),
             creds.refresh_token.clone(),
+            std::collections::BTreeSet::new(),
+            std::path::PathBuf::new(),
+            Some(store),
         );
         let info = http.userinfo().await?;
         let email = info.email.unwrap_or_else(|| "<unknown>".into());
         // Light sanity probe — confirms the token can read YouTube,
         // not just userinfo. A successful response also surfaces the
         // channel title, which is more useful than the raw email.
-        match http.my_channel().await {
+        let identity = match http.my_channel().await {
             Ok(c) => {
                 let title = c
                     .snippet
                     .as_ref()
                     .and_then(|s| s.title.as_deref())
-                    .unwrap_or(email.as_str());
-                Ok(format!("{title} ({email})"))
+                    .unwrap_or(email.as_str())
+                    .to_string();
+                format!("{title} ({email})")
             }
             // Account exists but has no YouTube channel yet — surface
             // the email and let the operator decide whether to create
             // a channel before running runtime verbs.
-            Err(_) => Ok(format!("{email} (no YouTube channel)")),
+            Err(_) => format!("{email} (no YouTube channel)"),
+        };
+        if let Some(rotated) = captured.lock().unwrap().take() {
+            creds.refresh_token = rotated;
         }
+        Ok(identity)
     }
 
     fn store_secrets(creds: &YmusicSecrets, scope: Scope<'_>) -> Result<Vec<SecretRef>> {
@@ -481,4 +498,17 @@ async fn resolve_refresh_via_loopback(
                   Re-run `zad service create ymusic` to retry."
             .into(),
     })
+}
+
+/// Captures a rotated refresh token into a shared cell. Same shape
+/// as the Spotify lifecycle's helper; if Google ever starts rotating
+/// refresh tokens for confidential clients, this is the path that
+/// keeps zad's keychain in sync at create time.
+struct CaptureRefreshToken(Arc<Mutex<Option<String>>>);
+
+impl RefreshTokenStore for CaptureRefreshToken {
+    fn store(&self, refresh_token: &str) -> Result<()> {
+        *self.0.lock().unwrap() = Some(refresh_token.to_string());
+        Ok(())
+    }
 }

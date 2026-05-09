@@ -141,7 +141,7 @@ impl LifecycleService for GcalLifecycle {
         cfg.disable_gcal();
     }
 
-    async fn validate(_cfg: &GcalServiceCfg, creds: &GcalSecrets) -> Result<String> {
+    async fn validate(_cfg: &GcalServiceCfg, creds: &mut GcalSecrets) -> Result<String> {
         let http = GcalHttp::unscoped(
             creds.client_id.clone(),
             creds.client_secret.clone(),

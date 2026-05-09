@@ -98,7 +98,7 @@ impl LifecycleService for SlackLifecycle {
         cfg.disable_slack();
     }
 
-    async fn validate(cfg: &SlackServiceCfg, creds: &SlackSecrets) -> Result<String> {
+    async fn validate(cfg: &SlackServiceCfg, creds: &mut SlackSecrets) -> Result<String> {
         let info = SlackHttp::unscoped(&creds.bot_token)
             .auth_test()
             .await
