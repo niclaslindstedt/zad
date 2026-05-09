@@ -4,7 +4,7 @@
 //!
 //! The CLI binary lives in the sibling `zad-cli` crate and is a thin
 //! wrapper over this library. Rust callers depend on `zad` directly,
-//! pinning a version in `Cargo.toml` (`zad = "0.7"`), and call the
+//! pinning a version in `Cargo.toml` (`zad = "0.6"`), and call the
 //! per-service facades to get typed inputs and typed responses without
 //! shelling out to the binary.
 //!

@@ -41,6 +41,7 @@ Recognised services:
 | `1pass` | 1Password service-account service. See `zad man 1pass` for the runtime verbs and credential flags. |
 | `discord` | Discord bot-token service. See `zad man discord` for the runtime verbs. |
 | `gcal` | Google Calendar (OAuth 2.0) service. See `zad man gcal` for the runtime verbs and OAuth flow. |
+| `slack` | Slack bot-token service. See `zad man slack` for the runtime verbs. |
 | `spotify` | Spotify (OAuth 2.0 PKCE public client) service. See `zad man spotify` for the runtime verbs and OAuth flow. |
 | `telegram` | Telegram bot-token service. See `zad man telegram` for the runtime verbs. |
 | `ymusic` | YouTube Music (Google OAuth 2.0 Desktop app) service. See `zad man ymusic` for the runtime verbs and OAuth flow. |
@@ -49,16 +50,17 @@ Every command supports `--json` to emit machine-readable output
 instead of the human-readable default.
 
 The per-service `create` flags are documented in detail below for
-`discord` and `telegram`. `1pass`, `gcal`, `spotify`, and `ymusic`
-have service-specific `create` flags (Service Account token for
-1pass; OAuth `client_id` / `client_secret` / `refresh_token` for
+`discord` and `telegram`. `1pass`, `gcal`, `slack`, `spotify`, and
+`ymusic` have service-specific `create` flags (Service Account token
+for 1pass; OAuth `client_id` / `client_secret` / `refresh_token` for
 gcal and ymusic; PKCE public client `client_id` + `refresh_token`
-for spotify) — see [`zad man 1pass`](1pass.md),
-[`zad man gcal`](gcal.md), [`zad man spotify`](spotify.md), and
-[`zad man ymusic`](ymusic.md) for their credential and scope tables.
-All other actions (`enable`, `disable`, `list`, `show`, `status`,
-`delete`) are driven by the same generic lifecycle driver and share
-the flag shapes documented in the discord/telegram sections.
+for spotify; bot token for slack) — see [`zad man 1pass`](1pass.md),
+[`zad man gcal`](gcal.md), [`zad man slack`](slack.md),
+[`zad man spotify`](spotify.md), and [`zad man ymusic`](ymusic.md)
+for their credential and scope tables. All other actions (`enable`,
+`disable`, `list`, `show`, `status`, `delete`) are driven by the same
+generic lifecycle driver and share the flag shapes documented in the
+discord/telegram sections.
 
 ## `zad service create discord`
 
@@ -533,6 +535,9 @@ zad service status --json | jq '.ok'
 - [`zad man 1pass`](1pass.md) — runtime verbs and credentials for the 1Password service.
 - [`zad man discord`](discord.md) — runtime verbs for the Discord service.
 - [`zad man gcal`](gcal.md) — runtime verbs and OAuth for the Google Calendar service.
+- [`zad man slack`](slack.md) — runtime verbs for the Slack service.
+- [`zad man spotify`](spotify.md) — runtime verbs and OAuth for the Spotify service.
 - [`zad man telegram`](telegram.md) — runtime verbs for the Telegram service.
+- [`zad man ymusic`](ymusic.md) — runtime verbs and OAuth for the YouTube Music service.
 - [`zad man main`](main.md) — top-level CLI overview.
 - [`docs/configuration.md`](../docs/configuration.md) — config file reference.

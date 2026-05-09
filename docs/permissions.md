@@ -179,15 +179,20 @@ the signing key.
 schema. Example function names per service:
 
 - `discord`: `send`, `read`, `channels`, `join`, `leave`, `discover`, `manage`
+- `slack`: `send`, `read`, `channels`, `discover`
 - `telegram`: `send`, `read`, `chats`, `discover`
 - `gcal`: `list_calendars`, `get_calendar`, `list_events`, `get_event`, `create_event`, `update_event`, `delete_event`, `invite`, `remind`
+- `spotify`: `search`, `playlists_read`, `playlists_write`, `library_read`, `library_write`
+- `ymusic`: `search`, `playlists_read`, `playlists_write`, `library_read`, `library_write`
 - `1pass`: `vaults`, `items`, `tags`, `get`, `read`, `inject`, `create`
 
 Example targets per service:
 
 - `discord`: `channel`, `user`, `guild`
+- `slack`: `channel`, `user`, `workspace`
 - `telegram`: `chat`
 - `gcal`: `calendar`, `attendee`
+- `spotify`, `ymusic`: `playlist`, `track`, `album`, `query`
 - `1pass`: `vault`, `item`, `tag`, `category`, `field` (plus `title` inside `[create]`)
 
 ### Worked example

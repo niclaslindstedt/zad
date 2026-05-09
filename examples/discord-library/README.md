@@ -2,21 +2,21 @@
 
 A minimal Rust crate that depends on `zad` and sends a Discord message
 through the typed library API instead of shelling out to the `zad`
-binary. Demonstrates the post-0.7 split: `zad-cli` is the binary
+binary. Demonstrates the post-0.6 split: `zad-cli` is the binary
 package; `zad` is the library you embed.
 
 ## Layout
 
 ```
 discord-library/
-├── Cargo.toml      # zad = "0.7" pinned dependency
+├── Cargo.toml      # zad = "0.6" pinned dependency
 └── src/main.rs     # Discord::from_default_config() + SendRequest
 ```
 
 ## What this shows
 
 1. **Pinned dependency.** A downstream project writes
-   `zad = "0.7"` in its `Cargo.toml` and gets the typed API. The
+   `zad = "0.6"` in its `Cargo.toml` and gets the typed API. The
    binary is not required at runtime; the program links the library
    directly.
 2. **Typed inputs.** `SendRequest::new(target, body, attachments)`

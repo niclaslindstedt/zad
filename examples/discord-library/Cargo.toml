@@ -11,6 +11,6 @@ publish = false
 
 [dependencies]
 # When this example lives inside the workspace, the path dep wins.
-# A downstream Rust crate would write `zad = "0.7"` here instead.
-zad = { path = "../../crates/zad", version = "0.7" }
+# A downstream Rust crate would write `zad = "0.6"` here instead.
+zad = { path = "../../crates/zad", version = "0.6" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

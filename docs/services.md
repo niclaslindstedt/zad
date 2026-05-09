@@ -33,9 +33,10 @@ A service is four things at once:
    the secret: the application ID, the declared scopes, any
    non-secret defaults (e.g. a default guild). The secret itself
    lives in the OS keychain, never in the TOML.
-3. **A Rust module** under `src/service/<name>/` that implements
-   the `Service` trait (`src/service/mod.rs`) and translates between
-   zad's domain types and the provider's SDK.
+3. **A Rust module** under `crates/zad/src/service/<name>/` that
+   implements the `Service` trait
+   (`crates/zad/src/service/mod.rs`) and translates between zad's
+   domain types and the provider's SDK.
 4. **A CLI surface** — a pair of command groups (`zad service …` for
    lifecycle, `zad <name> …` for runtime verbs) and a manpage at
    `man/<name>.md`.
@@ -83,8 +84,9 @@ pub trait Service: Send + Sync {
 ```
 
 Shared domain types — `ChannelId`, `MessageId`, `UserId`, `Target`,
-`Message`, `Event`, `ManageCmd` — live in `src/service/mod.rs` so
-services never leak their SDK's types across the trait boundary. A
+`Message`, `Event`, `ManageCmd` — live in
+`crates/zad/src/service/mod.rs` so services never leak their SDK's
+types across the trait boundary. A
 provider concept that has no zad equivalent (Discord threads, Slack
 workspaces, GitHub repos) is exposed through service-specific methods
 on the concrete client (e.g. `DiscordHttp::join_channel`), not the
@@ -144,7 +146,7 @@ restrictions. This makes it safe to ship a strict global baseline: a
 project can only add further restrictions, never loosen the rule.
 
 Every service builds its schema on top of the same three primitives
-in `src/permissions/`:
+in `crates/zad/src/permissions/`:
 
 | Primitive | What it does | Typical keys |
 |---|---|---|
@@ -182,8 +184,8 @@ The interception layer is trait-based and reusable across services:
 
 | Primitive | Lives in | Purpose |
 |---|---|---|
-| `DryRunOp`, `DryRunSink`, `StderrTracingSink` | `src/service/mod.rs` | Cross-service record + default sink (a summary via `tracing::info!` plus the JSON payload on stdout). Every service wrapper emits to the same sink type. |
-| `<Name>Transport` | `src/service/<name>/transport.rs` | Service-specific trait over the runtime verbs the CLI layer calls. One method per verb, typed in zad's domain types (no SDK leakage). |
+| `DryRunOp`, `DryRunSink`, `StderrTracingSink` | `crates/zad/src/service/mod.rs` | Cross-service record + default sink (a summary via `tracing::info!` plus the JSON payload on stdout). Every service wrapper emits to the same sink type. |
+| `<Name>Transport` | `crates/zad/src/service/<name>/transport.rs` | Service-specific trait over the runtime verbs the CLI layer calls. One method per verb, typed in zad's domain types (no SDK leakage). |
 | Live impl for the HTTP client | same file | Blanket `impl <Name>Transport for <Name>Http` that delegates to the inherent methods — the live path is unchanged, the trait is a thin façade. |
 | `DryRun<Name>Transport` | same file | Preview impl. Mutating verbs emit a `DryRunOp` and return a stub (`MessageId(0)` for sends, `Ok(())` for joins/leaves/channel creates). Read verbs return empty vectors — they're not dry-run-eligible by convention. |
 
@@ -311,8 +313,9 @@ If your provider doesn't fit, pick the nearest shape and extend — the
 trait doesn't care as long as `store_secrets` / `delete_secrets` /
 `inspect_secrets` all agree on the list of accounts they touch.
 
-The OAuth loopback flow lives at `src/oauth/` (top-level, not under
-`src/service/`) and is shared by every OAuth-based service.
+The OAuth loopback flow lives at `crates/zad/src/oauth/` (top-level,
+not under `crates/zad/src/service/`) and is shared by every
+OAuth-based service.
 Provider-specific knobs (endpoints, public-client vs. confidential
 client, extra query params like Google's `prompt=consent` or
 Spotify's `show_dialog=true`) are threaded in via `LoopbackConfig`.
@@ -395,7 +398,7 @@ a lifecycle-only service is a valid interim state.
 ### Typed library facade — the canonical recipe
 
 Every service must expose a typed Rust API so a downstream crate that
-writes `zad = "0.7"` in its `Cargo.toml` can call zad's functionality
+writes `zad = "0.6"` in its `Cargo.toml` can call zad's functionality
 without shelling out to the binary. The facade in
 `crates/zad/src/service/<name>/facade.rs` is the contract.
 
@@ -459,9 +462,10 @@ PKCE (`client_id` + `refresh_token`, no secret), OnePass for the
 
 ### 3. Paste-ready `LifecycleService` skeleton
 
-Drop this into `src/cli/service_<name>.rs` and edit every line marked
-`EDIT:`. Discord uses exactly this shape (see `src/cli/service_discord.rs`
-for the canonical reference).
+Drop this into `crates/zad-cli/src/cli/service_<name>.rs` and edit
+every line marked `EDIT:`. Discord uses exactly this shape (see
+`crates/zad-cli/src/cli/service_discord.rs` for the canonical
+reference).
 
 ```rust
 use async_trait::async_trait;
@@ -471,9 +475,9 @@ use crate::cli::lifecycle::{
     BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg,
     SecretRef, resolve_bot_token, resolve_scopes,
 };
-use crate::config::{ProjectConfig, TelegramServiceCfg};  // EDIT: your Cfg
-use crate::error::{Result, ZadError};
-use crate::secrets::{self, Scope};
+use zad::config::{ProjectConfig, TelegramServiceCfg};   // EDIT: your Cfg
+use zad::error::{Result, ZadError};
+use zad::secrets::{self, Scope};
 
 const DEFAULT_SCOPES: &[&str] = &["messages.read", "messages.send"];    // EDIT
 const ALL_SCOPES: &[&str] = &["messages.read", "messages.send", "chats.manage"]; // EDIT

@@ -117,7 +117,7 @@ file path to edit. The mapping is:
 
 Google-side OAuth scopes are computed from the zad scopes at create
 time, so the consent screen shows the least possible surface. See
-`youtube_scopes_for` in `src/service/ymusic/mod.rs` for the mapping.
+`youtube_scopes_for` in `crates/zad/src/service/ymusic/mod.rs` for the mapping.
 
 ## Permissions (second layer)
 

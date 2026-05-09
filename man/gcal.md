@@ -101,7 +101,7 @@ file path to edit. The mapping is:
 
 Google-side OAuth scopes are computed from the zad scopes at create
 time, so the consent screen shows the least possible surface. See
-`google_scopes_for` in `src/cli/service_gcal.rs` for the mapping.
+`google_scopes_for` in `crates/zad-cli/src/cli/service_gcal.rs` for the mapping.
 
 ## Permissions (second layer)
 
