@@ -1,11 +1,12 @@
 // Extract project metadata from source so the website never goes stale
 // (OSS_SPEC §11.2). Inputs are the repo's sources of truth:
 //
-//   - Cargo.toml              — package version + description
-//   - ./target/debug/zad      — built binary, queried for commands
-//   - README.md               — quick-start fenced block
-//   - CHANGELOG.md            — latest release entry
-//   - docs/                   — list of topic docs
+//   - Cargo.toml                       — workspace version + shared metadata
+//   - crates/zad-cli/Cargo.toml        — binary's package description
+//   - ./target/debug/zad               — built binary, queried for commands
+//   - README.md                        — quick-start fenced block
+//   - CHANGELOG.md                     — latest release entry
+//   - docs/                            — list of topic docs
 //
 // Output: website/src/generated/sourceData.json (gitignored).
 
@@ -21,13 +22,31 @@ function readTextFromRepo(...parts) {
 }
 
 function extractCargoMetadata() {
-  const manifest = parseToml(readTextFromRepo("Cargo.toml"));
+  // Workspace-shared metadata (version, license, repository, MSRV)
+  // lives in `[workspace.package]` at the repo root since the
+  // 0.7 split into `zad` (library) + `zad-cli` (binary).
+  const root = parseToml(readTextFromRepo("Cargo.toml"));
+  const wp = root["workspace"] && root["workspace"]["package"];
+  if (!wp) {
+    throw new Error(
+      "Cargo.toml has no [workspace.package] table — extractor cannot read shared metadata.",
+    );
+  }
+  // The binary's user-facing description lives in the binary crate's
+  // own manifest. The website is the CLI tool's marketing surface, so
+  // that's the description we want — not the library's.
+  const binManifest = parseToml(readTextFromRepo("crates", "zad-cli", "Cargo.toml"));
+  if (!binManifest.package) {
+    throw new Error(
+      "crates/zad-cli/Cargo.toml has no [package] table — extractor cannot read binary metadata.",
+    );
+  }
   return {
-    version: manifest.package.version,
-    description: manifest.package.description,
-    repository: manifest.package.repository,
-    license: manifest.package.license,
-    rustVersion: manifest.package["rust-version"],
+    version: wp.version,
+    description: binManifest.package.description,
+    repository: wp.repository,
+    license: wp.license,
+    rustVersion: wp["rust-version"],
   };
 }
 
