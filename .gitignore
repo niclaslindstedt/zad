@@ -32,3 +32,6 @@ docs/_build/
 
 # Claude Code worktrees (per-developer scratch)
 .claude/worktrees/
+
+# Example crates' build artifacts
+examples/*/target/

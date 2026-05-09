@@ -1,53 +1,53 @@
-[package]
-name = "zad"
-version = "0.6.0"
+[workspace]
+resolver = "2"
+members = [
+    "crates/zad",
+    "crates/zad-cli",
+]
+
+[workspace.package]
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"
-description = "A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers."
 repository = "https://github.com/niclaslindstedt/zad"
 readme = "README.md"
 
-[[bin]]
-name = "zad"
-path = "src/main.rs"
-
-[lib]
-name = "zad"
-path = "src/lib.rs"
-
-[dependencies]
+[workspace.dependencies]
+# Library and CLI both depend on these; pinning here keeps the
+# versions in lockstep across the workspace.
+async-trait = "0.1"
 clap = { version = "4.5", features = ["derive", "env"] }
 dialoguer = { version = "0.11", default-features = false, features = ["password"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "process", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
-serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "http"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
-keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
-directories = "5"
-async-trait = "0.1"
-thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "process", "io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
-futures = "0.3"
-tokio-stream = "0.1"
-regex = "1"
-open = "5"
-sha2 = "0.10"
-base64 = "0.22"
-jiff = { version = "0.1", features = ["serde"] }
-rand = "0.8"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
-tempfile = "3"
-rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
-rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
 
-[dev-dependencies]
+# Library-only.
+base64 = "0.22"
+directories = "5"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+futures = "0.3"
+jiff = { version = "0.1", features = ["serde"] }
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+open = "5"
+rand = "0.8"
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "http"] }
+sha2 = "0.10"
 tempfile = "3"
+thiserror = "1"
+tokio-stream = "0.1"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+toml = "0.8"
+
+# Dev-dependencies shared across the workspace.
 assert_cmd = "2"
 predicates = "3"
 serial_test = "3"

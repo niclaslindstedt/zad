@@ -1,0 +1,48 @@
+[package]
+name = "zad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+description = "Typed Rust library for connecting AI agents to external services (Discord, Slack, Google Calendar, Spotify, Telegram, YouTube Music, 1Password) via scoped service configurations. Use `zad-cli` for the binary."
+
+[lib]
+name = "zad"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = { workspace = true }
+base64 = { workspace = true }
+directories = { workspace = true }
+ed25519-dalek = { workspace = true }
+futures = { workspace = true }
+jiff = { workspace = true }
+keyring = { workspace = true }
+open = { workspace = true }
+rand = { workspace = true }
+rcgen = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serenity = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-tungstenite = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
