@@ -102,4 +102,4 @@ zad telegram permissions sign --local
 
 ## See also
 
-- [`zad man discord`](discord.md), [`zad man telegram`](telegram.md), [`zad man slack`](slack.md), [`zad man gcal`](gcal.md), [`zad man 1pass`](1pass.md), [`zad man spotify`](spotify.md) — each service's `permissions sign` and `permissions commit` are the call sites that consume the signing key.
+- [`zad man discord`](discord.md), [`zad man telegram`](telegram.md), [`zad man slack`](slack.md), [`zad man gcal`](gcal.md), [`zad man 1pass`](1pass.md), [`zad man spotify`](spotify.md), [`zad man ymusic`](ymusic.md) — each service's `permissions sign` and `permissions commit` are the call sites that consume the signing key.

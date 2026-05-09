@@ -40,6 +40,7 @@ and are **never** written to the TOML.
 | `1pass <VERB>` | Operate the 1Password service at runtime (vaults, items, tags, get, read, inject, create, whoami, permissions). | [`zad man 1pass`](1pass.md) |
 | `discord <VERB>` | Operate the Discord service at runtime (send, read, channels, join, leave, discover, directory, permissions, self). | [`zad man discord`](discord.md) |
 | `gcal <VERB>` | Operate the Google Calendar service at runtime (calendars, events, permissions, self). | [`zad man gcal`](gcal.md) |
+| `slack <VERB>` | Operate the Slack service at runtime (send, read, channels, discover, directory, permissions, self). | [`zad man slack`](slack.md) |
 | `spotify <VERB>` | Operate the Spotify service at runtime (search, playlists, library, permissions). | [`zad man spotify`](spotify.md) |
 | `telegram <VERB>` | Operate the Telegram service at runtime (send, read, chats, discover, directory, permissions, self). | [`zad man telegram`](telegram.md) |
 | `ymusic <VERB>` | Operate the YouTube Music service at runtime (search, playlists, library, permissions). | [`zad man ymusic`](ymusic.md) |
@@ -99,6 +100,7 @@ claude "Help me automate X $(zad --help-agent)"
 - [`zad man 1pass`](1pass.md) — runtime verbs for the 1Password service.
 - [`zad man discord`](discord.md) — runtime verbs for the Discord service.
 - [`zad man gcal`](gcal.md) — runtime verbs for the Google Calendar service.
+- [`zad man slack`](slack.md) — runtime verbs for the Slack service.
 - [`zad man spotify`](spotify.md) — runtime verbs for the Spotify service.
 - [`zad man telegram`](telegram.md) — runtime verbs for the Telegram service.
 - [`zad man ymusic`](ymusic.md) — runtime verbs for the YouTube Music service.

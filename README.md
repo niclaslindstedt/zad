@@ -56,7 +56,7 @@ instead — no binary install required:
 
 ```toml
 [dependencies]
-zad = "0.7"
+zad = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -181,6 +181,14 @@ Runtime verbs are chosen per service.
   `--dry-run`, which previews the outgoing call — scope and permission
   checks still fire, but no bot token is loaded and no network
   request is made.
+- **`slack`**: `send`, `read`, `channels`, `discover`, `directory`,
+  `permissions`, and `self`. `--channel` accepts a Slack ID (`C…`)
+  or a name from the cache populated by `discover`; `--dm` accepts
+  a user ID, name, or `@me` (resolved from the optional
+  `self_user_id`). `send` takes `--dry-run` with the same semantics
+  as Discord's. Library-side `Service::listen()` opens a Socket
+  Mode connection when an App-Level Token (`xapp-...`) was supplied
+  at create time.
 - **`telegram`**: `send`, `read`, `chats`, `discover`, `directory`,
   and `permissions`. `--chat` accepts a signed `chat_id`
   (negative for groups/supergroups), a `@username` for public

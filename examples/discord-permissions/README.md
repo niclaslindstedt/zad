@@ -42,7 +42,7 @@ zad discord permissions check --function send \
 
 The same pattern applies to every future service: each provider
 reuses the generic `content` / `time` / `allow` / `deny` primitives
-under `src/permissions/` and names its own per-function blocks.
+under `crates/zad/src/permissions/` and names its own per-function blocks.
 
 Patterns match every alias of the target — raw input, resolved
 snowflake, and directory entries — so `deny = ["@me"]` under `[send]`

@@ -24,7 +24,7 @@ function readTextFromRepo(...parts) {
 function extractCargoMetadata() {
   // Workspace-shared metadata (version, license, repository, MSRV)
   // lives in `[workspace.package]` at the repo root since the
-  // 0.7 split into `zad` (library) + `zad-cli` (binary).
+  // 0.6 split into `zad` (library) + `zad-cli` (binary).
   const root = parseToml(readTextFromRepo("Cargo.toml"));
   const wp = root["workspace"] && root["workspace"]["package"];
   if (!wp) {

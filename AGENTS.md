@@ -43,7 +43,7 @@ make fmt-check     # verify formatting (CI)
   (`service::*`), TOML schema and path helpers (`config`), OS-keychain
   I/O (`secrets`), OAuth flows (`oauth`), permissions
   (`permissions`), errors (`error`), logging (`logging`). This is what
-  Rust projects depend on directly via `zad = "0.7"`.
+  Rust projects depend on directly via `zad = "0.6"`.
 - **`crates/zad-cli`** — the CLI binary. Holds argument parsing
   (clap), interactive prompts (`dialoguer`), human/JSON output
   formatting, the dry-run echo machinery, embedded manpages and docs.
