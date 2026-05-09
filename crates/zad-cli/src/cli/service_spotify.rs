@@ -19,7 +19,8 @@ use clap::Args;
 use dialoguer::{Confirm, Input, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef, resolve_scopes,
+    CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
+    resolve_scopes,
 };
 use zad::config::{ProjectConfig, SpotifyServiceCfg};
 use zad::error::{Result, ZadError};
@@ -125,7 +126,6 @@ impl LifecycleService for SpotifyLifecycle {
     const DISPLAY: &'static str = "Spotify";
     type Cfg = SpotifyServiceCfg;
     type Secrets = SpotifySecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_spotify();
@@ -133,47 +133,6 @@ impl LifecycleService for SpotifyLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_spotify();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(SpotifyServiceCfg, SpotifySecrets)> {
-        let open_browser = !args.base.no_browser;
-
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-
-        let client_id = resolve_client_id(
-            args.client_id.as_deref(),
-            args.client_id_env.as_deref(),
-            open_browser,
-            non_interactive,
-        )?;
-
-        let refresh_token = if let Some(v) = args.refresh_token.clone() {
-            v
-        } else if let Some(env) = args.refresh_token_env.as_deref() {
-            std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()))?
-        } else {
-            resolve_refresh_via_loopback(&client_id, &scopes, open_browser, non_interactive).await?
-        };
-
-        Ok((
-            SpotifyServiceCfg {
-                scopes,
-                default_playlist: args.default_playlist.clone(),
-                self_user_id: args.self_user.clone(),
-            },
-            SpotifySecrets {
-                client_id,
-                refresh_token,
-            },
-        ))
     }
 
     async fn validate(_cfg: &SpotifyServiceCfg, creds: &SpotifySecrets) -> Result<String> {
@@ -278,6 +237,52 @@ impl LifecycleService for SpotifyLifecycle {
 
     fn post_create_hint(_cfg: &SpotifyServiceCfg) -> Option<String> {
         None
+    }
+}
+
+#[async_trait]
+impl CliLifecycle for SpotifyLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(SpotifyServiceCfg, SpotifySecrets)> {
+        let open_browser = !args.base.no_browser;
+
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+
+        let client_id = resolve_client_id(
+            args.client_id.as_deref(),
+            args.client_id_env.as_deref(),
+            open_browser,
+            non_interactive,
+        )?;
+
+        let refresh_token = if let Some(v) = args.refresh_token.clone() {
+            v
+        } else if let Some(env) = args.refresh_token_env.as_deref() {
+            std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()))?
+        } else {
+            resolve_refresh_via_loopback(&client_id, &scopes, open_browser, non_interactive).await?
+        };
+
+        Ok((
+            SpotifyServiceCfg {
+                scopes,
+                default_playlist: args.default_playlist.clone(),
+                self_user_id: args.self_user.clone(),
+            },
+            SpotifySecrets {
+                client_id,
+                refresh_token,
+            },
+        ))
     }
 }
 

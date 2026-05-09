@@ -11,8 +11,8 @@ use clap::Args;
 use dialoguer::{Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
-    resolve_bot_token, resolve_scopes,
+    BotTokenArgs, CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg,
+    SecretRef, resolve_bot_token, resolve_scopes,
 };
 use zad::config::{ProjectConfig, SlackServiceCfg};
 use zad::error::{Result, ZadError};
@@ -89,7 +89,6 @@ impl LifecycleService for SlackLifecycle {
     const DISPLAY: &'static str = "Slack";
     type Cfg = SlackServiceCfg;
     type Secrets = SlackSecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_slack();
@@ -97,49 +96,6 @@ impl LifecycleService for SlackLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_slack();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(SlackServiceCfg, SlackSecrets)> {
-        let open_browser = !args.base.no_browser;
-        let app_id = resolve_app_id(args.app_id.as_deref(), open_browser, non_interactive)?;
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-        let bot_token = resolve_bot_token(
-            args.token.bot_token.as_deref(),
-            args.token.bot_token_env.as_deref(),
-            non_interactive,
-            Self::DISPLAY,
-        )?;
-        let app_token = resolve_app_token(args.app_token.as_deref(), non_interactive)?;
-        let default_channel = args.default_channel.clone();
-        let self_user_id = args.self_user.clone();
-
-        // We'll fill workspace from auth.test during validate; store a
-        // placeholder here so the Cfg round-trips through serde correctly.
-        // The lifecycle driver calls validate() after resolve(), so by the
-        // time the file is written `workspace` will be the real value.
-        let workspace = String::new();
-
-        Ok((
-            SlackServiceCfg {
-                app_id,
-                workspace,
-                scopes,
-                default_channel,
-                self_user_id,
-            },
-            SlackSecrets {
-                bot_token,
-                app_token,
-            },
-        ))
     }
 
     async fn validate(cfg: &SlackServiceCfg, creds: &SlackSecrets) -> Result<String> {
@@ -263,6 +219,54 @@ impl LifecycleService for SlackLifecycle {
         Some(format!(
             "https://api.slack.com/apps/{}/install-on-team",
             cfg.app_id
+        ))
+    }
+}
+
+#[async_trait]
+impl CliLifecycle for SlackLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(SlackServiceCfg, SlackSecrets)> {
+        let open_browser = !args.base.no_browser;
+        let app_id = resolve_app_id(args.app_id.as_deref(), open_browser, non_interactive)?;
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+        let bot_token = resolve_bot_token(
+            args.token.bot_token.as_deref(),
+            args.token.bot_token_env.as_deref(),
+            non_interactive,
+            Self::DISPLAY,
+        )?;
+        let app_token = resolve_app_token(args.app_token.as_deref(), non_interactive)?;
+        let default_channel = args.default_channel.clone();
+        let self_user_id = args.self_user.clone();
+
+        // We'll fill workspace from auth.test during validate; store a
+        // placeholder here so the Cfg round-trips through serde correctly.
+        // The lifecycle driver calls validate() after resolve(), so by the
+        // time the file is written `workspace` will be the real value.
+        let workspace = String::new();
+
+        Ok((
+            SlackServiceCfg {
+                app_id,
+                workspace,
+                scopes,
+                default_channel,
+                self_user_id,
+            },
+            SlackSecrets {
+                bot_token,
+                app_token,
+            },
         ))
     }
 }

@@ -12,7 +12,8 @@ use clap::Args;
 use dialoguer::{Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef, resolve_scopes,
+    CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
+    resolve_scopes,
 };
 use zad::config::{OnePassServiceCfg, ProjectConfig};
 use zad::error::{Result, ZadError};
@@ -89,7 +90,6 @@ impl LifecycleService for OnePassLifecycle {
     const DISPLAY: &'static str = "1Password";
     type Cfg = OnePassServiceCfg;
     type Secrets = OnePassSecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_one_pass();
@@ -97,36 +97,6 @@ impl LifecycleService for OnePassLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_one_pass();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(OnePassServiceCfg, OnePassSecrets)> {
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-
-        let account = resolve_account(args.account.as_deref(), non_interactive)?;
-        let token = resolve_token(
-            args.token.as_deref(),
-            args.token_env.as_deref(),
-            non_interactive,
-        )?;
-
-        Ok((
-            OnePassServiceCfg {
-                account,
-                scopes,
-                default_vault: args.default_vault.clone(),
-            },
-            OnePassSecrets {
-                service_account_token: token,
-            },
-        ))
     }
 
     async fn validate(cfg: &OnePassServiceCfg, creds: &OnePassSecrets) -> Result<String> {
@@ -207,6 +177,41 @@ impl LifecycleService for OnePassLifecycle {
 
     fn post_create_hint(_cfg: &OnePassServiceCfg) -> Option<String> {
         Some(OP_SERVICE_ACCOUNTS_URL.to_string())
+    }
+}
+
+#[async_trait]
+impl CliLifecycle for OnePassLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(OnePassServiceCfg, OnePassSecrets)> {
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+
+        let account = resolve_account(args.account.as_deref(), non_interactive)?;
+        let token = resolve_token(
+            args.token.as_deref(),
+            args.token_env.as_deref(),
+            non_interactive,
+        )?;
+
+        Ok((
+            OnePassServiceCfg {
+                account,
+                scopes,
+                default_vault: args.default_vault.clone(),
+            },
+            OnePassSecrets {
+                service_account_token: token,
+            },
+        ))
     }
 }
 

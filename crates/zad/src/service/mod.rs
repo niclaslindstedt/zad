@@ -1,5 +1,6 @@
 pub mod discord;
 pub mod gcal;
+pub mod lifecycle;
 pub mod onepass;
 pub mod registry;
 pub mod slack;

@@ -18,7 +18,8 @@ use clap::Args;
 use dialoguer::{Confirm, Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef, resolve_scopes,
+    CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
+    resolve_scopes,
 };
 use zad::config::{GcalServiceCfg, ProjectConfig};
 use zad::error::{Result, ZadError};
@@ -131,7 +132,6 @@ impl LifecycleService for GcalLifecycle {
     const DISPLAY: &'static str = "Google Calendar";
     type Cfg = GcalServiceCfg;
     type Secrets = GcalSecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_gcal();
@@ -139,61 +139,6 @@ impl LifecycleService for GcalLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_gcal();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(GcalServiceCfg, GcalSecrets)> {
-        let open_browser = !args.base.no_browser;
-
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-
-        let client_id = resolve_client_id(
-            args.client_id.as_deref(),
-            args.client_id_env.as_deref(),
-            open_browser,
-            non_interactive,
-        )?;
-
-        let client_secret = resolve_client_secret(
-            args.client_secret.as_deref(),
-            args.client_secret_env.as_deref(),
-            non_interactive,
-        )?;
-
-        let refresh_token = if let Some(v) = args.refresh_token.clone() {
-            v
-        } else if let Some(env) = args.refresh_token_env.as_deref() {
-            std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()))?
-        } else {
-            resolve_refresh_via_loopback(
-                &client_id,
-                &client_secret,
-                &scopes,
-                open_browser,
-                non_interactive,
-            )
-            .await?
-        };
-
-        Ok((
-            GcalServiceCfg {
-                scopes,
-                default_calendar: args.default_calendar.clone(),
-                self_email: args.self_email.clone(),
-            },
-            GcalSecrets {
-                client_id,
-                client_secret,
-                refresh_token,
-            },
-        ))
     }
 
     async fn validate(_cfg: &GcalServiceCfg, creds: &GcalSecrets) -> Result<String> {
@@ -333,6 +278,66 @@ impl LifecycleService for GcalLifecycle {
         // needed; the banner already tells the operator to run
         // `zad service enable gcal` next.
         None
+    }
+}
+
+#[async_trait]
+impl CliLifecycle for GcalLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(GcalServiceCfg, GcalSecrets)> {
+        let open_browser = !args.base.no_browser;
+
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+
+        let client_id = resolve_client_id(
+            args.client_id.as_deref(),
+            args.client_id_env.as_deref(),
+            open_browser,
+            non_interactive,
+        )?;
+
+        let client_secret = resolve_client_secret(
+            args.client_secret.as_deref(),
+            args.client_secret_env.as_deref(),
+            non_interactive,
+        )?;
+
+        let refresh_token = if let Some(v) = args.refresh_token.clone() {
+            v
+        } else if let Some(env) = args.refresh_token_env.as_deref() {
+            std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()))?
+        } else {
+            resolve_refresh_via_loopback(
+                &client_id,
+                &client_secret,
+                &scopes,
+                open_browser,
+                non_interactive,
+            )
+            .await?
+        };
+
+        Ok((
+            GcalServiceCfg {
+                scopes,
+                default_calendar: args.default_calendar.clone(),
+                self_email: args.self_email.clone(),
+            },
+            GcalSecrets {
+                client_id,
+                client_secret,
+                refresh_token,
+            },
+        ))
     }
 }
 

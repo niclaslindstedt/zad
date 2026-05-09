@@ -19,7 +19,8 @@ use clap::Args;
 use dialoguer::{Confirm, Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef, resolve_scopes,
+    CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
+    resolve_scopes,
 };
 use zad::config::{ProjectConfig, YmusicServiceCfg};
 use zad::error::{Result, ZadError};
@@ -135,7 +136,6 @@ impl LifecycleService for YmusicLifecycle {
     const DISPLAY: &'static str = "YouTube Music";
     type Cfg = YmusicServiceCfg;
     type Secrets = YmusicSecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_ymusic();
@@ -143,61 +143,6 @@ impl LifecycleService for YmusicLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_ymusic();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(YmusicServiceCfg, YmusicSecrets)> {
-        let open_browser = !args.base.no_browser;
-
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-
-        let client_id = resolve_client_id(
-            args.client_id.as_deref(),
-            args.client_id_env.as_deref(),
-            open_browser,
-            non_interactive,
-        )?;
-
-        let client_secret = resolve_client_secret(
-            args.client_secret.as_deref(),
-            args.client_secret_env.as_deref(),
-            non_interactive,
-        )?;
-
-        let refresh_token = if let Some(v) = args.refresh_token.clone() {
-            v
-        } else if let Some(env) = args.refresh_token_env.as_deref() {
-            std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()))?
-        } else {
-            resolve_refresh_via_loopback(
-                &client_id,
-                &client_secret,
-                &scopes,
-                open_browser,
-                non_interactive,
-            )
-            .await?
-        };
-
-        Ok((
-            YmusicServiceCfg {
-                scopes,
-                default_playlist: args.default_playlist.clone(),
-                self_channel_id: args.self_channel.clone(),
-            },
-            YmusicSecrets {
-                client_id,
-                client_secret,
-                refresh_token,
-            },
-        ))
     }
 
     async fn validate(_cfg: &YmusicServiceCfg, creds: &YmusicSecrets) -> Result<String> {
@@ -347,6 +292,66 @@ impl LifecycleService for YmusicLifecycle {
 
     fn post_create_hint(_cfg: &YmusicServiceCfg) -> Option<String> {
         None
+    }
+}
+
+#[async_trait]
+impl CliLifecycle for YmusicLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(YmusicServiceCfg, YmusicSecrets)> {
+        let open_browser = !args.base.no_browser;
+
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+
+        let client_id = resolve_client_id(
+            args.client_id.as_deref(),
+            args.client_id_env.as_deref(),
+            open_browser,
+            non_interactive,
+        )?;
+
+        let client_secret = resolve_client_secret(
+            args.client_secret.as_deref(),
+            args.client_secret_env.as_deref(),
+            non_interactive,
+        )?;
+
+        let refresh_token = if let Some(v) = args.refresh_token.clone() {
+            v
+        } else if let Some(env) = args.refresh_token_env.as_deref() {
+            std::env::var(env).map_err(|_| ZadError::MissingEnv(env.to_string()))?
+        } else {
+            resolve_refresh_via_loopback(
+                &client_id,
+                &client_secret,
+                &scopes,
+                open_browser,
+                non_interactive,
+            )
+            .await?
+        };
+
+        Ok((
+            YmusicServiceCfg {
+                scopes,
+                default_playlist: args.default_playlist.clone(),
+                self_channel_id: args.self_channel.clone(),
+            },
+            YmusicSecrets {
+                client_id,
+                client_secret,
+                refresh_token,
+            },
+        ))
     }
 }
 

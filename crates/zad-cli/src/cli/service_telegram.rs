@@ -18,8 +18,8 @@ use clap::Args;
 use dialoguer::{Confirm, Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
-    resolve_scopes,
+    BotTokenArgs, CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg,
+    SecretRef, resolve_scopes,
 };
 use zad::config::{ProjectConfig, TelegramServiceCfg};
 use zad::error::{Result, ZadError};
@@ -94,7 +94,6 @@ impl LifecycleService for TelegramLifecycle {
     const DISPLAY: &'static str = "Telegram";
     type Cfg = TelegramServiceCfg;
     type Secrets = TelegramSecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_telegram();
@@ -102,36 +101,6 @@ impl LifecycleService for TelegramLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_telegram();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(TelegramServiceCfg, TelegramSecrets)> {
-        let open_browser = !args.base.no_browser;
-        let default_chat = resolve_default_chat(args.default_chat.as_deref(), non_interactive)?;
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-        let bot_token = resolve_telegram_bot_token(
-            args.token.bot_token.as_deref(),
-            args.token.bot_token_env.as_deref(),
-            open_browser,
-            non_interactive,
-        )?;
-        let self_chat_id =
-            resolve_self_chat_id(args.self_chat, &bot_token, open_browser, non_interactive).await?;
-        Ok((
-            TelegramServiceCfg {
-                scopes,
-                default_chat,
-                self_chat_id,
-            },
-            TelegramSecrets { bot_token },
-        ))
     }
 
     async fn validate(_cfg: &TelegramServiceCfg, creds: &TelegramSecrets) -> Result<String> {
@@ -204,6 +173,41 @@ impl LifecycleService for TelegramLifecycle {
     // No `post_create_hint`: Telegram bots are added to chats by an
     // admin pasting `@botname` into the chat, not by visiting a URL.
     // Offering a link would be misleading.
+}
+
+#[async_trait]
+impl CliLifecycle for TelegramLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(TelegramServiceCfg, TelegramSecrets)> {
+        let open_browser = !args.base.no_browser;
+        let default_chat = resolve_default_chat(args.default_chat.as_deref(), non_interactive)?;
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+        let bot_token = resolve_telegram_bot_token(
+            args.token.bot_token.as_deref(),
+            args.token.bot_token_env.as_deref(),
+            open_browser,
+            non_interactive,
+        )?;
+        let self_chat_id =
+            resolve_self_chat_id(args.self_chat, &bot_token, open_browser, non_interactive).await?;
+        Ok((
+            TelegramServiceCfg {
+                scopes,
+                default_chat,
+                self_chat_id,
+            },
+            TelegramSecrets { bot_token },
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------

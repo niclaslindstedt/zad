@@ -18,8 +18,8 @@ use clap::Args;
 use dialoguer::{Input, Password, theme::ColorfulTheme};
 
 use crate::cli::lifecycle::{
-    BotTokenArgs, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg, SecretRef,
-    resolve_scopes,
+    BotTokenArgs, CliLifecycle, CreateArgsBase, CreateArgsLike, LifecycleService, ScopesArg,
+    SecretRef, resolve_scopes,
 };
 use zad::config::{DiscordServiceCfg, ProjectConfig};
 use zad::error::{Result, ZadError};
@@ -92,7 +92,6 @@ impl LifecycleService for DiscordLifecycle {
     const DISPLAY: &'static str = "Discord";
     type Cfg = DiscordServiceCfg;
     type Secrets = DiscordSecrets;
-    type CreateArgs = CreateArgs;
 
     fn enable_in_project(cfg: &mut ProjectConfig) {
         cfg.enable_discord();
@@ -100,43 +99,6 @@ impl LifecycleService for DiscordLifecycle {
 
     fn disable_in_project(cfg: &mut ProjectConfig) {
         cfg.disable_discord();
-    }
-
-    async fn resolve(
-        args: &CreateArgs,
-        non_interactive: bool,
-    ) -> Result<(DiscordServiceCfg, DiscordSecrets)> {
-        let open_browser = !args.base.no_browser;
-        let application_id = resolve_application_id(
-            args.application_id.as_deref(),
-            open_browser,
-            non_interactive,
-        )?;
-        let default_guild = resolve_default_guild(args.default_guild.as_deref(), non_interactive)?;
-        let scopes = resolve_scopes(
-            args.scopes.scopes.as_deref(),
-            DEFAULT_SCOPES,
-            ALL_SCOPES,
-            non_interactive,
-        )?;
-        let bot_token = resolve_discord_bot_token(
-            args.token.bot_token.as_deref(),
-            args.token.bot_token_env.as_deref(),
-            &application_id,
-            open_browser,
-            non_interactive,
-        )?;
-        let self_user_id =
-            resolve_self_user_id(args.self_user.as_deref(), &bot_token, non_interactive).await?;
-        Ok((
-            DiscordServiceCfg {
-                application_id,
-                scopes,
-                default_guild,
-                self_user_id,
-            },
-            DiscordSecrets { bot_token },
-        ))
     }
 
     async fn validate(_cfg: &DiscordServiceCfg, creds: &DiscordSecrets) -> Result<String> {
@@ -209,6 +171,48 @@ impl LifecycleService for DiscordLifecycle {
 
     fn post_create_hint(cfg: &DiscordServiceCfg) -> Option<String> {
         Some(install_url(&cfg.application_id))
+    }
+}
+
+#[async_trait]
+impl CliLifecycle for DiscordLifecycle {
+    type CreateArgs = CreateArgs;
+
+    async fn resolve(
+        args: &CreateArgs,
+        non_interactive: bool,
+    ) -> Result<(DiscordServiceCfg, DiscordSecrets)> {
+        let open_browser = !args.base.no_browser;
+        let application_id = resolve_application_id(
+            args.application_id.as_deref(),
+            open_browser,
+            non_interactive,
+        )?;
+        let default_guild = resolve_default_guild(args.default_guild.as_deref(), non_interactive)?;
+        let scopes = resolve_scopes(
+            args.scopes.scopes.as_deref(),
+            DEFAULT_SCOPES,
+            ALL_SCOPES,
+            non_interactive,
+        )?;
+        let bot_token = resolve_discord_bot_token(
+            args.token.bot_token.as_deref(),
+            args.token.bot_token_env.as_deref(),
+            &application_id,
+            open_browser,
+            non_interactive,
+        )?;
+        let self_user_id =
+            resolve_self_user_id(args.self_user.as_deref(), &bot_token, non_interactive).await?;
+        Ok((
+            DiscordServiceCfg {
+                application_id,
+                scopes,
+                default_guild,
+                self_user_id,
+            },
+            DiscordSecrets { bot_token },
+        ))
     }
 }
 
