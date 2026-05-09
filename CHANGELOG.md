@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.6.2]
+## [0.6.3]
 
-- fix(release): publish both zad and zad-cli on tag (#62)
+- fix(zad-cli): bundle docs/ and man/ into the published crate (#63)
 
