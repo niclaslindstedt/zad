@@ -40,24 +40,45 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::{Result, ZadError};
-use crate::oauth;
+use crate::oauth::{self, RefreshTokenStore};
 use crate::service::ymusic::{API_BASE, TOKEN_URL, USERINFO_URL};
 
 /// Thin wrapper over YouTube Data API v3. Holds a refresh token and
 /// mints an access token on demand.
+///
+/// Google's confidential-client flow does not currently rotate
+/// refresh tokens, but the persist-on-rotation handling is wired up
+/// the same way as Spotify so a future provider change (or a
+/// per-account quirk) doesn't silently revoke the user's session.
+/// When the value is unchanged, the store is never called.
 #[derive(Clone)]
 pub struct YmusicHttp {
     client_id: String,
     client_secret: String,
-    refresh_token: String,
+    /// Wrapped in a Mutex so a token rotation in one process can be
+    /// reflected back into the in-memory state without taking `&mut
+    /// self` through the whole chain.
+    refresh_token: Arc<Mutex<String>>,
+    /// Where to persist a rotated refresh token. `None` means "drop
+    /// the rotation on the floor" — Google rarely rotates today, but
+    /// the field exists so the bug Spotify hit can't recur silently.
+    refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+    /// Token endpoint URL. Defaults to
+    /// [`crate::service::ymusic::TOKEN_URL`]; overridable so tests
+    /// can point at a localhost mock.
+    token_url: String,
     scopes: BTreeSet<String>,
     config_path: PathBuf,
-    /// Cached access token for the lifetime of this process.
+    /// Cached access token for the lifetime of this process. Held
+    /// across the network refresh so two concurrent callers can't
+    /// race two distinct rotated tokens onto the keychain.
     cached_access: Arc<Mutex<Option<String>>>,
 }
 
 impl YmusicHttp {
-    /// Full-featured constructor used by runtime verbs.
+    /// Full-featured constructor used by runtime verbs. No persisting
+    /// store — equivalent to [`Self::with_store`] with `None`. Use
+    /// [`Self::with_store`] in production.
     pub fn new(
         client_id: String,
         client_secret: String,
@@ -65,10 +86,35 @@ impl YmusicHttp {
         scopes: BTreeSet<String>,
         config_path: PathBuf,
     ) -> Self {
-        Self {
+        Self::with_store(
             client_id,
             client_secret,
             refresh_token,
+            scopes,
+            config_path,
+            None,
+        )
+    }
+
+    /// Like [`Self::new`] but takes an optional [`RefreshTokenStore`]
+    /// that receives every rotated refresh token. The canonical zad
+    /// wiring (`Ymusic::from_default_config`) supplies a
+    /// [`crate::oauth::KeychainRefreshStore`] pointing at the
+    /// `secrets::account("ymusic", "refresh", Scope::Global)` slot.
+    pub fn with_store(
+        client_id: String,
+        client_secret: String,
+        refresh_token: String,
+        scopes: BTreeSet<String>,
+        config_path: PathBuf,
+        refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+    ) -> Self {
+        Self {
+            client_id,
+            client_secret,
+            refresh_token: Arc::new(Mutex::new(refresh_token)),
+            refresh_token_store,
+            token_url: TOKEN_URL.to_string(),
             scopes,
             config_path,
             cached_access: Arc::new(Mutex::new(None)),
@@ -87,6 +133,21 @@ impl YmusicHttp {
         )
     }
 
+    /// Override the token endpoint URL. Test-only — production code
+    /// should rely on the default
+    /// [`crate::service::ymusic::TOKEN_URL`].
+    #[doc(hidden)]
+    pub fn with_token_url(mut self, url: impl Into<String>) -> Self {
+        self.token_url = url.into();
+        self
+    }
+
+    /// Read the in-memory refresh token. Test-only.
+    #[doc(hidden)]
+    pub async fn refresh_token_for_test(&self) -> String {
+        self.refresh_token.lock().await.clone()
+    }
+
     fn require_scope(&self, scope: &'static str) -> Result<()> {
         if self.scopes.contains(scope) {
             return Ok(());
@@ -100,23 +161,48 @@ impl YmusicHttp {
 
     /// Lazily fetch (and cache) an access token for the lifetime of
     /// this process.
-    async fn access_token(&self) -> Result<String> {
-        {
-            let guard = self.cached_access.lock().await;
-            if let Some(t) = guard.as_ref() {
-                return Ok(t.clone());
-            }
+    ///
+    /// The `cached_access` lock is held across the network refresh
+    /// **and** across the rotated-token persist step, so two
+    /// concurrent callers can't both refresh and race two distinct
+    /// rotated tokens onto the keychain. See `SpotifyHttp::access_token`
+    /// for the same pattern — the bug that motivated this lives in
+    /// Spotify's flow but the safety net is identical here.
+    ///
+    /// Exposed publicly with `#[doc(hidden)]` so tests can drive a
+    /// refresh without piggy-backing on a follow-up API call.
+    #[doc(hidden)]
+    pub async fn access_token(&self) -> Result<String> {
+        let mut cached = self.cached_access.lock().await;
+        if let Some(t) = cached.as_ref() {
+            return Ok(t.clone());
         }
+        let current = self.refresh_token.lock().await.clone();
         let fresh = oauth::refresh_access_token(
             "ymusic",
-            TOKEN_URL,
+            &self.token_url,
             &self.client_id,
             Some(&self.client_secret),
-            &self.refresh_token,
+            &current,
         )
         .await?;
-        let mut guard = self.cached_access.lock().await;
-        *guard = Some(fresh.access_token.clone());
+
+        // Persist rotation if the provider returned a different
+        // refresh token. Google rarely rotates today, so this branch
+        // is usually inert — but if it ever does (account flagged,
+        // policy change), the rotated value lands in the keychain
+        // instead of being silently dropped.
+        if let Some(new_rt) = fresh.refresh_token.as_deref() {
+            let mut rt = self.refresh_token.lock().await;
+            if new_rt != rt.as_str() {
+                if let Some(store) = &self.refresh_token_store {
+                    store.store(new_rt)?;
+                }
+                *rt = new_rt.to_string();
+            }
+        }
+
+        *cached = Some(fresh.access_token.clone());
         Ok(fresh.access_token)
     }
 

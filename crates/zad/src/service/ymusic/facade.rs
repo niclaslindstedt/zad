@@ -4,9 +4,11 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::config::{self, YmusicServiceCfg};
 use crate::error::{Result, ZadError};
+use crate::oauth::{KeychainRefreshStore, RefreshTokenStore};
 use crate::secrets::{self, Scope};
 use crate::service::ymusic::client::{
     PlaylistSummary, Privacy, SearchItem, VideoSummary, YmusicHttp,
@@ -14,11 +16,67 @@ use crate::service::ymusic::client::{
 use crate::service::ymusic::permissions::{self as perms, EffectivePermissions, YmusicFunction};
 
 /// Full OAuth credentials for YouTube Music (same shape as gcal).
-#[derive(Debug, Clone)]
+///
+/// `refresh_token_store` is wired by `Ymusic::from_default_config` to
+/// the canonical zad keychain slot; library users with custom storage
+/// can supply their own [`RefreshTokenStore`] impl. Google does not
+/// currently rotate refresh tokens, but the field is kept symmetric
+/// with `SpotifyCredentials` so the bug Spotify hit can't recur
+/// silently here.
+#[derive(Clone)]
 pub struct YmusicCredentials {
     pub client_id: String,
     pub client_secret: String,
     pub refresh_token: String,
+    pub refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+}
+
+impl std::fmt::Debug for YmusicCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("YmusicCredentials")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("refresh_token", &"<redacted>")
+            .field(
+                "refresh_token_store",
+                &self.refresh_token_store.as_ref().map(|_| "<store>"),
+            )
+            .finish()
+    }
+}
+
+impl YmusicCredentials {
+    /// Build credentials with no rotation store. Library callers that
+    /// want zad to keep the OS keychain in sync should use
+    /// [`Self::with_keychain_store`] instead.
+    pub fn new(
+        client_id: impl Into<String>,
+        client_secret: impl Into<String>,
+        refresh_token: impl Into<String>,
+    ) -> Self {
+        Self {
+            client_id: client_id.into(),
+            client_secret: client_secret.into(),
+            refresh_token: refresh_token.into(),
+            refresh_token_store: None,
+        }
+    }
+
+    /// Convenience constructor wiring the canonical zad
+    /// [`KeychainRefreshStore`] (Global scope).
+    pub fn with_keychain_store(
+        client_id: impl Into<String>,
+        client_secret: impl Into<String>,
+        refresh_token: impl Into<String>,
+    ) -> Self {
+        let store = KeychainRefreshStore::new(secrets::account("ymusic", "refresh", Scope::Global));
+        Self {
+            client_id: client_id.into(),
+            client_secret: client_secret.into(),
+            refresh_token: refresh_token.into(),
+            refresh_token_store: Some(Arc::new(store)),
+        }
+    }
 }
 
 /// Typed library entry point for YouTube Music.
@@ -32,12 +90,13 @@ impl Ymusic {
         let (cfg, scope, config_path) = effective_config()?;
         let scopes: BTreeSet<String> = cfg.scopes.iter().cloned().collect();
         let creds = load_credentials(&scope)?;
-        let http = YmusicHttp::new(
+        let http = YmusicHttp::with_store(
             creds.client_id,
             creds.client_secret,
             creds.refresh_token,
             scopes,
             config_path,
+            creds.refresh_token_store,
         );
         let permissions = perms::load_effective().ok();
         Ok(Self { http, permissions })
@@ -48,12 +107,13 @@ impl Ymusic {
         scopes: BTreeSet<String>,
         config_path: PathBuf,
     ) -> Self {
-        let http = YmusicHttp::new(
+        let http = YmusicHttp::with_store(
             creds.client_id,
             creds.client_secret,
             creds.refresh_token,
             scopes,
             config_path,
+            creds.refresh_token_store,
         );
         Self {
             http,
@@ -68,12 +128,13 @@ impl Ymusic {
         global_permissions: Option<&Path>,
         local_permissions: Option<&Path>,
     ) -> Result<Self> {
-        let http = YmusicHttp::new(
+        let http = YmusicHttp::with_store(
             creds.client_id,
             creds.client_secret,
             creds.refresh_token,
             scopes,
             config_path,
+            creds.refresh_token_store,
         );
         let permissions = perms::load_from(global_permissions, local_permissions)?;
         let permissions = if permissions.any() {
@@ -294,15 +355,17 @@ fn load_credentials(scope: &Scope<'_>) -> Result<YmusicCredentials> {
             message: "client-secret missing from keychain; re-run `zad service create ymusic`"
                 .into(),
         })?;
-    let refresh_token = secrets::load(&secrets::account("ymusic", "refresh", scope.clone()))?
-        .ok_or(ZadError::Service {
-            name: "ymusic",
-            message: "refresh token missing from keychain; re-run `zad service create ymusic`"
-                .into(),
-        })?;
+    let refresh_account = secrets::account("ymusic", "refresh", scope.clone());
+    let refresh_token = secrets::load(&refresh_account)?.ok_or(ZadError::Service {
+        name: "ymusic",
+        message: "refresh token missing from keychain; re-run `zad service create ymusic`".into(),
+    })?;
+    let refresh_token_store: Option<Arc<dyn RefreshTokenStore>> =
+        Some(Arc::new(KeychainRefreshStore::new(refresh_account)));
     Ok(YmusicCredentials {
         client_id,
         client_secret,
         refresh_token,
+        refresh_token_store,
     })
 }

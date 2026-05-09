@@ -6,9 +6,11 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::config::{self, SpotifyServiceCfg};
 use crate::error::{Result, ZadError};
+use crate::oauth::{KeychainRefreshStore, RefreshTokenStore};
 use crate::secrets::{self, Scope};
 use crate::service::spotify::client::{PlaylistSummary, SavedTrack, SearchResults, SpotifyHttp};
 use crate::service::spotify::permissions::{self as perms, EffectivePermissions, SpotifyFunction};
@@ -16,10 +18,59 @@ use crate::service::spotify::permissions::{self as perms, EffectivePermissions, 
 /// Public-client OAuth PKCE credentials for Spotify. Only a
 /// `client_id` and a long-lived `refresh_token` — Spotify's PKCE flow
 /// doesn't issue or accept a `client_secret`.
-#[derive(Debug, Clone)]
+///
+/// Spotify rotates the refresh token on every `/api/token` call;
+/// `refresh_token_store` decides where the rotated value gets
+/// persisted. `Spotify::from_default_config` wires this to a
+/// [`KeychainRefreshStore`] pointing at the canonical zad slot. Set
+/// it to `None` only if you intend to manage rotation yourself.
+#[derive(Clone)]
 pub struct SpotifyCredentials {
     pub client_id: String,
     pub refresh_token: String,
+    pub refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+}
+
+impl std::fmt::Debug for SpotifyCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpotifyCredentials")
+            .field("client_id", &self.client_id)
+            .field("refresh_token", &"<redacted>")
+            .field(
+                "refresh_token_store",
+                &self.refresh_token_store.as_ref().map(|_| "<store>"),
+            )
+            .finish()
+    }
+}
+
+impl SpotifyCredentials {
+    /// Build credentials with no rotation store. Library callers that
+    /// want zad to keep the OS keychain in sync should use
+    /// [`Self::with_keychain_store`] instead.
+    pub fn new(client_id: impl Into<String>, refresh_token: impl Into<String>) -> Self {
+        Self {
+            client_id: client_id.into(),
+            refresh_token: refresh_token.into(),
+            refresh_token_store: None,
+        }
+    }
+
+    /// Convenience constructor wiring the canonical zad
+    /// [`KeychainRefreshStore`] (Global scope). Equivalent to what
+    /// [`Spotify::from_default_config`] does internally.
+    pub fn with_keychain_store(
+        client_id: impl Into<String>,
+        refresh_token: impl Into<String>,
+    ) -> Self {
+        let store =
+            KeychainRefreshStore::new(secrets::account("spotify", "refresh", Scope::Global));
+        Self {
+            client_id: client_id.into(),
+            refresh_token: refresh_token.into(),
+            refresh_token_store: Some(Arc::new(store)),
+        }
+    }
 }
 
 /// Typed library entry point for Spotify.
@@ -36,7 +87,13 @@ impl Spotify {
         let (cfg, scope, config_path) = effective_config()?;
         let scopes: BTreeSet<String> = cfg.scopes.iter().cloned().collect();
         let creds = load_credentials(&scope)?;
-        let http = SpotifyHttp::new(creds.client_id, creds.refresh_token, scopes, config_path);
+        let http = SpotifyHttp::with_store(
+            creds.client_id,
+            creds.refresh_token,
+            scopes,
+            config_path,
+            creds.refresh_token_store,
+        );
         let permissions = perms::load_effective().ok();
         Ok(Self { http, permissions })
     }
@@ -48,7 +105,13 @@ impl Spotify {
         scopes: BTreeSet<String>,
         config_path: PathBuf,
     ) -> Self {
-        let http = SpotifyHttp::new(creds.client_id, creds.refresh_token, scopes, config_path);
+        let http = SpotifyHttp::with_store(
+            creds.client_id,
+            creds.refresh_token,
+            scopes,
+            config_path,
+            creds.refresh_token_store,
+        );
         Self {
             http,
             permissions: None,
@@ -63,7 +126,13 @@ impl Spotify {
         global_permissions: Option<&Path>,
         local_permissions: Option<&Path>,
     ) -> Result<Self> {
-        let http = SpotifyHttp::new(creds.client_id, creds.refresh_token, scopes, config_path);
+        let http = SpotifyHttp::with_store(
+            creds.client_id,
+            creds.refresh_token,
+            scopes,
+            config_path,
+            creds.refresh_token_store,
+        );
         let permissions = perms::load_from(global_permissions, local_permissions)?;
         let permissions = if permissions.any() {
             Some(permissions)
@@ -253,14 +322,20 @@ fn load_credentials(scope: &Scope<'_>) -> Result<SpotifyCredentials> {
             name: "spotify",
             message: "client-id missing from keychain; re-run `zad service create spotify`".into(),
         })?;
-    let refresh_token = secrets::load(&secrets::account("spotify", "refresh", scope.clone()))?
-        .ok_or(ZadError::Service {
-            name: "spotify",
-            message: "refresh token missing from keychain; re-run `zad service create spotify`"
-                .into(),
-        })?;
+    let refresh_account = secrets::account("spotify", "refresh", scope.clone());
+    let refresh_token = secrets::load(&refresh_account)?.ok_or(ZadError::Service {
+        name: "spotify",
+        message: "refresh token missing from keychain; re-run `zad service create spotify`".into(),
+    })?;
+    // Default-config consumers always want rotated tokens persisted
+    // back into the same keychain slot they were loaded from. Library
+    // users with custom storage go through `with_credentials` /
+    // `with_paths` and supply their own `refresh_token_store`.
+    let refresh_token_store: Option<Arc<dyn RefreshTokenStore>> =
+        Some(Arc::new(KeychainRefreshStore::new(refresh_account)));
     Ok(SpotifyCredentials {
         client_id,
         refresh_token,
+        refresh_token_store,
     })
 }
