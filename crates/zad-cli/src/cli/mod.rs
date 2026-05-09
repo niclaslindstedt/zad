@@ -1,0 +1,136 @@
+pub mod commands;
+pub mod debug_agent;
+pub mod discord;
+pub mod docs;
+pub mod echo;
+pub mod gcal;
+pub mod help_agent;
+pub mod lifecycle;
+pub mod man;
+pub mod onepass;
+pub mod permissions;
+pub mod service;
+pub mod service_discord;
+pub mod service_gcal;
+pub mod service_list;
+pub mod service_onepass;
+pub mod service_slack;
+pub mod service_spotify;
+pub mod service_status;
+pub mod service_telegram;
+pub mod service_ymusic;
+pub mod signing;
+pub mod slack;
+pub mod spotify;
+pub mod telegram;
+pub mod ymusic;
+
+use clap::{Parser, Subcommand};
+
+use zad::error::Result;
+
+/// Map a `dialoguer::Error` into [`zad::ZadError::Prompt`]. The library
+/// no longer depends on `dialoguer`, so the orphan rule prevents a
+/// blanket `From` impl in this crate; this trait gives every
+/// `.interact()` call site a one-method shorthand instead.
+pub(crate) trait DialoguerExt<T> {
+    fn into_zad(self) -> Result<T>;
+}
+
+impl<T> DialoguerExt<T> for std::result::Result<T, dialoguer::Error> {
+    fn into_zad(self) -> Result<T> {
+        self.map_err(|e| zad::ZadError::Prompt(e.to_string()))
+    }
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "zad",
+    version,
+    about = "Connect AI agents to external services via scoped service configs.",
+    disable_help_subcommand = true,
+    propagate_version = true
+)]
+pub struct Cli {
+    /// Enable debug-level logging on stderr (file log is always on).
+    #[arg(long, global = true)]
+    pub debug: bool,
+
+    /// Print a compact, prompt-injectable description of this CLI suitable
+    /// for splicing into an agent prompt via command substitution. See
+    /// OSS_SPEC.md §12.1.
+    #[arg(long, global = true)]
+    pub help_agent: bool,
+
+    /// Print a troubleshooting block (log paths, config precedence, env
+    /// vars, diagnostic commands, version). See OSS_SPEC.md §12.2.
+    #[arg(long, global = true)]
+    pub debug_agent: bool,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Configure or inspect external services.
+    Service(service::ServiceArgs),
+    /// Operate the 1Password service (vaults, items, get, read, inject, create).
+    #[command(name = "1pass")]
+    OnePass(onepass::OnePassArgs),
+    /// Operate the Discord service (send, read, channels, join, leave).
+    Discord(discord::DiscordArgs),
+    /// Operate the Google Calendar service (calendars, events, permissions).
+    Gcal(gcal::GcalArgs),
+    /// Operate the Slack service (send, read, channels, discover).
+    Slack(slack::SlackArgs),
+    /// Operate the Spotify service (search, playlists, library).
+    Spotify(spotify::SpotifyArgs),
+    /// Operate the Telegram service (send, read, chats, discover).
+    Telegram(telegram::TelegramArgs),
+    /// Operate the YouTube Music service (search, playlists, library).
+    Ymusic(ymusic::YmusicArgs),
+    /// Manage the local signing key and trust store.
+    Signing(signing::SigningArgs),
+    /// Enumerate CLI commands, flags, and realistic examples.
+    Commands(commands::CommandsArgs),
+    /// Print topic documentation embedded at build time.
+    Docs(docs::DocsArgs),
+    /// Print reference manpages embedded at build time.
+    Man(man::ManArgs),
+}
+
+pub async fn run() -> Result<()> {
+    let cli = Cli::parse();
+    zad::logging::init(cli.debug);
+
+    if cli.help_agent {
+        print!("{}", help_agent::render());
+        return Ok(());
+    }
+
+    if cli.debug_agent {
+        print!("{}", debug_agent::render());
+        return Ok(());
+    }
+
+    match cli.command {
+        Some(Command::Service(args)) => service::run(args).await,
+        Some(Command::OnePass(args)) => onepass::run(args).await,
+        Some(Command::Discord(args)) => discord::run(args).await,
+        Some(Command::Gcal(args)) => gcal::run(args).await,
+        Some(Command::Slack(args)) => slack::run(args).await,
+        Some(Command::Spotify(args)) => spotify::run(args).await,
+        Some(Command::Telegram(args)) => telegram::run(args).await,
+        Some(Command::Ymusic(args)) => ymusic::run(args).await,
+        Some(Command::Signing(args)) => signing::run(args),
+        Some(Command::Commands(args)) => commands::run(args),
+        Some(Command::Docs(args)) => docs::run(args),
+        Some(Command::Man(args)) => man::run(args),
+        None => {
+            println!("zad {}", zad::version());
+            println!("Run `zad --help` for usage.");
+            Ok(())
+        }
+    }
+}

@@ -2,13 +2,13 @@
 
 
 build:
-	cargo build
+	cargo build --workspace
 
 test:
-	cargo test
+	cargo test --workspace
 
 lint:
-	cargo clippy --all-targets -- -D warnings
+	cargo clippy --workspace --all-targets -- -D warnings
 
 fmt:
 	cargo fmt --all
@@ -20,13 +20,13 @@ shellcheck:
 	shellcheck scripts/*.sh
 
 release:
-	cargo build --release
+	cargo build --workspace --release
 
 clean:
 	cargo clean
 
 install:
-	cargo install --path .
+	cargo install --path crates/zad-cli
 
 
 docs:

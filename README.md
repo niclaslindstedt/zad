@@ -1,10 +1,13 @@
 # zad
 
-A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers.
+A Rust library and CLI that connects AI agents to external services (Discord, Slack, Google Calendar, Spotify, Telegram, YouTube Music, 1Password) via scoped service configurations instead of MCP servers.
+
+The project ships as two crates: **`zad`** (library — typed Rust API for embedding into other Rust projects) and **`zad-cli`** (binary — the `zad` command-line tool). The CLI is a thin wrapper over the library, so behaviour can't drift between the two.
 
 [![CI](https://github.com/niclaslindstedt/zad/actions/workflows/ci.yml/badge.svg)](https://github.com/niclaslindstedt/zad/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![crates.io](https://img.shields.io/crates/v/zad.svg)](https://crates.io/crates/zad)
+[![crates.io: zad](https://img.shields.io/crates/v/zad.svg?label=zad)](https://crates.io/crates/zad)
+[![crates.io: zad-cli](https://img.shields.io/crates/v/zad-cli.svg?label=zad-cli)](https://crates.io/crates/zad-cli)
 
 ## Why?
 
@@ -38,9 +41,49 @@ or pin a tag with `ZAD_VERSION=v0.1.2`.
 From source (requires Rust 1.88+):
 
 ```sh
-cargo install zad           # crates.io
-cargo install --path .      # local checkout
+cargo install zad-cli                 # crates.io
+cargo install --path crates/zad-cli   # local checkout
 ```
+
+`cargo install zad-cli` installs an executable named `zad`, so every
+existing command (`zad service create discord`, `zad discord send …`)
+keeps working unchanged.
+
+### Use as a library (Rust)
+
+If you're embedding zad into a Rust project, depend on the **library**
+instead — no binary install required:
+
+```toml
+[dependencies]
+zad = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
+
+```rust
+use zad::service::discord::{Discord, MessageBody, SendRequest};
+use zad::service::{ChannelId, Target};
+
+#[tokio::main]
+async fn main() -> zad::Result<()> {
+    let discord = Discord::from_default_config()?;
+    let req = SendRequest::new(
+        Target::Channel(ChannelId(123_456_789_012_345_678)),
+        MessageBody::text("hi from a typed Rust call"),
+        vec![],
+    )?;
+    let resp = discord.send(req).await?;
+    println!("sent message {}", resp.message_id.0);
+    Ok(())
+}
+```
+
+`SendRequest::new` validates the body length, attachment count, and
+empty-payload rule **at construction time**; wrong-shape calls surface
+as `zad::ZadError::Invalid` before any network I/O. Newtypes
+(`ChannelId`, `UserId`, `MessageId`) prevent passing the wrong kind of
+snowflake at a call site. See [`examples/discord-library/`](examples/discord-library/)
+for a complete runnable project.
 
 ## Quick start
 

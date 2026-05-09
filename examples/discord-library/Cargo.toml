@@ -1,0 +1,16 @@
+[package]
+name = "discord-library-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# This example runs against the library directly; it is intentionally
+# not a workspace member so a downstream Rust crate can copy this
+# directory verbatim and use it as a starting template.
+[workspace]
+
+[dependencies]
+# When this example lives inside the workspace, the path dep wins.
+# A downstream Rust crate would write `zad = "0.7"` here instead.
+zad = { path = "../../crates/zad", version = "0.7" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

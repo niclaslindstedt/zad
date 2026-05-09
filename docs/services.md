@@ -49,12 +49,24 @@ credentials can back many projects.
 ## Anatomy of a service module
 
 ```
-src/service/<name>/
-  mod.rs          — struct implementing `Service` (send_message / read_messages / listen / manage)
+crates/zad/src/service/<name>/
+  mod.rs          — struct implementing `Service` (send_message / read_messages / listen / manage),
+                    plus pub-use re-exports of the typed facade
   client.rs       — HTTP wrapper; translates domain types ↔ SDK types; enforces scopes locally
+  facade.rs       — typed library facade: `<Service>` struct + `*Request`/`*Response` types,
+                    three constructors, automatic permission enforcement
   transport.rs    — (optional) runtime-verb trait + live/dry-run impls for `--dry-run` preview
   gateway.rs      — (optional) event listener that produces a `BoxStream<Event>`
-  permissions.rs  — per-service schema composed from the generic primitives under `src/permissions/`
+  permissions.rs  — per-service schema composed from the generic primitives under
+                    `crates/zad/src/permissions/`; exposes a `load_from(global, local)` for env-free loading
+```
+
+The CLI side lives in a sibling crate:
+
+```
+crates/zad-cli/src/cli/
+  <name>.rs           — clap dispatch, prompts, output formatting; calls into the facade
+  service_<name>.rs   — `LifecycleService` impl driven by `cli/lifecycle.rs`
 ```
 
 The `Service` trait is intentionally small:
@@ -309,58 +321,141 @@ Re-use it; do not re-implement the flow.
 ### 2. Checklist
 
 Items 1–8 give you a fully working `zad service {create, enable,
-disable, show, delete} <name>`. Items 9–13 add runtime verbs (only
-needed when the service actually *does* something; a lifecycle-only
-service is a valid interim state).
+disable, show, delete} <name>`. Items 9–14 add runtime verbs and the
+typed library facade — both are required for a fully shipped service;
+a lifecycle-only service is a valid interim state.
 
 1. **Register the service.** Add `"<name>"` to
-   `SERVICES` in `src/service/registry.rs`.
-2. **Create `src/service/<name>/mod.rs`.** At minimum: a struct you
-   plan to hang runtime methods on. May be stubbed — the lifecycle
-   commands don't need a working client.
-3. **Extend `ProjectConfig`** in `src/config/schema.rs`: add
+   `SERVICES` in `crates/zad/src/service/registry.rs`.
+2. **Create `crates/zad/src/service/<name>/mod.rs`.** At minimum: a
+   struct you plan to hang runtime methods on. May be stubbed — the
+   lifecycle commands don't need a working client.
+3. **Extend `ProjectConfig`** in `crates/zad/src/config/schema.rs`: add
    `<name>(&self) -> Option<&ServiceProjectRef>`,
    `enable_<name>(&mut self)`, `disable_<name>(&mut self)`.
 4. **Add the per-service config struct** in
-   `src/config/schema.rs` (e.g. `TelegramServiceCfg { bot_username,
+   `crates/zad/src/config/schema.rs` (e.g. `TelegramServiceCfg { bot_username,
    scopes, default_chat_id }`) — serde-derived, flat keys. Non-secret
    fields only.
-5. **Create `src/cli/service_<name>.rs`** — see the skeleton below.
+5. **Create `crates/zad-cli/src/cli/service_<name>.rs`** — see the
+   skeleton below.
 6. **Add dispatch variants** to the five enums in
-   `src/cli/service.rs` (`CreateService`, `EnableService`, …) and one
-   match arm in each of the five match blocks, routing to
-   `lifecycle::run_*::<<Name>Lifecycle>(a)`.
-7. **Add `tests/cli_service_<name>_test.rs`** mirroring
-   `tests/cli_service_discord_test.rs`.
+   `crates/zad-cli/src/cli/service.rs` (`CreateService`,
+   `EnableService`, …) and one match arm in each of the five match
+   blocks, routing to `lifecycle::run_*::<<Name>Lifecycle>(a)`.
+7. **Add `crates/zad-cli/tests/cli_service_<name>_test.rs`** mirroring
+   `crates/zad-cli/tests/cli_service_discord_test.rs`.
 8. **Run `make fmt lint build test`**. Lifecycle is now wired
    end-to-end. (`oss-spec validate .` is an on-demand conformance
    check — useful when introducing structural changes, not required
    for every PR.)
 
-9. **Implement the `Service` trait** in `src/service/<name>/mod.rs`
-   when you're ready to ship runtime verbs. Keep the provider's SDK a
-   private dependency of the client — never leak its types across the
-   trait boundary.
+9. **Implement the `Service` trait** in
+   `crates/zad/src/service/<name>/mod.rs` when you're ready to ship
+   runtime verbs. Keep the provider's SDK a private dependency of the
+   client — never leak its types across the trait boundary. (Skip the
+   trait if your service doesn't fit chat-style send/read/listen — see
+   gcal/spotify/ymusic.)
 10. **Enforce scopes locally** in the client: each method asserts
     the scope it needs *before* the network call and returns
     `ZadError::ScopeDenied { service: NAME, scope, config_path }`
     otherwise.
-11. **Compose a permissions schema** in `src/service/<name>/permissions.rs`
-    from `PatternListRaw`, `ContentRulesRaw`, `TimeWindowRaw`, with
+11. **Compose a permissions schema** in
+    `crates/zad/src/service/<name>/permissions.rs` from
+    `PatternListRaw`, `ContentRulesRaw`, `TimeWindowRaw`, with
     one per-function block. Expose
     `EffectivePermissions { global, local }` with one
-    `check_<verb>_<target>` method per runtime verb.
-12. **Wire runtime verbs** under `src/cli/<name>.rs` (the group
-    entrypoint used by `zad <name> <verb>`) and add
-    `Command::<Name>(...)` to `src/cli/mod.rs`. Include the mandatory
+    `check_<verb>_<target>` method per runtime verb. Add a
+    `pub fn load_from(global: Option<&Path>, local: Option<&Path>)
+    -> Result<EffectivePermissions>` next to `load_effective` so
+    library callers can pin permission paths without env-var
+    influence.
+12. **Build the typed library facade** in
+    `crates/zad/src/service/<name>/facade.rs` (see "Typed library
+    facade" below for the canonical recipe). Re-export the types from
+    `mod.rs`. **Required** — the typed facade is what makes the
+    service callable from a Rust crate that depends on `zad`.
+13. **Wire runtime verbs** under `crates/zad-cli/src/cli/<name>.rs`
+    (the group entrypoint used by `zad <name> <verb>`) and add
+    `Command::<Name>(...)` to `crates/zad-cli/src/cli/mod.rs`. CLI
+    handlers should call into the facade rather than re-doing
+    permission-load + check + transport-call. Include the mandatory
     `permissions` subgroup with `show` / `path` / `init` / `check`.
-13. **Optional: `--dry-run`** for mutating verbs via the
+14. **Optional: `--dry-run`** for mutating verbs via the
     `<Name>Transport` pattern described in the *Dry-run preview*
     section above. Reuse `default_dry_run_sink()` from
-    `src/service/mod.rs`; don't reinvent the sink.
-14. **Write `man/<name>.md`, ship `examples/<name>-permissions/`,
+    `crates/zad/src/service/mod.rs`; don't reinvent the sink.
+15. **Write `man/<name>.md`, ship `examples/<name>-permissions/`,
     and update `docs/configuration.md`** with the credentials
-    schema and any service-specific files.
+    schema and any service-specific files. Optionally add
+    `examples/<name>-library/` (a runnable Rust crate
+    demonstrating the facade) — required when the facade lands so
+    the typed-input contract is documented for downstream users.
+
+### Typed library facade — the canonical recipe
+
+Every service must expose a typed Rust API so a downstream crate that
+writes `zad = "0.7"` in its `Cargo.toml` can call zad's functionality
+without shelling out to the binary. The facade in
+`crates/zad/src/service/<name>/facade.rs` is the contract.
+
+**Required ingredients:**
+
+1. **A `<Service>` struct** that owns the client (`<Service>Http`)
+   plus optional `EffectivePermissions` plus an optional `Directory`
+   for permission-rule alias lookup. Construction is the only place
+   `Self` is built; downstream callers never poke at the fields
+   directly.
+2. **Three constructors**, in this order:
+   - `<Service>::from_default_config()` — CLI-equivalent. Loads
+     project-or-global config from `~/.zad/...`, the credential(s)
+     from the OS keychain, and `permissions.toml` from the default
+     paths. **Honors `ZAD_HOME_OVERRIDE`, `ZAD_PERMISSIONS_PATH`,
+     `ZAD_PERMISSIONS_ROOT`, and `ZAD_SECRETS_MEMORY`** — document
+     this loudly in the rustdoc.
+   - `<Service>::with_token(token, scopes, config_path)` (or
+     `with_credentials(creds, ...)` for OAuth services) — explicit
+     credentials. **Reads no env vars.** No on-disk permission
+     enforcement; layer back on with `with_permissions(...)`.
+   - `<Service>::with_paths(token_or_creds, scopes, config_path,
+     global_permissions: Option<&Path>, local_permissions:
+     Option<&Path>)` — fully explicit. **Reads no env vars.** This
+     is the recommended entry point for production library code,
+     multi-tenant servers, and deterministic tests.
+3. **Validating `*Request` types per verb.** Construction goes
+   through `Request::new(...)` (not literal struct init), and the
+   constructor enforces every constraint that the underlying API
+   would reject for shape reasons: max body length, max attachment
+   count, valid range for `limit`, non-empty required strings.
+   Surface failures as `ZadError::Invalid(...)`. Once a `Request`
+   exists, the only failures left at the call site are network /
+   permission / scope.
+4. **Newtypes for every ID** — `ChannelId`, `MessageId`, `UserId`,
+   `ChatId` etc. — never raw `String` or `u64` in public verb
+   signatures. The point is that a function taking a `ChannelId`
+   cannot be called with a user ID by accident.
+5. **Closed enums for any "one of these" choice** —
+   `Target::Channel | Target::Dm`, `MessageBody::Text | Empty`,
+   etc. Public APIs never take stringly-typed kind discriminators.
+6. **Permission and scope enforcement inside facade methods**, in
+   exactly this order: `check_time(...)`, target check
+   (`check_send_channel`, `check_read_chat`, …), body check, then
+   the transport call. Errors come back as
+   `ZadError::PermissionDenied { function, reason, config_path }`
+   — same variants the CLI emits.
+7. **A typed-input test** at
+   `crates/zad/tests/<name>_facade_test.rs` (mirroring
+   `discord_facade_test.rs`). Exercise every validating constructor's
+   reject paths plus at least one happy path. No network, no
+   keychain, no filesystem — these tests are evidence that the
+   library refuses malformed calls at the type/value level.
+
+**Reference implementations:** Discord
+(`crates/zad/src/service/discord/facade.rs`) for the bot-token
+shape, Gcal (`crates/zad/src/service/gcal/facade.rs`) for full OAuth
+(`client_id` + `client_secret` + `refresh_token`), Spotify for OAuth
+PKCE (`client_id` + `refresh_token`, no secret), OnePass for the
+`op`-binary shell-out shape.
 
 ### 3. Paste-ready `LifecycleService` skeleton
 

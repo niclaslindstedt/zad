@@ -37,52 +37,82 @@ make fmt-check     # verify formatting (CI)
 
 ## Architecture summary
 
-`zad` is a single Rust crate whose entry point is `src/main.rs`. The crate
-is split into four top-level modules: `cli` (argument parsing via clap),
-`service` (one sub-module per integration, e.g. `service::discord`),
-`config` (TOML schema and path helpers), and `secrets` (OS-keychain I/O).
-`src/lib.rs` re-exports the public surface so that integration tests under
-`tests/` can reach it without going through the binary.
+`zad` is a Cargo workspace with two members:
 
-Dependency direction is strictly layered: `cli` → `service` + `config` →
-`secrets`. Services never import from `cli`; `config` never imports from
-`service`. `src/error.rs` and `src/logging.rs` are leaf utilities imported
-by all layers.
+- **`crates/zad`** — the library. Holds all business logic: services
+  (`service::*`), TOML schema and path helpers (`config`), OS-keychain
+  I/O (`secrets`), OAuth flows (`oauth`), permissions
+  (`permissions`), errors (`error`), logging (`logging`). This is what
+  Rust projects depend on directly via `zad = "0.7"`.
+- **`crates/zad-cli`** — the CLI binary. Holds argument parsing
+  (clap), interactive prompts (`dialoguer`), human/JSON output
+  formatting, the dry-run echo machinery, embedded manpages and docs.
+  Produces an executable named `zad` (so `cargo install zad-cli`
+  installs the same `zad` command users have always run).
+  Depends on the library by both path and version, so the binary
+  always pins a matching library release.
+
+Dependency direction is strictly layered: `zad-cli::cli` →
+`zad::service` + `zad::config` → `zad::secrets`. Services never import
+from `cli`; `config` never imports from `service`. `zad::error` and
+`zad::logging` are leaf utilities imported by all layers.
+
+Each service exposes a typed library facade — e.g. `Discord` with
+`SendRequest::new`, `ReadRequest::new`, `Discord::send`,
+`Discord::read`. Validation runs at request construction; library and
+CLI go through the same code path so behavior can't drift between
+them. See `crates/zad/src/service/discord/facade.rs` for the canonical
+pattern.
 
 The lifecycle commands (`zad service {create,enable,disable,show,delete}
-<name>`) are driven by a single generic driver in `src/cli/lifecycle.rs`:
-each service implements the `LifecycleService` trait in its own
-`src/cli/service_<name>.rs` (~80 lines) and the driver handles the
-plumbing. The canonical list of services ships in `src/service/registry.rs`.
-See `docs/services.md#adding-a-new-service` for the full recipe — adding a
+<name>`) are driven by a single generic driver in
+`crates/zad-cli/src/cli/lifecycle.rs`: each service implements the
+`LifecycleService` trait in its own
+`crates/zad-cli/src/cli/service_<name>.rs` (~80 lines) and the driver
+handles the plumbing. The canonical list of services ships in
+`crates/zad/src/service/registry.rs`. See
+`docs/services.md#adding-a-new-service` for the full recipe — adding a
 service (Telegram, Slack, Reddit, GitHub App, Matrix, IRC, …) is a
 checklist-driven task, not a copy-paste of Discord.
+
+### Env vars and the library
+
+The library exposes both env-aware and env-free constructors per
+service: `Discord::from_default_config()` honors `ZAD_HOME_OVERRIDE`,
+`ZAD_PERMISSIONS_PATH`, `ZAD_PERMISSIONS_ROOT`, and
+`ZAD_SECRETS_MEMORY` (CLI-equivalent shortcut), while
+`Discord::with_paths(...)` reads zero env vars and is the recommended
+entry point for production library code, multi-tenant servers, and
+deterministic tests. New services should ship both shapes.
 
 ## Where new code goes
 
 | Change type | Goes in |
 |---|---|
-| New feature | `src/...` |
-| New service | Follow `docs/services.md#adding-a-new-service` — implement `LifecycleService`, add a row to `src/service/registry.rs`, wire clap dispatch in `src/cli/service.rs` |
-| Tests       | `tests/...` |
+| Library logic | `crates/zad/src/...` |
+| New service (library side) | `crates/zad/src/service/<name>/` — `client.rs`, `permissions.rs`, `transport.rs`, `facade.rs` (typed `*Request`/`*Response` + a `<Service>` struct with `from_default_config` / `with_token` / `with_paths`). Add a row to `crates/zad/src/service/registry.rs`. |
+| New service (CLI side) | `crates/zad-cli/src/cli/<name>.rs` (clap dispatch + render) and `crates/zad-cli/src/cli/service_<name>.rs` (`LifecycleService`). Wire into `crates/zad-cli/src/cli/service.rs`. |
+| Library tests | `crates/zad/tests/...` |
+| CLI tests | `crates/zad-cli/tests/...` |
 | Docs update | `docs/...` |
-| Examples    | `examples/...` |
-| LLM prompt  | `prompts/<name>/<major>_<minor>.md` (see `prompts/README.md`) |
+| Examples | `examples/...` (TOML permission examples; `examples/<svc>-library/` for runnable Rust crates) |
+| LLM prompt | `prompts/<name>/<major>_<minor>.md` (see `prompts/README.md`) |
 
 ## Test conventions
 
 - **All tests live in separate files** — never inline in source files (no `#[cfg(test)]` blocks, no `if __name__ == "__main__"` test harnesses). This keeps source files free of test scaffolding and lets agents, hooks, and linters treat source and test code differently.
 - Test files are named with a `_test` or `_tests` suffix (e.g. `check_test.rs`, `utils_test.py`). The stem must match the pattern `_?[Tt]ests?$` per §20 of `OSS_SPEC.md`.
-- Tests live in `tests/`. Use `tempfile` or equivalent for any test that writes to the filesystem.
-- **Any assertion that substrings a filesystem path out of stdout/stderr MUST use `common::contains_path("…/…")` instead of raw `predicates::str::contains`.** Windows CI renders paths with `\` separators and a plain `contains("a/b/c")` silently fails there even though it passes on Unix. The helper in `tests/common/mod.rs` matches both forms; write the author-facing fragment with forward slashes.
+- Library tests live in `crates/zad/tests/`; CLI integration tests (anything that drives the binary via `assert_cmd`) live in `crates/zad-cli/tests/`. Use `tempfile` or equivalent for any test that writes to the filesystem.
+- **Any assertion that substrings a filesystem path out of stdout/stderr MUST use `common::contains_path("…/…")` instead of raw `predicates::str::contains`.** Windows CI renders paths with `\` separators and a plain `contains("a/b/c")` silently fails there even though it passes on Unix. The helper exists in both `crates/zad/tests/common/mod.rs` and `crates/zad-cli/tests/common/mod.rs` (kept in sync); write the author-facing fragment with forward slashes.
 
 ## Documentation sync points
 
 When you change… | Update…
 --- | ---
-public API | `docs/`, `README.md` Quick start
-CLI flags  | `man/<cmd>.md`, `README.md`
-config keys| `docs/configuration.md`
+library public API | `docs/`, `README.md` "Use as a library" section, `examples/<svc>-library/` |
+CLI flags  | `man/<cmd>.md`, `README.md` Quick start |
+config keys| `docs/configuration.md` |
+service facade | typed-input contract test (`crates/zad/tests/<svc>_facade_test.rs`) |
 
 ## Parity / cross-cutting rules
 
