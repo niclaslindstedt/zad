@@ -5,6 +5,14 @@
 //! `include_str!` so the exact text a contributor ships is the exact
 //! text an agent sees at runtime — no filesystem lookups, no version
 //! skew between the installed binary and the source tree.
+//!
+//! Paths resolve through the `crates/zad-cli/docs` symlink, which
+//! points at `../../docs` (the canonical docs tree at the repo root).
+//! The symlink is resolved when cargo packages the crate, so the
+//! published tarball ships the doc files as real entries and the
+//! `cargo publish` verify step can compile the package outside the
+//! workspace. Don't replace the symlink with copies — that would
+//! immediately drift from the canonical docs.
 
 use std::fmt::Write as _;
 
@@ -20,21 +28,15 @@ pub struct DocsArgs {
 }
 
 const TOPICS: &[(&str, &str)] = &[
-    (
-        "architecture",
-        include_str!("../../../../docs/architecture.md"),
-    ),
-    (
-        "configuration",
-        include_str!("../../../../docs/configuration.md"),
-    ),
+    ("architecture", include_str!("../../docs/architecture.md")),
+    ("configuration", include_str!("../../docs/configuration.md")),
     (
         "getting-started",
-        include_str!("../../../../docs/getting-started.md"),
+        include_str!("../../docs/getting-started.md"),
     ),
     (
         "troubleshooting",
-        include_str!("../../../../docs/troubleshooting.md"),
+        include_str!("../../docs/troubleshooting.md"),
     ),
 ];
 
