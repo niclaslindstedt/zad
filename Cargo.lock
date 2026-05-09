@@ -3160,7 +3160,7 @@ dependencies = [
 
 [[package]]
 name = "zad"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "assert_cmd",
  "async-trait",
@@ -3195,7 +3195,7 @@ dependencies = [
 
 [[package]]
 name = "zad-cli"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "assert_cmd",
  "async-trait",

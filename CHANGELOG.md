@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.6.1]
+## [0.6.2]
 
-- feat!: split into zad library + zad-cli binary with typed Rust facades (#61)
+- fix(release): publish both zad and zad-cli on tag (#62)
 
