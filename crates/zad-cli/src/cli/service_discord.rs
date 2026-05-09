@@ -101,7 +101,7 @@ impl LifecycleService for DiscordLifecycle {
         cfg.disable_discord();
     }
 
-    async fn validate(_cfg: &DiscordServiceCfg, creds: &DiscordSecrets) -> Result<String> {
+    async fn validate(_cfg: &DiscordServiceCfg, creds: &mut DiscordSecrets) -> Result<String> {
         DiscordHttp::unscoped(&creds.bot_token)
             .validate_token()
             .await

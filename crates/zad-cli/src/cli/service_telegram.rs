@@ -103,7 +103,7 @@ impl LifecycleService for TelegramLifecycle {
         cfg.disable_telegram();
     }
 
-    async fn validate(_cfg: &TelegramServiceCfg, creds: &TelegramSecrets) -> Result<String> {
+    async fn validate(_cfg: &TelegramServiceCfg, creds: &mut TelegramSecrets) -> Result<String> {
         TelegramHttp::unscoped(&creds.bot_token)
             .validate_token()
             .await

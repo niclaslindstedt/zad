@@ -242,7 +242,7 @@ pub async fn run_create<T: CliLifecycle>(args: T::CreateArgs) -> Result<()> {
             )
         };
 
-    let (cfg, creds) = T::resolve(&args, base.non_interactive).await?;
+    let (cfg, mut creds) = T::resolve(&args, base.non_interactive).await?;
 
     let validate = !base.no_validate;
     let opts = CreateOpts {
@@ -252,7 +252,7 @@ pub async fn run_create<T: CliLifecycle>(args: T::CreateArgs) -> Result<()> {
         force: base.force,
         validate,
     };
-    let outcome: CreateOutcome = lifecycle::create::<T>(&cfg, &creds, opts).await?;
+    let outcome: CreateOutcome = lifecycle::create::<T>(&cfg, &mut creds, opts).await?;
 
     if validate
         && let Some(name) = outcome.authenticated_as.as_deref()

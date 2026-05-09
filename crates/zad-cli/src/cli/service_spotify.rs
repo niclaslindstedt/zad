@@ -11,6 +11,7 @@
 //!
 //! See `docs/services.md#adding-a-new-service` for the full recipe.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::cli::DialoguerExt;
@@ -24,7 +25,7 @@ use crate::cli::lifecycle::{
 };
 use zad::config::{ProjectConfig, SpotifyServiceCfg};
 use zad::error::{Result, ZadError};
-use zad::oauth::{LoopbackConfig, RedirectScheme, run_loopback_flow};
+use zad::oauth::{LoopbackConfig, RedirectScheme, RefreshTokenStore, run_loopback_flow};
 use zad::secrets::{self, Scope};
 use zad::service::spotify::{AUTH_URL, SpotifyHttp, TOKEN_URL, spotify_scopes_for};
 
@@ -135,9 +136,29 @@ impl LifecycleService for SpotifyLifecycle {
         cfg.disable_spotify();
     }
 
-    async fn validate(_cfg: &SpotifyServiceCfg, creds: &SpotifySecrets) -> Result<String> {
-        let http = SpotifyHttp::unscoped(creds.client_id.clone(), creds.refresh_token.clone());
+    async fn validate(_cfg: &SpotifyServiceCfg, creds: &mut SpotifySecrets) -> Result<String> {
+        // Spotify's PKCE flow rotates the refresh token on every
+        // `/api/token` call. The validate ping forces exactly such a
+        // call, so we wire a tiny capture store that funnels any
+        // rotation back into `creds.refresh_token` — the lifecycle
+        // driver then writes the rotated value to the keychain via
+        // `store_secrets`. Without this, the user would land in the
+        // exact bug spotifai reported: keychain holds the
+        // pre-rotation token, Spotify revokes it after the grace
+        // window, the next runtime call fails with `invalid_grant`.
+        let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let store = Arc::new(CaptureRefreshToken(captured.clone()));
+        let http = SpotifyHttp::with_store(
+            creds.client_id.clone(),
+            creds.refresh_token.clone(),
+            std::collections::BTreeSet::new(),
+            std::path::PathBuf::new(),
+            Some(store),
+        );
         let me = http.me().await?;
+        if let Some(rotated) = captured.lock().unwrap().take() {
+            creds.refresh_token = rotated;
+        }
         Ok(me.display_name.unwrap_or(me.id))
     }
 
@@ -397,4 +418,20 @@ async fn resolve_refresh_via_loopback(
                   `zad service create spotify` to retry the consent flow."
             .into(),
     })
+}
+
+/// `RefreshTokenStore` impl that captures a rotated refresh token
+/// into a shared cell instead of writing it anywhere. Used by
+/// `SpotifyLifecycle::validate` so the lifecycle driver can take the
+/// rotated value and persist it via `store_secrets` rather than
+/// hard-coding a keychain write inside validate (the keychain slot
+/// isn't yet authoritative at create time — `store_secrets` is the
+/// single writer).
+struct CaptureRefreshToken(Arc<Mutex<Option<String>>>);
+
+impl RefreshTokenStore for CaptureRefreshToken {
+    fn store(&self, refresh_token: &str) -> Result<()> {
+        *self.0.lock().unwrap() = Some(refresh_token.to_string());
+        Ok(())
+    }
 }
