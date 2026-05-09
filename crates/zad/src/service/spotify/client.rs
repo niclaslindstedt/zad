@@ -28,32 +28,72 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::{Result, ZadError};
-use crate::oauth;
+use crate::oauth::{self, RefreshTokenStore};
 use crate::service::spotify::{API_BASE, TOKEN_URL};
 
 /// Thin wrapper over Spotify Web API v1. Holds a refresh token and
 /// mints an access token on demand.
+///
+/// Spotify rotates the refresh token on every successful refresh; the
+/// previous token is honoured for a short grace window, then revoked.
+/// When [`Self::access_token`] sees a rotated value it persists the
+/// new token via the optional [`RefreshTokenStore`] before updating
+/// its in-memory copy, so the next process picks up the latest token
+/// instead of replaying the stale one.
 #[derive(Clone)]
 pub struct SpotifyHttp {
     client_id: String,
-    refresh_token: String,
+    /// Wrapped in a Mutex so a token rotation in one process can be
+    /// reflected back into the in-memory state without taking `&mut
+    /// self` through the whole chain.
+    refresh_token: Arc<Mutex<String>>,
+    /// Where to persist a rotated refresh token. `None` means "drop
+    /// the rotation on the floor" — fine for short-lived tests, fatal
+    /// for long-lived deployments against rotating providers.
+    refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+    /// Token endpoint URL. Defaults to
+    /// [`crate::service::spotify::TOKEN_URL`]; overridable so tests
+    /// can point at a localhost mock.
+    token_url: String,
     scopes: BTreeSet<String>,
     config_path: PathBuf,
-    /// Cached access token for the lifetime of this process.
+    /// Cached access token for the lifetime of this process. Held
+    /// across the network refresh so two concurrent callers can't
+    /// race two distinct rotated tokens onto the keychain.
     cached_access: Arc<Mutex<Option<String>>>,
 }
 
 impl SpotifyHttp {
-    /// Full-featured constructor used by runtime verbs.
+    /// Full-featured constructor used by runtime verbs. No persisting
+    /// store — rotated tokens are dropped on the floor; suitable only
+    /// for callers that don't care or that drive rotation themselves.
+    /// Use [`Self::with_store`] in production.
     pub fn new(
         client_id: String,
         refresh_token: String,
         scopes: BTreeSet<String>,
         config_path: PathBuf,
     ) -> Self {
+        Self::with_store(client_id, refresh_token, scopes, config_path, None)
+    }
+
+    /// Like [`Self::new`] but takes an optional [`RefreshTokenStore`]
+    /// that receives every rotated refresh token. The canonical zad
+    /// wiring (`Spotify::from_default_config`) supplies a
+    /// [`crate::oauth::KeychainRefreshStore`] pointing at the
+    /// `secrets::account("spotify", "refresh", Scope::Global)` slot.
+    pub fn with_store(
+        client_id: String,
+        refresh_token: String,
+        scopes: BTreeSet<String>,
+        config_path: PathBuf,
+        refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+    ) -> Self {
         Self {
             client_id,
-            refresh_token,
+            refresh_token: Arc::new(Mutex::new(refresh_token)),
+            refresh_token_store,
+            token_url: TOKEN_URL.to_string(),
             scopes,
             config_path,
             cached_access: Arc::new(Mutex::new(None)),
@@ -64,6 +104,21 @@ impl SpotifyHttp {
     /// check`).
     pub fn unscoped(client_id: String, refresh_token: String) -> Self {
         Self::new(client_id, refresh_token, BTreeSet::new(), PathBuf::new())
+    }
+
+    /// Override the token endpoint URL. Test-only — production code
+    /// should rely on the default
+    /// [`crate::service::spotify::TOKEN_URL`].
+    #[doc(hidden)]
+    pub fn with_token_url(mut self, url: impl Into<String>) -> Self {
+        self.token_url = url.into();
+        self
+    }
+
+    /// Read the in-memory refresh token. Test-only.
+    #[doc(hidden)]
+    pub async fn refresh_token_for_test(&self) -> String {
+        self.refresh_token.lock().await.clone()
     }
 
     fn require_scope(&self, scope: &'static str) -> Result<()> {
@@ -80,23 +135,50 @@ impl SpotifyHttp {
     /// Lazily fetch (and cache) an access token for the lifetime of
     /// this process. Spotify PKCE public clients send `client_id`
     /// only — no `client_secret`.
-    async fn access_token(&self) -> Result<String> {
-        {
-            let guard = self.cached_access.lock().await;
-            if let Some(t) = guard.as_ref() {
-                return Ok(t.clone());
-            }
+    ///
+    /// The `cached_access` lock is held across the network refresh
+    /// **and** across the rotated-token persist step, so two
+    /// concurrent callers can't both refresh and race two distinct
+    /// rotated tokens onto the keychain. The serialization is a
+    /// once-per-process event (the access token then stays cached
+    /// forever) so the contention cost is negligible.
+    ///
+    /// Exposed publicly with `#[doc(hidden)]` so tests can drive a
+    /// refresh without piggy-backing on a follow-up API call (which
+    /// would try to hit the real Spotify API).
+    #[doc(hidden)]
+    pub async fn access_token(&self) -> Result<String> {
+        let mut cached = self.cached_access.lock().await;
+        if let Some(t) = cached.as_ref() {
+            return Ok(t.clone());
         }
+        let current = self.refresh_token.lock().await.clone();
         let fresh = oauth::refresh_access_token(
             "spotify",
-            TOKEN_URL,
+            &self.token_url,
             &self.client_id,
             None,
-            &self.refresh_token,
+            &current,
         )
         .await?;
-        let mut guard = self.cached_access.lock().await;
-        *guard = Some(fresh.access_token.clone());
+
+        // Spotify's PKCE flow rotates the refresh token on every
+        // /api/token call. Persist the new value before updating the
+        // in-memory copy so a crash mid-update never leaves the
+        // keychain behind the in-memory state. A keychain write
+        // failure surfaces — silently swallowing it would recreate
+        // the original "Refresh token revoked" bug.
+        if let Some(new_rt) = fresh.refresh_token.as_deref() {
+            let mut rt = self.refresh_token.lock().await;
+            if new_rt != rt.as_str() {
+                if let Some(store) = &self.refresh_token_store {
+                    store.store(new_rt)?;
+                }
+                *rt = new_rt.to_string();
+            }
+        }
+
+        *cached = Some(fresh.access_token.clone());
         Ok(fresh.access_token)
     }
 

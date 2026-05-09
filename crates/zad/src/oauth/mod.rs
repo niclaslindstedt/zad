@@ -230,6 +230,51 @@ pub async fn run_loopback_flow(cfg: &LoopbackConfig, open_browser: bool) -> Resu
     exchange_code(cfg, &redirect_uri, &code, &pkce.verifier).await
 }
 
+/// Persist a rotated refresh token.
+///
+/// Some OAuth providers (notably Spotify's PKCE flow) issue a fresh
+/// `refresh_token` on every `/api/token` call and revoke the previous
+/// one after a short grace window. Service HTTP clients call
+/// [`Self::store`] whenever the response carries a `refresh_token`
+/// that differs from the one they sent, so the next process picks up
+/// the rotated value instead of replaying a token Spotify is about to
+/// revoke.
+///
+/// Implementations decide where the token lives. The default zad
+/// layout uses [`KeychainRefreshStore`] to write into the OS keychain;
+/// library users with a different storage backend supply their own
+/// impl. Errors propagate up to the caller — silently swallowing them
+/// recreates the very bug this trait exists to prevent.
+pub trait RefreshTokenStore: Send + Sync {
+    fn store(&self, refresh_token: &str) -> Result<()>;
+}
+
+/// Default [`RefreshTokenStore`] that writes the rotated token into
+/// the OS keychain via [`crate::secrets::store`].
+///
+/// Built from the canonical zad keychain account string, e.g.
+/// `secrets::account("spotify", "refresh", Scope::Global)` — the same
+/// slot the lifecycle path (`zad service create spotify`) writes the
+/// initial token to, so subsequent `from_default_config` consumers
+/// pick up the rotated value automatically.
+pub struct KeychainRefreshStore {
+    account: String,
+}
+
+impl KeychainRefreshStore {
+    pub fn new(account: impl Into<String>) -> Self {
+        Self {
+            account: account.into(),
+        }
+    }
+}
+
+impl RefreshTokenStore for KeychainRefreshStore {
+    fn store(&self, refresh_token: &str) -> Result<()> {
+        crate::secrets::store(&self.account, refresh_token)
+    }
+}
+
 /// Exchange a refresh token for a fresh access token. Called on every
 /// CLI run — we never persist access tokens. Pass `None` for
 /// `client_secret` when the OAuth client is a PKCE-only public client
