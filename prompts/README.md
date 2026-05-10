@@ -11,18 +11,30 @@ file rather than as an inline string in source code.
 ```
 prompts/
 └── <prompt-name>/
-    ├── 1_0.md
-    ├── 1_1.md   # in-place edit, bumps minor
-    └── 2_0.md   # breaking rewrite, bumps major
+    ├── 1_0_0.md
+    ├── 1_1_0.md   # new file, non-breaking minor bump
+    └── 2_0_0.md   # new file, breaking major bump
 ```
+
+Versioned files are **immutable** once committed. Every change ships as a
+new file at a bumped semver — never edit `1_0_0.md` in place.
 
 ## File format
 
-Each `<major>_<minor>.md` file is plain Markdown with two required
-section headings:
+Each `<major>_<minor>_<patch>.md` file is plain Markdown. It must begin
+with a YAML front-matter block declaring the prompt's `name`,
+`description`, and `version`. The `version` value must match the
+filename stem (`1_2_0.md` → `version: 1.2.0`). Loaders strip the front
+matter before passing the prompt to the model.
 
 ```markdown
-# <prompt-name> — v<major>.<minor>
+---
+name: <prompt-name>
+description: "<one-sentence description of what this prompt does>"
+version: <major>.<minor>.<patch>
+---
+
+# <prompt-name>
 
 ## System
 
@@ -34,16 +46,23 @@ section headings:
 loader renders with runtime values…
 ```
 
-Anything outside the `## System` and `## User` sections is ignored by
-the loader and is purely for humans reading the file.
+The `## System` section is sent verbatim as the system prompt; the
+`## User` section is rendered with the project's templating engine and
+sent as the user message. The YAML front matter, the `# Title` heading,
+and any other prose outside the two required sections are ignored by
+the loader and exist purely for humans reading the file.
 
 ## Versioning rule
 
-- **Minor bump** (`1_0` → `1_1`): in-place edit. Old version stays on
-  disk so behavior changes can be diffed and bisected.
-- **Major bump** (`1_x` → `2_0`): breaking rewrite that callers must be
-  updated for.
-- Loaders pick the highest version unless explicitly pinned.
+- **Patch bump** (`1_0_0` → `1_0_1`): wording fixes that do not change
+  the contract — typos, clarifications.
+- **Minor bump** (`1_0_0` → `1_1_0`): non-breaking additions — new
+  placeholders, expanded scope, new guidance bullets.
+- **Major bump** (`1_x_y` → `2_0_0`): breaking rewrites that callers
+  must be updated for — removed placeholders, changed JSON schema,
+  fundamentally new task.
+
+Loaders pick the highest version unless explicitly pinned.
 
 If this project performs no LLM calls, leave this directory empty
 (this README is enough to satisfy `oss-spec validate`).

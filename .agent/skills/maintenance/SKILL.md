@@ -17,16 +17,17 @@ Do **not** use this skill for a targeted fix — if you know exactly which artif
 
 ## Registry
 
-The registry is the single source of truth for which sync skills exist in this repo. Every `update-*` directory under `.agent/skills/` must appear here exactly once. New projects start with the entries below; add rows whenever you create a new sync skill.
+The registry is the single source of truth for which sync skills exist in this repo. Every sync skill under `.agent/skills/` must appear here exactly once. New projects start with the entries below; add rows whenever you create a new sync skill.
 
 | Skill | Fixes | Run order |
 |---|---|---|
-| `update-manpages` | `man/*.md` vs. clap CLI definitions        | 1 |
-| `update-docs`     | `docs/*.md` vs. source of truth            | 2 |
-| `update-readme`   | `README.md` vs. current public surface     | 3 |
-| `update-website`  | `website/` source-derived content          | 4 |
+| `update-manpages` | `man/*.md` vs. clap CLI definitions                               | 1 |
+| `update-docs`     | `docs/*.md` vs. source of truth                                   | 2 |
+| `update-readme`   | `README.md` vs. current public surface                            | 3 |
+| `update-website`  | `website/` source-derived content                                 | 4 |
+| `sync-oss-spec`   | residual `OSS_SPEC.md` violations the per-artifact skills missed  | 5 |
 
-Run order matters: upstream fixes must land before downstream skills read them. Manpages mirror the CLI parser and must settle first; `docs/` references those manpages; the README summarizes everything above; the website is rendered from all three.
+Run order matters: upstream fixes must land before downstream skills read them. Manpages mirror the CLI parser and must settle first; `docs/` references those manpages; the README summarizes everything above; the website is rendered from all three; `sync-oss-spec` runs last as the structural-conformance net (per OSS_SPEC §21.5).
 
 ## Discovery process
 
