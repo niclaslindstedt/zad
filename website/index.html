@@ -1,46 +1,49 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>zad</title>
-    <meta name="description" content="A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers." />
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>zad — connect AI agents to external services without an MCP server</title>
+    <meta name="description" content="A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required." />
     <link rel="canonical" href="https://zad.niclaslindstedt.se/" />
     <meta name="robots" content="index,follow,max-image-preview:large" />
-    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
-    <!-- Crawler policy: see robots.txt at site root. -->
+
     <meta property="og:site_name" content="zad" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="zad" />
-    <meta property="og:description" content="A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers." />
+    <meta property="og:title" content="zad — connect AI agents to external services without an MCP server" />
+    <meta property="og:description" content="A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required." />
     <meta property="og:url" content="https://zad.niclaslindstedt.se/" />
     <meta property="og:image" content="https://zad.niclaslindstedt.se/og-default.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="zad — connect AI agents to external services" />
+
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="zad" />
-    <meta name="twitter:description" content="A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers." />
+    <meta name="twitter:title" content="zad — connect AI agents to external services without an MCP server" />
+    <meta name="twitter:description" content="A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required." />
     <meta name="twitter:image" content="https://zad.niclaslindstedt.se/og-default.png" />
+
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+    <!-- Crawler directives live in /robots.txt -->
+
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "@id": "https://zad.niclaslindstedt.se/",
         "name": "zad",
-        "description": "A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers.",
+        "description": "A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required.",
+        "url": "https://zad.niclaslindstedt.se/",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Linux, macOS, Windows",
-        "license": "https://spdx.org/licenses/MIT.html",
-        "codeRepository": "https://github.com/niclaslindstedt/zad",
-        "url": "https://zad.niclaslindstedt.se/",
         "image": "https://zad.niclaslindstedt.se/og-default.png",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
       }
     </script>
   </head>
   <body>
-    <h1>zad</h1>
-    <p>A Rust CLI that connects AI agents to external services (Discord, GitHub, Slack, etc.) via scoped service configurations instead of MCP servers.</p>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

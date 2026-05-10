@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+@theme {
+  /* zad palette: slate base with a warm amber accent (signed/keyed feel,
+     evokes both a key-ring and the "keychain" zad relies on for secrets). */
+  --color-accent:        #f5a524;
+  --color-accent-light:  #ffc04d;
+  --color-accent-dim:    #b27314;
+  --color-surface:       #0c0e14;
+  --color-surface-alt:   #141722;
+  --color-surface-hover: #1c2030;
+  --color-border:        #262a3b;
+  --color-text-primary:   #e6e8f0;
+  --color-text-secondary: #9095ab;
+  --color-text-dim:       #5b6079;
+
+  /* Per-service brand-ish accents for the services grid. */
+  --color-svc-discord:  #5865f2;
+  --color-svc-slack:    #ecb22e;
+  --color-svc-telegram: #2aabee;
+  --color-svc-gcal:     #4285f4;
+  --color-svc-spotify:  #1db954;
+  --color-svc-ymusic:   #ff0033;
+  --color-svc-1pass:    #0a84ff;
+
+  /* Status colors */
+  --color-allow: #4ade80;
+  --color-deny:  #f87171;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code, pre {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+/* Subtle dotted grid background for the hero. */
+.bg-grid {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+@keyframes blink-cursor {
+  0%, 50%   { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.animate-blink-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  background-color: var(--color-accent);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: blink-cursor 1s step-end infinite;
+}
+
+/* Markdown content styles — used by docs and manual pages. */
+.markdown-content {
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.markdown-content h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 1rem;
+  line-height: 1.3;
+}
+
+.markdown-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  line-height: 1.3;
+}
+
+.markdown-content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.markdown-content h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-content p {
+  margin-bottom: 1rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.markdown-content ul { list-style-type: disc; }
+.markdown-content ol { list-style-type: decimal; }
+
+.markdown-content li {
+  margin-bottom: 0.375rem;
+}
+
+.markdown-content li > ul,
+.markdown-content li > ol {
+  margin-top: 0.375rem;
+  margin-bottom: 0;
+}
+
+.markdown-content pre {
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.markdown-content :not(pre) > code {
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.875em;
+  color: var(--color-accent-light);
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.markdown-content thead th {
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.markdown-content tbody td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+}
+
+.markdown-content tbody tr:nth-child(even) {
+  background-color: var(--color-surface-alt);
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 1rem;
+  margin-bottom: 1rem;
+  color: var(--color-text-dim);
+  font-style: italic;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}
+
+.markdown-content strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
