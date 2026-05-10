@@ -1,4 +1,35 @@
+# zad — robots policy
+# Goal: maximum discoverability for all major search engines and AI
+# crawlers. Allow everything; the canonical link in each <head> handles
+# duplicate-URL collapsing.
+
 User-agent: *
 Allow: /
+Disallow:
+
+# AI / LLM crawlers — explicitly allowed so the project shows up in
+# answer-engine results (which programmers increasingly rely on).
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+Host: zad.niclaslindstedt.se
 
 Sitemap: https://zad.niclaslindstedt.se/sitemap.xml

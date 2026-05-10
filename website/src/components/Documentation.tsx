@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { docs, getDocBySlug } from "../data/docs";
+import { useDocumentHead } from "../seo/runtime";
+import { siteName } from "../seo/siteConfig";
 import MarkdownRenderer from "./MarkdownRenderer";
 
 export default function Documentation() {
@@ -10,12 +12,19 @@ export default function Documentation() {
   const currentSlug = slug || "getting-started";
   const currentDoc = getDocBySlug(currentSlug);
 
+  useDocumentHead({
+    title: currentDoc
+      ? `${currentDoc.title} — ${siteName} documentation`
+      : `Documentation — ${siteName}`,
+    description: currentDoc
+      ? `${currentDoc.title} — ${siteName} documentation. Connect AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password without an MCP server.`
+      : undefined,
+    canonicalPath: currentDoc ? `/docs/${currentSlug}` : "/docs",
+  });
+
   useEffect(() => {
-    document.title = currentDoc
-      ? `${currentDoc.title} — zad docs`
-      : "Documentation — zad";
     window.scrollTo(0, 0);
-  }, [currentSlug, currentDoc]);
+  }, [currentSlug]);
 
   if (!currentDoc) {
     return <Navigate to="/docs/getting-started" replace />;
