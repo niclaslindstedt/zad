@@ -22,6 +22,16 @@ const data = JSON.parse(fs.readFileSync(generated, "utf8"));
 const dist = path.join(repoRoot, "website", "dist");
 fs.mkdirSync(dist, { recursive: true });
 
+// Canonical absolute URL for the deployed site. GitHub Pages serves
+// project sites under <user>.github.io/<repo>/, derived from the
+// repository field in Cargo.toml.
+const repoUrl = data.cargo.repository.replace(/\.git$/, "").replace(/\/$/, "");
+const repoMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)$/);
+const siteUrl = repoMatch
+  ? `https://${repoMatch[1]}.github.io/${repoMatch[2]}/`
+  : `${repoUrl}/`;
+const ogImageUrl = `${siteUrl}og-default.png`;
+
 function escape(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -51,13 +61,48 @@ const latestRelease = data.changelog
     </section>`
   : "";
 
+const pageTitle = `zad — ${data.cargo.description.split(".")[0]}`;
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "@id": siteUrl,
+  name: "zad",
+  description: data.cargo.description,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Linux, macOS, Windows",
+  softwareVersion: data.cargo.version,
+  license: `https://spdx.org/licenses/${data.cargo.license}.html`,
+  codeRepository: data.cargo.repository,
+  url: siteUrl,
+  image: ogImageUrl,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
+
 const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>zad — ${escape(data.cargo.description.split(".")[0])}</title>
+    <title>${escape(pageTitle)}</title>
     <meta name="description" content="${escape(data.cargo.description)}" />
+    <link rel="canonical" href="${escape(siteUrl)}" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <link rel="sitemap" type="application/xml" href="sitemap.xml" />
+    <!-- Crawler policy: see robots.txt at site root. -->
+    <meta property="og:site_name" content="zad" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${escape(pageTitle)}" />
+    <meta property="og:description" content="${escape(data.cargo.description)}" />
+    <meta property="og:url" content="${escape(siteUrl)}" />
+    <meta property="og:image" content="${escape(ogImageUrl)}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="zad — ${escape(data.cargo.description.split(".")[0])}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escape(pageTitle)}" />
+    <meta name="twitter:description" content="${escape(data.cargo.description)}" />
+    <meta name="twitter:image" content="${escape(ogImageUrl)}" />
+    <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
     <style>
       body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; line-height: 1.55; }
       header { border-bottom: 1px solid #e5e7eb; padding-bottom: 1rem; margin-bottom: 1.5rem; }
@@ -115,3 +160,12 @@ const html = `<!doctype html>
 const outPath = path.join(dist, "index.html");
 fs.writeFileSync(outPath, html);
 console.log("wrote", path.relative(repoRoot, outPath));
+
+const publicDir = path.join(repoRoot, "website", "public");
+if (fs.existsSync(publicDir)) {
+  for (const entry of fs.readdirSync(publicDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    fs.copyFileSync(path.join(publicDir, entry.name), path.join(dist, entry.name));
+    console.log("copied", path.posix.join("website/public", entry.name), "→", path.posix.join("website/dist", entry.name));
+  }
+}
