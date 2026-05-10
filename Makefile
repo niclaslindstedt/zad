@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt fmt-check shellcheck release clean docs website website-dev install bench
+.PHONY: build test lint fmt fmt-check shellcheck actionlint release clean docs website website-dev install bench
 
 
 build:
@@ -18,6 +18,13 @@ fmt-check:
 
 shellcheck:
 	shellcheck scripts/*.sh
+
+# OSS_SPEC §16.1 — lint every workflow YAML with actionlint. Treats
+# missing `actionlint` as an installable dependency: developers can
+# fetch it from https://github.com/rhysd/actionlint, and CI fetches
+# it via the official installer script.
+actionlint:
+	actionlint -color
 
 release:
 	cargo build --workspace --release

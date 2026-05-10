@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://niclaslindstedt.github.io/zad/sitemap.xml
+Sitemap: https://zad.niclaslindstedt.se/sitemap.xml

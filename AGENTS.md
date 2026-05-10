@@ -179,10 +179,11 @@ Per §21 of `OSS_SPEC.md`, this repo ships agent skills for keeping drift-prone 
 
 | Skill | When to run |
 |---|---|
-| `maintenance`     | When several artifacts have likely drifted at once — umbrella skill that runs every `update-*` skill in the correct order. |
+| `maintenance`     | When several artifacts have likely drifted at once — umbrella skill that runs every sync skill in the correct order. |
 | `update-manpages` | After any change to the clap CLI tree (subcommand added / renamed, flag added or removed, default changed). |
 | `update-docs`     | After any change to the public API, configuration keys, or error messages. |
 | `update-readme`   | After any change that alters user-visible behavior, commands, or install instructions. |
 | `update-website`  | After README, `docs/`, `OSS_SPEC.md` front matter, or `Cargo.toml` version moves — the website extractor reads from those. |
+| `sync-oss-spec`   | After `OSS_SPEC.md` itself moves, or as the final pass of a drift sweep to catch residual structural violations the per-artifact skills did not touch. |
 
 Each skill has a `SKILL.md` (the playbook) and a `.last-updated` file (the baseline commit hash). Run a skill by loading its `SKILL.md` and following the discovery process and update checklist. The skill rewrites `.last-updated` at the end of a successful run, and improves itself in place when it discovers new mapping entries. The `maintenance` skill owns a **Registry** table listing every `update-*` skill — add a row whenever you create a new sync skill. Skills are accessible via the `.claude/skills` symlink (→ `.agent/skills/`).

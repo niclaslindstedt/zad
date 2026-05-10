@@ -39,6 +39,22 @@ repos:
         language: system
         pass_filenames: false
 
+      # OSS_SPEC §16.1 — lint shell scripts and workflow YAML on every
+      # commit so the CI shell-lint job never has anything new to flag.
+      - id: make-shellcheck
+        name: make shellcheck
+        entry: make shellcheck
+        language: system
+        files: '^scripts/.*\.(sh|bash)$'
+        pass_filenames: false
+
+      - id: make-actionlint
+        name: make actionlint
+        entry: make actionlint
+        language: system
+        files: '^\.github/workflows/.*\.ya?ml$'
+        pass_filenames: false
+
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.4.0
     hooks:

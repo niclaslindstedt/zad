@@ -22,14 +22,10 @@ const data = JSON.parse(fs.readFileSync(generated, "utf8"));
 const dist = path.join(repoRoot, "website", "dist");
 fs.mkdirSync(dist, { recursive: true });
 
-// Canonical absolute URL for the deployed site. GitHub Pages serves
-// project sites under <user>.github.io/<repo>/, derived from the
-// repository field in Cargo.toml.
-const repoUrl = data.cargo.repository.replace(/\.git$/, "").replace(/\/$/, "");
-const repoMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)$/);
-const siteUrl = repoMatch
-  ? `https://${repoMatch[1]}.github.io/${repoMatch[2]}/`
-  : `${repoUrl}/`;
+// Canonical absolute URL for the deployed site. Hosted at the
+// custom domain (see website/public/CNAME); the GitHub Pages
+// project URL is a redirect target only.
+const siteUrl = "https://zad.niclaslindstedt.se/";
 const ogImageUrl = `${siteUrl}og-default.png`;
 
 function escape(s) {

@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           ref: main
@@ -89,7 +89,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
@@ -98,7 +98,7 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install cross
         if: matrix.use_cross == true
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@ec28e287910af896fd98e04056d31fa68607e7ad # v2
         with:
           tool: cross
       # Skip tests on cross-built and aarch64-windows matrix entries —
@@ -120,7 +120,7 @@ jobs:
         run: |
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/${{ matrix.binary }}"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.binary }}
@@ -137,12 +137,12 @@ jobs:
       id-token: write          # OIDC for trusted publishing + attestations
       attestations: write      # mint provenance attestations
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           path: dist
       - name: Flatten artifact tree
@@ -164,12 +164,12 @@ jobs:
           done
           ls -l release
       - name: Generate provenance attestations
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1
         with:
           subject-path: 'release/*'
       - name: Authenticate to crates.io (trusted publishing)
         id: crates-auth
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1
       # Publish order matters: `zad-cli` depends on `zad` by version,
       # so the library must be on crates.io before the binary's own
       # publish step runs `cargo verify`. `--locked` keeps the publish
@@ -183,7 +183,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
       - name: GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
@@ -199,7 +199,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare.outputs.sha }}
 

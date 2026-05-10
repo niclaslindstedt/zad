@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -47,13 +47,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install actionlint
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           echo "${PWD}" >> "$GITHUB_PATH"
-      - name: actionlint
-        run: actionlint -color
+      - name: make actionlint
+        run: make actionlint
       - name: make shellcheck
         run: make shellcheck
 
@@ -65,9 +65,26 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Check agent symlinks
         run: ./scripts/check-agent-symlinks.sh
+
+  # OSS_SPEC §14 — dependency review on pull requests. Fails the build
+  # if a PR introduces a dependency carrying a high-severity advisory or
+  # a non-permissive license. Skipped on pushes to `main` because the
+  # action only runs on the PR diff.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
 
   # Software composition analysis (OSS_SPEC §14). Fails the build on
   # high-severity advisories against the `cargo` lockfile.
@@ -76,7 +93,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       # Invoke cargo-audit directly instead of rustsec/audit-check@v2
       # so the advisory report is always visible in the job log — the
       # action publishes via the Check API, which is unavailable on PRs
@@ -105,11 +122,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24"
       - name: Build website
