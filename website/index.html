@@ -4,12 +4,23 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0f17" />
+    <meta name="application-name" content="zad" />
+    <meta name="author" content="Niclas Lindstedt" />
+    <meta name="generator" content="zad website" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="format-detection" content="telephone=no" />
     <title>zad — connect AI agents to external services without an MCP server</title>
     <meta name="description" content="A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required." />
+    <meta name="keywords" content="rust, rust cli, rust library, ai agents, ai agent tools, llm tools, claude code, mcp alternative, no mcp server, discord cli, discord rust, slack cli, telegram cli, google calendar cli, spotify cli, 1password cli, agent permissions, scoped permissions, toml config, developer tools, open source" />
     <link rel="canonical" href="https://zad.niclaslindstedt.se/" />
+    <link rel="author" href="https://niclaslindstedt.se" />
     <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta name="googlebot" content="index,follow,max-image-preview:large,max-snippet:-1" />
+    <meta name="bingbot" content="index,follow,max-image-preview:large,max-snippet:-1" />
 
     <meta property="og:site_name" content="zad" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="zad — connect AI agents to external services without an MCP server" />
     <meta property="og:description" content="A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required." />
@@ -23,6 +34,7 @@
     <meta name="twitter:title" content="zad — connect AI agents to external services without an MCP server" />
     <meta name="twitter:description" content="A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required." />
     <meta name="twitter:image" content="https://zad.niclaslindstedt.se/og-default.png" />
+    <meta name="twitter:image:alt" content="zad — connect AI agents to external services" />
 
     <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
     <!-- Crawler directives live in /robots.txt -->
@@ -37,15 +49,54 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "@id": "https://zad.niclaslindstedt.se/",
-        "name": "zad",
-        "description": "A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required.",
-        "url": "https://zad.niclaslindstedt.se/",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "Linux, macOS, Windows",
-        "image": "https://zad.niclaslindstedt.se/og-default.png",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://zad.niclaslindstedt.se/#software",
+            "name": "zad",
+            "alternateName": "zad-cli",
+            "description": "A Rust library and CLI that connects AI agents to Discord, Slack, Telegram, Google Calendar, Spotify, YouTube Music, and 1Password via signed, scoped TOML configs — no MCP server required.",
+            "url": "https://zad.niclaslindstedt.se/",
+            "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "CommandLine",
+            "operatingSystem": "Linux, macOS, Windows",
+            "image": "https://zad.niclaslindstedt.se/og-default.png",
+            "license": "https://opensource.org/licenses/MIT",
+            "downloadUrl": "https://crates.io/crates/zad-cli",
+            "softwareHelp": "https://zad.niclaslindstedt.se/docs",
+            "programmingLanguage": "Rust",
+            "keywords": "rust, ai agents, mcp alternative, discord, slack, telegram, google calendar, spotify, 1password, cli, library, permissions",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "author": {
+              "@type": "Person",
+              "name": "Niclas Lindstedt",
+              "url": "https://niclaslindstedt.se"
+            }
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "@id": "https://zad.niclaslindstedt.se/#source",
+            "name": "zad",
+            "description": "Source code for the zad Rust library and CLI.",
+            "codeRepository": "https://github.com/niclaslindstedt/zad",
+            "programmingLanguage": "Rust",
+            "url": "https://github.com/niclaslindstedt/zad",
+            "license": "https://opensource.org/licenses/MIT"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://zad.niclaslindstedt.se/#website",
+            "url": "https://zad.niclaslindstedt.se/",
+            "name": "zad",
+            "description": "Connect AI agents to external services without an MCP server.",
+            "inLanguage": "en",
+            "publisher": {
+              "@type": "Person",
+              "name": "Niclas Lindstedt",
+              "url": "https://niclaslindstedt.se"
+            }
+          }
+        ]
       }
     </script>
   </head>

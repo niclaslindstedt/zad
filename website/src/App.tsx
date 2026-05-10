@@ -10,12 +10,15 @@ import GetStarted from "./components/GetStarted";
 import Footer from "./components/Footer";
 import Documentation from "./components/Documentation";
 import Manual from "./components/Manual";
-import { siteName, siteTagline } from "./seo/siteConfig";
+import { siteDescription, siteName, siteTagline } from "./seo/siteConfig";
+import { useDocumentHead } from "./seo/runtime";
 
 function LandingPage() {
-  useEffect(() => {
-    document.title = `${siteName} — ${siteTagline}`;
-  }, []);
+  useDocumentHead({
+    title: `${siteName} — ${siteTagline}`,
+    description: siteDescription,
+    canonicalPath: "/",
+  });
   return (
     <>
       <Hero />

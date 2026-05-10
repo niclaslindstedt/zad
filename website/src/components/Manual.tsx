@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { manpages, getManpageBySlug } from "../data/manpages";
+import { useDocumentHead } from "../seo/runtime";
+import { siteName } from "../seo/siteConfig";
 import MarkdownRenderer from "./MarkdownRenderer";
 
 export default function Manual() {
@@ -10,12 +12,19 @@ export default function Manual() {
   const currentSlug = slug || "main";
   const currentPage = getManpageBySlug(currentSlug);
 
+  useDocumentHead({
+    title: currentPage
+      ? `${currentPage.title} — ${siteName} manual`
+      : `Manual — ${siteName}`,
+    description: currentPage
+      ? `${currentPage.title} — ${siteName} CLI manual page. Reference for the ${currentSlug} command.`
+      : undefined,
+    canonicalPath: currentPage ? `/manual/${currentSlug}` : "/manual",
+  });
+
   useEffect(() => {
-    document.title = currentPage
-      ? `${currentPage.title} — zad manual`
-      : "Manual — zad";
     window.scrollTo(0, 0);
-  }, [currentSlug, currentPage]);
+  }, [currentSlug]);
 
   if (!currentPage) {
     return <Navigate to="/manual/main" replace />;
