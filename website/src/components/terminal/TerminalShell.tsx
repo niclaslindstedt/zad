@@ -46,7 +46,7 @@ export default function TerminalShell({ tabs, className }: TerminalShellProps) {
       </div>
 
       {/* Body */}
-      <div className="min-h-[260px] overflow-x-auto px-5 py-4 text-left text-[13px] leading-6 sm:text-sm">
+      <div className="min-h-[260px] overflow-x-auto px-5 py-4 text-left font-mono text-[13px] leading-6 sm:text-sm">
         {rendered.length === 0 ? (
           <div className="text-text-dim">
             <span className="animate-blink-cursor" aria-hidden />
