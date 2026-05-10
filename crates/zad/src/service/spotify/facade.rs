@@ -195,8 +195,10 @@ pub struct SearchRequest {
 }
 
 impl SearchRequest {
-    /// Spotify caps `limit` at 50. Validates non-empty query and at
-    /// least one item type (`track`, `artist`, `album`, `playlist`).
+    /// Spotify caps `/search`'s `limit` at 10 (tightened from the
+    /// previously documented 50; values > 10 now return HTTP 400
+    /// "Invalid limit"). Validates non-empty query and at least one
+    /// item type (`track`, `artist`, `album`, `playlist`).
     pub fn new(query: impl Into<String>, types: Vec<String>, limit: u32) -> Result<Self> {
         let query = query.into();
         if query.is_empty() {
@@ -207,9 +209,9 @@ impl SearchRequest {
                 "at least one type required (track, artist, album, playlist)".into(),
             ));
         }
-        if !(1..=50).contains(&limit) {
+        if !(1..=10).contains(&limit) {
             return Err(ZadError::Invalid(format!(
-                "limit must be between 1 and 50 (Spotify API maximum); got {limit}"
+                "limit must be between 1 and 10 (Spotify /search maximum); got {limit}"
             )));
         }
         Ok(Self {
