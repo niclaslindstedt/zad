@@ -161,6 +161,13 @@ pub struct TokenSet {
     /// JWT we don't parse locally — a separate userinfo call is the
     /// source of truth for the authenticated identity.
     pub id_token: Option<String>,
+    /// Space-separated list of scopes the provider actually granted.
+    /// Returned by Spotify on every `/api/token` exchange and by
+    /// Google when the granted scopes differ from the request. `None`
+    /// when the provider omits the field, which historically meant
+    /// "granted == requested" — callers should treat absence as
+    /// "unknown" rather than "empty".
+    pub scope: Option<String>,
 }
 
 /// The full interactive flow: spin up a loopback listener, build the
@@ -630,6 +637,7 @@ struct RawTokenResponse {
     refresh_token: Option<String>,
     expires_in: Option<u64>,
     id_token: Option<String>,
+    scope: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
 }
@@ -702,5 +710,6 @@ async fn post_token_endpoint(
         refresh_token: parsed.refresh_token,
         expires_in: parsed.expires_in,
         id_token: parsed.id_token,
+        scope: parsed.scope,
     })
 }
