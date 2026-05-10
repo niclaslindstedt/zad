@@ -218,7 +218,7 @@ impl SpotifyHttp {
         Ok(page.items)
     }
 
-    /// `GET /playlists/{id}/tracks`. Scope: `playlists.read`.
+    /// `GET /playlists/{id}/items`. Scope: `playlists.read`.
     pub async fn get_playlist_tracks(
         &self,
         playlist_id: &str,
@@ -226,7 +226,7 @@ impl SpotifyHttp {
     ) -> Result<Vec<PlaylistTrackItem>> {
         self.require_scope("playlists.read")?;
         let limit = limit.clamp(1, 100).to_string();
-        let path = format!("/playlists/{}/tracks", urlencode_path(playlist_id));
+        let path = format!("/playlists/{}/items", urlencode_path(playlist_id));
         let page: PlaylistTrackPage = self.get_json(&path, &[("limit", limit.as_str())]).await?;
         Ok(page.items)
     }
@@ -272,21 +272,21 @@ impl SpotifyHttp {
         self.delete_empty(&path, &[]).await
     }
 
-    /// `POST /playlists/{id}/tracks` with a `uris` array. Scope:
+    /// `POST /playlists/{id}/items` with a `uris` array. Scope:
     /// `playlists.write`.
     pub async fn add_playlist_tracks(&self, playlist_id: &str, uris: &[String]) -> Result<()> {
         self.require_scope("playlists.write")?;
-        let path = format!("/playlists/{}/tracks", urlencode_path(playlist_id));
+        let path = format!("/playlists/{}/items", urlencode_path(playlist_id));
         let body = serde_json::json!({ "uris": uris });
         let _: serde_json::Value = self.post_json(&path, &[], &body).await?;
         Ok(())
     }
 
-    /// `DELETE /playlists/{id}/tracks` with `{ tracks: [{ uri }] }`.
+    /// `DELETE /playlists/{id}/items` with `{ tracks: [{ uri }] }`.
     /// Scope: `playlists.write`.
     pub async fn remove_playlist_tracks(&self, playlist_id: &str, uris: &[String]) -> Result<()> {
         self.require_scope("playlists.write")?;
-        let path = format!("/playlists/{}/tracks", urlencode_path(playlist_id));
+        let path = format!("/playlists/{}/items", urlencode_path(playlist_id));
         let tracks: Vec<serde_json::Value> = uris
             .iter()
             .map(|u| serde_json::json!({ "uri": u }))
