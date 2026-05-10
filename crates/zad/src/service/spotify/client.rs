@@ -188,9 +188,14 @@ impl SpotifyHttp {
 
     /// `GET /search`. Scope: `search`. `types` is one or more of
     /// `track`, `album`, `artist`, `playlist`.
+    ///
+    /// Spotify quietly tightened `/search`'s `limit` cap to 10 (down
+    /// from the 50 still listed in older docs); anything higher comes
+    /// back as `HTTP 400 "Invalid limit"`. Other paginated endpoints
+    /// (`/me/playlists`, `/me/tracks`, …) still accept 50.
     pub async fn search(&self, query: &str, types: &[&str], limit: u32) -> Result<SearchResults> {
         self.require_scope("search")?;
-        let limit = limit.clamp(1, 50).to_string();
+        let limit = limit.clamp(1, 10).to_string();
         let types_joined = types.join(",");
         self.get_json(
             "/search",
