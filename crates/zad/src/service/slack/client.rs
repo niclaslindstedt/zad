@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 use crate::error::{Result, ZadError};
+use crate::rate_limit;
 use crate::service::{ChannelId, ChannelInfo, GuildInfo, MemberInfo, Message, MessageId, UserId};
+
+const SERVICE: &str = "slack";
 
 /// Maximum Slack message body length (per the `chat.postMessage` API).
 /// Validated at request-construction time by the typed facade.
@@ -60,6 +63,9 @@ impl SlackHttp {
                 name: "slack",
                 message: format!("{method}: {e}"),
             })?;
+        if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
+            return Err(err);
+        }
         let val: serde_json::Value = resp.json().await.map_err(|e| ZadError::Service {
             name: "slack",
             message: format!("{method}: failed to parse response: {e}"),
@@ -69,11 +75,22 @@ impl SlackHttp {
                 .get("error")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown_error");
+            // Slack also signals throttling via the JSON body
+            // `error: "ratelimited"` in addition to HTTP 429. The
+            // 429-on-HTTP branch above is the common case, but we
+            // honour the body-only form too.
+            if err == "ratelimited" {
+                return Err(rate_limit::handle_429(
+                    SERVICE,
+                    &reqwest::header::HeaderMap::new(),
+                ));
+            }
             return Err(ZadError::Service {
                 name: "slack",
                 message: format!("{method}: {err}"),
             });
         }
+        rate_limit::clear(SERVICE);
         Ok(val)
     }
 
@@ -90,6 +107,9 @@ impl SlackHttp {
                 name: "slack",
                 message: format!("{method}: {e}"),
             })?;
+        if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
+            return Err(err);
+        }
         let val: serde_json::Value = resp.json().await.map_err(|e| ZadError::Service {
             name: "slack",
             message: format!("{method}: failed to parse response: {e}"),
@@ -99,11 +119,18 @@ impl SlackHttp {
                 .get("error")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown_error");
+            if err == "ratelimited" {
+                return Err(rate_limit::handle_429(
+                    SERVICE,
+                    &reqwest::header::HeaderMap::new(),
+                ));
+            }
             return Err(ZadError::Service {
                 name: "slack",
                 message: format!("{method}: {err}"),
             });
         }
+        rate_limit::clear(SERVICE);
         Ok(val)
     }
 

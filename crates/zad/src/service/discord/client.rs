@@ -10,6 +10,9 @@ use serenity::builder::CreateChannel;
 use serenity::http::Http;
 
 use crate::error::{Result, ZadError};
+use crate::rate_limit;
+
+const SERVICE: &str = "discord";
 use crate::service::{
     ChannelId, ChannelInfo, GuildInfo, MemberInfo, Message, MessageId, Target, UserId,
 };
@@ -321,12 +324,22 @@ pub fn classify_http(ctx: HttpCtx, status: u16, code: isize) -> Option<ZadError>
 /// Map a `serenity::Error` into a typed `ZadError` when we can, falling
 /// back to the generic wrapper otherwise. Centralized here so a future
 /// serenity upgrade that reshapes the error enum has one place to fix.
+///
+/// HTTP 429 from Discord (serenity does its own internal rate-limit
+/// retry, so this only fires when the bucket is persistently
+/// exhausted) is converted into [`ZadError::RateLimited`]. Serenity's
+/// `ErrorResponse` does not preserve the `Retry-After` header value,
+/// so the persisted deadline uses [`rate_limit`]'s built-in fallback.
 pub(crate) fn map_http(err: serenity::Error, ctx: HttpCtx) -> ZadError {
     if let serenity::Error::Http(ref http_err) = err
         && let serenity::http::HttpError::UnsuccessfulRequest(resp) = http_err
-        && let Some(mapped) = classify_http(ctx, resp.status_code.as_u16(), resp.error.code)
     {
-        return mapped;
+        if resp.status_code.as_u16() == 429 {
+            return rate_limit::handle_429(SERVICE, &reqwest::header::HeaderMap::new());
+        }
+        if let Some(mapped) = classify_http(ctx, resp.status_code.as_u16(), resp.error.code) {
+            return mapped;
+        }
     }
     ZadError::Service {
         name: "discord",

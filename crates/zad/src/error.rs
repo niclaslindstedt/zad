@@ -48,6 +48,26 @@ pub enum ZadError {
     #[error("{name} API error: {message}")]
     Service { name: &'static str, message: String },
 
+    /// HTTP 429 (or provider-equivalent) from a service API. Carries
+    /// enough structure that `--json` output can surface the wait
+    /// deadline as machine-readable fields, and the human message
+    /// always points at the `--wait` flag so callers know how to
+    /// recover by re-issuing the same command.
+    ///
+    /// `retry_after_seconds` is the integer seconds until
+    /// `retry_after_utc` from the moment the error was constructed; it
+    /// drifts forward as time passes but is stable for the duration of
+    /// any single response render. `retry_after_utc` is the absolute
+    /// RFC 3339 timestamp callers can compare against the wall clock.
+    #[error(
+        "{service} rate-limited this call (HTTP 429); wait {retry_after_seconds}s (until {retry_after_utc}). Re-run the same command with --wait to block until ready and retry automatically."
+    )]
+    RateLimited {
+        service: &'static str,
+        retry_after_seconds: u64,
+        retry_after_utc: String,
+    },
+
     #[error(
         "{service}: scope `{scope}` is not enabled for this project\n  config: {config_path}\n  tip: add `{scope}` to `scopes` in that file (or re-run `zad service create {service} --force`)"
     )]
