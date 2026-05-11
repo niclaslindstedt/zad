@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.8.0]
+## [0.8.1]
 
-- feat: respect HTTP 429 across services with a global --wait flag (#79)
+- fix(token): add cross-process access-token cache and refresh lock (#80)
 
