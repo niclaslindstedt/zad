@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.7.2]
+## [0.7.3]
 
-- fix(spotify)!: use POST /me/playlists instead of removed /users/{user_id}/playlists (#77)
+- fix(spotify)!: align with February 2026 Web API field renames and library consolidation (#78)
 
