@@ -42,6 +42,7 @@ pub mod permissions;
 pub mod rate_limit;
 pub mod secrets;
 pub mod service;
+pub mod token_cache;
 
 // Curated re-exports for the common path. Callers can also reach into
 // the modules directly for less common operations.

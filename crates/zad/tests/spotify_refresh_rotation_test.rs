@@ -69,6 +69,7 @@ fn http_with(
     initial_refresh: &str,
     store: Option<Arc<dyn RefreshTokenStore>>,
     token_url: &str,
+    cache_dir: PathBuf,
 ) -> SpotifyHttp {
     SpotifyHttp::with_store(
         "test-client".into(),
@@ -79,6 +80,7 @@ fn http_with(
         store,
     )
     .with_token_url(token_url)
+    .with_cache_dir(cache_dir)
 }
 
 /// The reported bug: Spotify rotates the refresh token, but zad-0.6.4
@@ -93,8 +95,14 @@ async fn rotated_refresh_token_is_persisted_and_remembered() {
     )
     .await;
 
+    let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(RecordingStore::default());
-    let http = http_with("RT-OLD", Some(store.clone()), &url);
+    let http = http_with(
+        "RT-OLD",
+        Some(store.clone()),
+        &url,
+        tmp.path().to_path_buf(),
+    );
 
     // Drive the refresh directly so we don't follow up with a
     // real-network call to api.spotify.com.
@@ -125,8 +133,14 @@ async fn unchanged_refresh_token_does_not_call_store() {
     )
     .await;
 
+    let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(RecordingStore::default());
-    let http = http_with("RT-OLD", Some(store.clone()), &url);
+    let http = http_with(
+        "RT-OLD",
+        Some(store.clone()),
+        &url,
+        tmp.path().to_path_buf(),
+    );
 
     let access = http.access_token().await.expect("token refresh");
     assert_eq!(access, "AT-1");
@@ -149,8 +163,14 @@ async fn missing_refresh_token_preserves_existing() {
     )
     .await;
 
+    let tmp = tempfile::tempdir().unwrap();
     let store = Arc::new(RecordingStore::default());
-    let http = http_with("RT-OLD", Some(store.clone()), &url);
+    let http = http_with(
+        "RT-OLD",
+        Some(store.clone()),
+        &url,
+        tmp.path().to_path_buf(),
+    );
 
     let access = http.access_token().await.expect("token refresh");
     assert_eq!(access, "AT-1");
