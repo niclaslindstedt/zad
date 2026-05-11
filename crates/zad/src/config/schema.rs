@@ -109,12 +109,6 @@ pub struct SpotifyServiceCfg {
     /// or a directory alias.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_playlist: Option<String>,
-    /// The authenticated user's Spotify user ID, captured at
-    /// `zad service create spotify` time from `GET /me`. Resolves the
-    /// literal `@me` in user-target arguments and is required when
-    /// creating a playlist (the API takes a user ID in the path).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub self_user_id: Option<String>,
 }
 
 /// Global YouTube Music (ymusic) service config stored at

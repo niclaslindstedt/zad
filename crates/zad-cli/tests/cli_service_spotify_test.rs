@@ -43,7 +43,6 @@ fn create_global_writes_flat_config_and_keychain() {
             "--refresh-token-env",
             "SPOTIFY_REFRESH",
             "--default-playlist=zad-test",
-            "--self-user=fakeuser123",
             "--scopes",
             "search,playlists.read,playlists.write",
             "--non-interactive",
@@ -64,10 +63,6 @@ fn create_global_writes_flat_config_and_keychain() {
     assert!(!body.contains("[service.spotify]"), "got:\n{body}");
     assert!(
         body.contains("default_playlist = \"zad-test\""),
-        "got:\n{body}"
-    );
-    assert!(
-        body.contains("self_user_id = \"fakeuser123\""),
         "got:\n{body}"
     );
     // Scopes are persisted as a TOML array; just check key presence.
