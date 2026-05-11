@@ -238,21 +238,24 @@ impl SpotifyHttp {
         self.get_json(&path, &[]).await
     }
 
-    /// `POST /users/{user_id}/playlists`. Scope: `playlists.write`.
+    /// `POST /me/playlists`. Scope: `playlists.write`.
+    ///
+    /// Spotify removed `POST /users/{user_id}/playlists` in the
+    /// February 2026 Web API changes; `/me/playlists` is now the only
+    /// supported create endpoint, which drops the `user_id` argument
+    /// entirely (it always targets the authenticated user).
     pub async fn create_playlist(
         &self,
-        user_id: &str,
         name: &str,
         description: Option<&str>,
         public: bool,
     ) -> Result<PlaylistSummary> {
         self.require_scope("playlists.write")?;
-        let path = format!("/users/{}/playlists", urlencode_path(user_id));
         let mut body = serde_json::json!({ "name": name, "public": public });
         if let Some(d) = description {
             body["description"] = serde_json::Value::String(d.to_string());
         }
-        self.post_json(&path, &[], &body).await
+        self.post_json("/me/playlists", &[], &body).await
     }
 
     /// `PUT /playlists/{id}` with `{ "name": <new> }`. Scope:

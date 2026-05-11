@@ -101,12 +101,6 @@ pub struct CreateArgs {
     /// or a directory alias.
     #[arg(long)]
     pub default_playlist: Option<String>,
-
-    /// The authenticated user's Spotify user ID. Normally captured
-    /// from `GET /me` during `validate` — pass this only to pre-seed
-    /// the value (non-interactive / testing).
-    #[arg(long)]
-    pub self_user: Option<String>,
 }
 
 impl CreateArgsLike for CreateArgs {
@@ -239,16 +233,12 @@ impl LifecycleService for SpotifyLifecycle {
         if let Some(p) = &cfg.default_playlist {
             out.push(("playlist", p.clone()));
         }
-        if let Some(u) = &cfg.self_user_id {
-            out.push(("self", u.clone()));
-        }
         out
     }
 
     fn cfg_json(cfg: &SpotifyServiceCfg) -> serde_json::Value {
         serde_json::json!({
             "default_playlist": cfg.default_playlist,
-            "self_user_id": cfg.self_user_id,
         })
     }
 
@@ -297,7 +287,6 @@ impl CliLifecycle for SpotifyLifecycle {
             SpotifyServiceCfg {
                 scopes,
                 default_playlist: args.default_playlist.clone(),
-                self_user_id: args.self_user.clone(),
             },
             SpotifySecrets {
                 client_id,

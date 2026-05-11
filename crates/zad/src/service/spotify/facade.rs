@@ -169,9 +169,8 @@ impl Spotify {
             p.check_target(SpotifyFunction::PlaylistsWrite, &req.name)?;
             p.check_body(SpotifyFunction::PlaylistsWrite, &req.name)?;
         }
-        let user_id = req.user_id.clone();
         self.http
-            .create_playlist(&user_id, &req.name, req.description.as_deref(), req.public)
+            .create_playlist(&req.name, req.description.as_deref(), req.public)
             .await
     }
 
@@ -240,29 +239,18 @@ impl PlaylistsRequest {
 
 #[derive(Debug, Clone)]
 pub struct CreatePlaylistRequest {
-    pub user_id: String,
     pub name: String,
     pub description: Option<String>,
     pub public: bool,
 }
 
 impl CreatePlaylistRequest {
-    pub fn new(
-        user_id: impl Into<String>,
-        name: impl Into<String>,
-        description: Option<String>,
-        public: bool,
-    ) -> Result<Self> {
-        let user_id = user_id.into();
+    pub fn new(name: impl Into<String>, description: Option<String>, public: bool) -> Result<Self> {
         let name = name.into();
-        if user_id.is_empty() {
-            return Err(ZadError::Invalid("user_id must not be empty".into()));
-        }
         if name.is_empty() {
             return Err(ZadError::Invalid("playlist name must not be empty".into()));
         }
         Ok(Self {
-            user_id,
             name,
             description,
             public,

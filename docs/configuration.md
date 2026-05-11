@@ -698,14 +698,12 @@ format is flat:
 ```toml
 scopes           = ["search", "playlists.read", "playlists.write", "library.read"]
 default_playlist = "zad-test"     # optional
-self_user_id     = "fakeuser123"  # optional — user ID captured at create time
 ```
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `scopes` | `[string]` | `["search", "playlists.read", "playlists.write", "library.read"]` | Capabilities the service is permitted to use. |
 | `default_playlist` | string? | — | Optional default playlist for verbs that omit `--playlist`. Accepts a Spotify playlist ID, a `spotify:playlist:<id>` URI, or a directory alias. |
-| `self_user_id` | string? | — | The authenticated user's Spotify user ID. Captured from `GET /me` during `service create` (or set via `--self-user`); required when creating a playlist (the API takes a user ID in the path). |
 
 Spotify uses a **PKCE-only public client** — no `client_secret` is
 issued or accepted by Spotify for desktop / CLI apps. `spotify` stores

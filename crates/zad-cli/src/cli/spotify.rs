@@ -596,21 +596,9 @@ async fn run_playlists_create(args: PlaylistsCreateArgs) -> Result<()> {
         permissions.check_body(SpotifyFunction::PlaylistsWrite, d)?;
     }
 
-    let (cfg, _label, _scope, _path) = effective_config()?;
-    let user_id = cfg.self_user_id.clone().ok_or(ZadError::Invalid(
-        "self_user_id is unset; re-run `zad service create spotify` (it captures \
-         the user ID from `GET /me`) or pass --self-user."
-            .into(),
-    ))?;
-
     let http = http_for()?;
     let summary = http
-        .create_playlist(
-            &user_id,
-            &args.name,
-            args.description.as_deref(),
-            args.public,
-        )
+        .create_playlist(&args.name, args.description.as_deref(), args.public)
         .await?;
 
     if args.json {
