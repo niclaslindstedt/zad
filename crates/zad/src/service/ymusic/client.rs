@@ -33,7 +33,7 @@
 //!   wrap that boilerplate.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +43,7 @@ use crate::error::{Result, ZadError};
 use crate::oauth::{self, RefreshTokenStore};
 use crate::rate_limit;
 use crate::service::ymusic::{API_BASE, TOKEN_URL, USERINFO_URL};
+use crate::token_cache;
 
 const SERVICE: &str = "ymusic";
 
@@ -76,6 +77,10 @@ pub struct YmusicHttp {
     /// across the network refresh so two concurrent callers can't
     /// race two distinct rotated tokens onto the keychain.
     cached_access: Arc<Mutex<Option<String>>>,
+    /// Directory used for the cross-process token cache and refresh
+    /// lock. `None` means "resolve from `zad_home()` at runtime".
+    /// Override via [`Self::with_cache_dir`] in tests.
+    cache_service_dir: Option<PathBuf>,
 }
 
 impl YmusicHttp {
@@ -121,6 +126,7 @@ impl YmusicHttp {
             scopes,
             config_path,
             cached_access: Arc::new(Mutex::new(None)),
+            cache_service_dir: None,
         }
     }
 
@@ -142,6 +148,16 @@ impl YmusicHttp {
     #[doc(hidden)]
     pub fn with_token_url(mut self, url: impl Into<String>) -> Self {
         self.token_url = url.into();
+        self
+    }
+
+    /// Override the cross-process token cache directory. Test-only —
+    /// production code resolves the directory from `zad_home()` at
+    /// runtime. Pass a `tempfile::TempDir`-backed path to isolate tests
+    /// from each other and from the real `~/.zad` state.
+    #[doc(hidden)]
+    pub fn with_cache_dir(mut self, dir: PathBuf) -> Self {
+        self.cache_service_dir = Some(dir);
         self
     }
 
@@ -180,6 +196,24 @@ impl YmusicHttp {
         if let Some(t) = cached.as_ref() {
             return Ok(t.clone());
         }
+
+        let cache_dir: Option<PathBuf> = self
+            .cache_service_dir
+            .clone()
+            .or_else(|| token_cache::service_dir(SERVICE).ok());
+
+        if let Some(t) = token_cache::read(cache_dir.as_deref()) {
+            *cached = Some(t.clone());
+            return Ok(t);
+        }
+
+        let _lock = token_cache::acquire_lock(cache_dir.as_deref()).await?;
+
+        if let Some(t) = token_cache::read(cache_dir.as_deref()) {
+            *cached = Some(t.clone());
+            return Ok(t);
+        }
+
         let current = self.refresh_token.lock().await.clone();
         let fresh = oauth::refresh_access_token(
             "ymusic",
@@ -203,6 +237,17 @@ impl YmusicHttp {
                 }
                 *rt = new_rt.to_string();
             }
+        }
+
+        let expires_in = fresh
+            .expires_in
+            .unwrap_or(token_cache::DEFAULT_EXPIRES_IN_SECS);
+        if let Err(e) = token_cache::write(cache_dir.as_deref(), &fresh.access_token, expires_in) {
+            tracing::warn!(
+                service = SERVICE,
+                error = %e,
+                "failed to write access-token cache; cross-process sharing disabled for this session"
+            );
         }
 
         *cached = Some(fresh.access_token.clone());
@@ -427,18 +472,25 @@ impl YmusicHttp {
     /// the account has no YouTube channel yet.
     pub async fn userinfo(&self) -> Result<UserInfo> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .get(USERINFO_URL)
             .bearer_auth(&access)
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     // -----------------------------------------------------------------
     // low-level HTTP glue
     // -----------------------------------------------------------------
+
+    fn resolved_cache_dir(&self) -> Option<PathBuf> {
+        self.cache_service_dir
+            .clone()
+            .or_else(|| token_cache::service_dir(SERVICE).ok())
+    }
 
     async fn get_json<T: for<'de> Deserialize<'de>>(
         &self,
@@ -446,6 +498,7 @@ impl YmusicHttp {
         query: &[(&str, &str)],
     ) -> Result<T> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .get(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -453,7 +506,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     async fn post_json<T: for<'de> Deserialize<'de>>(
@@ -463,6 +516,7 @@ impl YmusicHttp {
         body: &serde_json::Value,
     ) -> Result<T> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .post(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -471,7 +525,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     async fn post_empty(
@@ -481,6 +535,7 @@ impl YmusicHttp {
         body: &serde_json::Value,
     ) -> Result<()> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .post(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -489,7 +544,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        finalize_empty(resp).await
+        finalize_empty(resp, cache_dir.as_deref()).await
     }
 
     async fn put_empty(
@@ -499,6 +554,7 @@ impl YmusicHttp {
         body: &serde_json::Value,
     ) -> Result<()> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .put(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -507,11 +563,12 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        finalize_empty(resp).await
+        finalize_empty(resp, cache_dir.as_deref()).await
     }
 
     async fn delete_empty(&self, path: &str, query: &[(&str, &str)]) -> Result<()> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .delete(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -519,7 +576,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        finalize_empty(resp).await
+        finalize_empty(resp, cache_dir.as_deref()).await
     }
 }
 
@@ -530,12 +587,18 @@ fn network_err(e: reqwest::Error) -> ZadError {
     }
 }
 
-async fn decode_response<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Result<T> {
+async fn decode_response<T: for<'de> Deserialize<'de>>(
+    resp: reqwest::Response,
+    cache_dir: Option<&Path>,
+) -> Result<T> {
     if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
         return Err(err);
     }
     let status = resp.status();
     if !status.is_success() {
+        if status.as_u16() == 401 {
+            token_cache::clear(cache_dir);
+        }
         let body = resp.text().await.unwrap_or_default();
         return Err(map_http_error(status, &body));
     }
@@ -546,7 +609,7 @@ async fn decode_response<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) 
     })
 }
 
-async fn finalize_empty(resp: reqwest::Response) -> Result<()> {
+async fn finalize_empty(resp: reqwest::Response, cache_dir: Option<&Path>) -> Result<()> {
     if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
         return Err(err);
     }
@@ -554,6 +617,9 @@ async fn finalize_empty(resp: reqwest::Response) -> Result<()> {
     if status.is_success() {
         rate_limit::clear(SERVICE);
         return Ok(());
+    }
+    if status.as_u16() == 401 {
+        token_cache::clear(cache_dir);
     }
     let body = resp.text().await.unwrap_or_default();
     Err(map_http_error(status, &body))
