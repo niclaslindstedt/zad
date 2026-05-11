@@ -67,6 +67,12 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub debug_agent: bool,
 
+    /// Block until any persisted rate-limit (HTTP 429) wait window
+    /// passes, then continue. Safe to leave on permanently in
+    /// scripts: if no wait window is active, this is a no-op.
+    #[arg(long, global = true)]
+    pub wait: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -100,6 +106,29 @@ pub enum Command {
     Man(man::ManArgs),
 }
 
+/// Service name attached to a top-level command, or `None` for commands
+/// that don't hit external APIs (lifecycle, signing, docs, …). Used to
+/// gate dispatch on any persisted rate-limit window.
+fn rate_limit_service_for(cmd: &Command) -> Option<&'static str> {
+    match cmd {
+        Command::Discord(_) => Some("discord"),
+        Command::Gcal(_) => Some("gcal"),
+        Command::Slack(_) => Some("slack"),
+        Command::Spotify(_) => Some("spotify"),
+        Command::Telegram(_) => Some("telegram"),
+        Command::Ymusic(_) => Some("ymusic"),
+        // 1Password shells out to the `op` CLI rather than calling
+        // an HTTP API; no rate-limit gating needed. Service /
+        // signing / commands / docs / man are local-only.
+        Command::OnePass(_)
+        | Command::Service(_)
+        | Command::Signing(_)
+        | Command::Commands(_)
+        | Command::Docs(_)
+        | Command::Man(_) => None,
+    }
+}
+
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     zad::logging::init(cli.debug);
@@ -112,6 +141,12 @@ pub async fn run() -> Result<()> {
     if cli.debug_agent {
         print!("{}", debug_agent::render());
         return Ok(());
+    }
+
+    if let Some(cmd) = cli.command.as_ref()
+        && let Some(svc) = rate_limit_service_for(cmd)
+    {
+        zad::rate_limit::precall_check(svc, cli.wait).await?;
     }
 
     match cli.command {

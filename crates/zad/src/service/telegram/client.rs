@@ -27,6 +27,9 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::{Result, ZadError};
+use crate::rate_limit;
+
+const SERVICE: &str = "telegram";
 
 /// Telegram's hard cap on a single text message's character count. The
 /// Bot API counts UTF-16 code units, but Telegram's documented limit is
@@ -333,6 +336,9 @@ fn network_err(e: reqwest::Error) -> ZadError {
 async fn decode_envelope<T: for<'de> Deserialize<'de>>(
     resp: reqwest::Response,
 ) -> Result<ApiEnvelope<T>> {
+    if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
+        return Err(err);
+    }
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -341,6 +347,7 @@ async fn decode_envelope<T: for<'de> Deserialize<'de>>(
             message: format!("HTTP {status}: {body}"),
         });
     }
+    rate_limit::clear(SERVICE);
     resp.json::<ApiEnvelope<T>>()
         .await
         .map_err(|e| ZadError::Service {

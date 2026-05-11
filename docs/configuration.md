@@ -1013,4 +1013,25 @@ state directory (per `OSS_SPEC.md` §19.2):
 | macOS   | `~/Library/Application Support/zad/debug.log` |
 | Windows | `%LOCALAPPDATA%\zad\debug.log` |
 
+## Rate-limit state
+
+Whenever a provider returns HTTP 429 (or its body-only equivalent,
+e.g. Slack's `error: "ratelimited"`), zad persists the wait deadline
+at:
+
+```
+~/.zad/state/<service>/rate_limit.json
+```
+
+The file contains a single field, `retry_after_utc`, an RFC 3339
+timestamp. Subsequent invocations consult this file *before* making a
+network call; with `--wait`, zad blocks until the deadline; without
+`--wait`, zad fails fast with a `RateLimited` error that names the
+deadline and points at `--wait` as the recovery flag. The file is
+removed automatically once the deadline has passed (or once any
+successful call to the same service confirms the window is open).
+
+See [`docs/troubleshooting.md`](troubleshooting.md#rate-limits-429)
+for the user-facing flow and JSON payload shape.
+
 The global `--debug` flag additionally mirrors the log to stderr.

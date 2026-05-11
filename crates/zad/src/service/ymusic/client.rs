@@ -41,7 +41,10 @@ use tokio::sync::Mutex;
 
 use crate::error::{Result, ZadError};
 use crate::oauth::{self, RefreshTokenStore};
+use crate::rate_limit;
 use crate::service::ymusic::{API_BASE, TOKEN_URL, USERINFO_URL};
+
+const SERVICE: &str = "ymusic";
 
 /// Thin wrapper over YouTube Data API v3. Holds a refresh token and
 /// mints an access token on demand.
@@ -486,12 +489,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        let status = resp.status();
-        if status.is_success() {
-            return Ok(());
-        }
-        let body = resp.text().await.unwrap_or_default();
-        Err(map_http_error(status, &body))
+        finalize_empty(resp).await
     }
 
     async fn put_empty(
@@ -509,12 +507,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        let status = resp.status();
-        if status.is_success() {
-            return Ok(());
-        }
-        let body = resp.text().await.unwrap_or_default();
-        Err(map_http_error(status, &body))
+        finalize_empty(resp).await
     }
 
     async fn delete_empty(&self, path: &str, query: &[(&str, &str)]) -> Result<()> {
@@ -526,12 +519,7 @@ impl YmusicHttp {
             .send()
             .await
             .map_err(network_err)?;
-        let status = resp.status();
-        if status.is_success() {
-            return Ok(());
-        }
-        let body = resp.text().await.unwrap_or_default();
-        Err(map_http_error(status, &body))
+        finalize_empty(resp).await
     }
 }
 
@@ -543,15 +531,32 @@ fn network_err(e: reqwest::Error) -> ZadError {
 }
 
 async fn decode_response<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Result<T> {
+    if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
+        return Err(err);
+    }
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         return Err(map_http_error(status, &body));
     }
+    rate_limit::clear(SERVICE);
     resp.json::<T>().await.map_err(|e| ZadError::Service {
         name: "ymusic",
         message: format!("failed to decode YouTube response: {e}"),
     })
+}
+
+async fn finalize_empty(resp: reqwest::Response) -> Result<()> {
+    if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
+        return Err(err);
+    }
+    let status = resp.status();
+    if status.is_success() {
+        rate_limit::clear(SERVICE);
+        return Ok(());
+    }
+    let body = resp.text().await.unwrap_or_default();
+    Err(map_http_error(status, &body))
 }
 
 fn map_http_error(status: reqwest::StatusCode, body: &str) -> ZadError {

@@ -39,6 +39,7 @@ pub mod error;
 pub mod logging;
 pub mod oauth;
 pub mod permissions;
+pub mod rate_limit;
 pub mod secrets;
 pub mod service;
 

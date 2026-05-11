@@ -31,6 +31,7 @@ and are **never** written to the TOML.
 | `--debug`   | bool | false | Enable debug-level logging on stderr. The on-disk log at `~/.local/state/zad/debug.log` (Linux) or `~/Library/Application Support/zad/debug.log` (macOS) is written regardless. |
 | `--help-agent` | bool | false | Print a compact, prompt-injectable description of the CLI — its commands, most important flags and env vars, and pointers to the `commands`, `man`, and `docs` discovery surfaces. Designed for splicing into an agent prompt via command substitution (`$(zad --help-agent)`). See `OSS_SPEC.md` §12.1. |
 | `--debug-agent` | bool | false | Print a troubleshooting block (log paths, config precedence, env vars, diagnostic commands, version). See `OSS_SPEC.md` §12.2. |
+| `--wait`        | bool | false | If a prior call to the same service hit HTTP 429, block until that wait window passes before issuing the new call. Safe to leave on permanently in scripts: when no wait window is active, this is a no-op. See [`docs/troubleshooting.md`](../docs/troubleshooting.md#rate-limits-429). |
 
 ## Subcommands
 
@@ -71,6 +72,29 @@ surface.
 | 1 | Generic error — token validation failed, keyring write failed, filesystem error, API failure. |
 | 2 | Usage error — conflicting flags, invalid numeric ID, unknown scope, missing subcommand. |
 | 3 | Echo: a runtime verb's permissions file is unsigned or has a bad signature, so the call was *not* issued — the would-be call and the reason are printed instead. See `docs/permissions.md` ("Echo mode for runtime verbs"). |
+
+## Rate limits (HTTP 429)
+
+Every service-bound subcommand respects HTTP 429. When a provider
+returns 429 (or its body-only equivalent — Slack uses
+`error: "ratelimited"`), zad:
+
+1. Parses the `Retry-After` header (or falls back to a short default).
+2. Persists the deadline at `~/.zad/state/<service>/rate_limit.json`
+   so subsequent invocations in any process see the same window.
+3. Returns a `RateLimited` error whose human message names the
+   service, the wait seconds, the absolute UTC deadline, and the
+   `--wait` flag.
+4. When the invocation also passed `--json` (on the subcommand whose
+   output is machine-readable), the same fields appear on stdout as a
+   structured payload — `{"error": "rate_limited", "service": ...,
+   "retry_after_seconds": ..., "retry_after_utc": ..., "message":
+   ..., "hint": ...}` — so scripts can read the deadline directly
+   without parsing the message string.
+
+Re-run the same command with `--wait` to block until the deadline
+passes and then proceed. `--wait` on a clean state is a no-op, so it
+is safe to add to every invocation in a script.
 
 ## Examples
 
