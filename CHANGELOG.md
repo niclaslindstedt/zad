@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.7.3]
+## [0.8.0]
 
-- fix(spotify)!: align with February 2026 Web API field renames and library consolidation (#78)
+- feat: respect HTTP 429 across services with a global --wait flag (#79)
 
