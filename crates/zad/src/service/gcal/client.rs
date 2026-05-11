@@ -9,11 +9,19 @@
 //! ## Access-token lifecycle
 //!
 //! [`GcalHttp`] always holds a *refresh* token and its OAuth client
-//! identity. The first API call in the process lifetime calls
-//! [`crate::oauth::refresh_access_token`] to mint a fresh access
-//! token, caches it in the struct, and reuses it for the remainder of
-//! the run. We never persist access tokens — one zad CLI invocation
-//! mints at most one.
+//! identity. The first API call in the process lifetime checks the
+//! cross-process access-token cache, and if it misses, acquires the
+//! cross-process refresh lock and calls
+//! [`crate::oauth::refresh_access_token`]. The fresh token is written
+//! to both the in-memory cache and the on-disk cache so sibling
+//! processes pick it up without hitting the token endpoint or the OS
+//! keychain. See [`crate::token_cache`] for the rationale.
+//!
+//! Google's confidential-client flow does not currently rotate
+//! refresh tokens, but the persist-on-rotation handling is wired up
+//! the same way as Spotify/YMusic so a future provider change (or a
+//! per-account quirk) doesn't silently revoke the user's session.
+//! When the value is unchanged, the store is never called.
 //!
 //! ## Error mapping
 //!
@@ -26,16 +34,17 @@
 //!   rate-limited this client; back off before retrying"
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::{Result, ZadError};
-use crate::oauth;
+use crate::oauth::{self, RefreshTokenStore};
 use crate::rate_limit;
 use crate::service::gcal::{API_BASE, TOKEN_URL, USERINFO_URL};
+use crate::token_cache;
 
 const SERVICE: &str = "gcal";
 
@@ -45,15 +54,36 @@ const SERVICE: &str = "gcal";
 pub struct GcalHttp {
     client_id: String,
     client_secret: String,
-    refresh_token: String,
+    /// Wrapped in a Mutex so a token rotation in one process can be
+    /// reflected back into the in-memory state without taking `&mut
+    /// self` through the whole chain.
+    refresh_token: Arc<Mutex<String>>,
+    /// Where to persist a rotated refresh token. `None` means "drop
+    /// the rotation on the floor" — Google rarely rotates today, but
+    /// the field exists so the bug Spotify hit can't recur silently.
+    refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+    /// Token endpoint URL. Defaults to
+    /// [`crate::service::gcal::TOKEN_URL`]; overridable so tests can
+    /// point at a localhost mock.
+    token_url: String,
     scopes: BTreeSet<String>,
     config_path: PathBuf,
-    /// Cached access token for the lifetime of this process.
+    /// Cached access token for the lifetime of this process. Held
+    /// across the network refresh so two concurrent callers can't
+    /// race two distinct rotated tokens onto the keychain.
     cached_access: Arc<Mutex<Option<String>>>,
+    /// Directory used for the cross-process token cache and refresh
+    /// lock. `None` means "resolve from `zad_home()` at runtime".
+    /// Override via [`Self::with_cache_dir`] in tests.
+    cache_service_dir: Option<PathBuf>,
 }
 
 impl GcalHttp {
-    /// Full-featured constructor used by runtime verbs.
+    /// Full-featured constructor used by runtime verbs. No persisting
+    /// store — equivalent to [`Self::with_store`] with `None`. Use
+    /// [`Self::with_store`] in production so a future provider change
+    /// that does start rotating refresh tokens never silently revokes
+    /// the user's session.
     pub fn new(
         client_id: String,
         client_secret: String,
@@ -61,13 +91,39 @@ impl GcalHttp {
         scopes: BTreeSet<String>,
         config_path: PathBuf,
     ) -> Self {
-        Self {
+        Self::with_store(
             client_id,
             client_secret,
             refresh_token,
             scopes,
             config_path,
+            None,
+        )
+    }
+
+    /// Like [`Self::new`] but takes an optional [`RefreshTokenStore`]
+    /// that receives every rotated refresh token. The canonical zad
+    /// wiring (`Gcal::from_default_config`) supplies a
+    /// [`crate::oauth::KeychainRefreshStore`] pointing at the
+    /// `secrets::account("gcal", "refresh", Scope::Global)` slot.
+    pub fn with_store(
+        client_id: String,
+        client_secret: String,
+        refresh_token: String,
+        scopes: BTreeSet<String>,
+        config_path: PathBuf,
+        refresh_token_store: Option<Arc<dyn RefreshTokenStore>>,
+    ) -> Self {
+        Self {
+            client_id,
+            client_secret,
+            refresh_token: Arc::new(Mutex::new(refresh_token)),
+            refresh_token_store,
+            token_url: TOKEN_URL.to_string(),
+            scopes,
+            config_path,
             cached_access: Arc::new(Mutex::new(None)),
+            cache_service_dir: None,
         }
     }
 
@@ -83,6 +139,31 @@ impl GcalHttp {
         )
     }
 
+    /// Override the token endpoint URL. Test-only — production code
+    /// should rely on the default
+    /// [`crate::service::gcal::TOKEN_URL`].
+    #[doc(hidden)]
+    pub fn with_token_url(mut self, url: impl Into<String>) -> Self {
+        self.token_url = url.into();
+        self
+    }
+
+    /// Override the cross-process token cache directory. Test-only —
+    /// production code resolves the directory from `zad_home()` at
+    /// runtime. Pass a `tempfile::TempDir`-backed path to isolate tests
+    /// from each other and from the real `~/.zad` state.
+    #[doc(hidden)]
+    pub fn with_cache_dir(mut self, dir: PathBuf) -> Self {
+        self.cache_service_dir = Some(dir);
+        self
+    }
+
+    /// Read the in-memory refresh token. Test-only.
+    #[doc(hidden)]
+    pub async fn refresh_token_for_test(&self) -> String {
+        self.refresh_token.lock().await.clone()
+    }
+
     fn require_scope(&self, scope: &'static str) -> Result<()> {
         if self.scopes.contains(scope) {
             return Ok(());
@@ -96,23 +177,88 @@ impl GcalHttp {
 
     /// Lazily fetch (and cache) an access token for the lifetime of
     /// this process.
-    async fn access_token(&self) -> Result<String> {
-        {
-            let guard = self.cached_access.lock().await;
-            if let Some(t) = guard.as_ref() {
-                return Ok(t.clone());
-            }
+    ///
+    /// The `cached_access` lock is held across the network refresh
+    /// **and** across the rotated-token persist step, so two
+    /// concurrent callers can't both refresh and race two distinct
+    /// rotated tokens onto the keychain. See `SpotifyHttp::access_token`
+    /// for the same pattern — the bug that motivated this lives in
+    /// Spotify's flow but the safety net is identical here.
+    ///
+    /// Exposed publicly with `#[doc(hidden)]` so tests can drive a
+    /// refresh without piggy-backing on a follow-up API call.
+    #[doc(hidden)]
+    pub async fn access_token(&self) -> Result<String> {
+        let mut cached = self.cached_access.lock().await;
+        if let Some(t) = cached.as_ref() {
+            return Ok(t.clone());
         }
+
+        // Resolve the cache directory once. `None` means caching is
+        // unavailable; all token_cache calls are then no-ops and the
+        // function falls back to the original per-process behaviour.
+        let cache_dir: Option<PathBuf> = self
+            .cache_service_dir
+            .clone()
+            .or_else(|| token_cache::service_dir(SERVICE).ok());
+
+        // Fast path: file cache hit — skip the keychain and the token
+        // endpoint. This is the common path for processes 2-N in a
+        // parallel fan-out (they all start cold but only one refreshes).
+        if let Some(t) = token_cache::read(cache_dir.as_deref()) {
+            *cached = Some(t.clone());
+            return Ok(t);
+        }
+
+        // Acquire the cross-process lock before calling the token
+        // endpoint. Processes that lose the race will find a valid
+        // cache entry on the re-check below and skip the network call.
+        let _lock = token_cache::acquire_lock(cache_dir.as_deref()).await?;
+
+        // Re-check after acquiring the lock: the process that held it
+        // just before us has written the cache by now.
+        if let Some(t) = token_cache::read(cache_dir.as_deref()) {
+            *cached = Some(t.clone());
+            return Ok(t);
+        }
+
+        let current = self.refresh_token.lock().await.clone();
         let fresh = oauth::refresh_access_token(
             "gcal",
-            TOKEN_URL,
+            &self.token_url,
             &self.client_id,
             Some(&self.client_secret),
-            &self.refresh_token,
+            &current,
         )
         .await?;
-        let mut guard = self.cached_access.lock().await;
-        *guard = Some(fresh.access_token.clone());
+
+        // Persist rotation if the provider returned a different
+        // refresh token. Google rarely rotates today, so this branch
+        // is usually inert — but if it ever does (account flagged,
+        // policy change), the rotated value lands in the keychain
+        // instead of being silently dropped.
+        if let Some(new_rt) = fresh.refresh_token.as_deref() {
+            let mut rt = self.refresh_token.lock().await;
+            if new_rt != rt.as_str() {
+                if let Some(store) = &self.refresh_token_store {
+                    store.store(new_rt)?;
+                }
+                *rt = new_rt.to_string();
+            }
+        }
+
+        let expires_in = fresh
+            .expires_in
+            .unwrap_or(token_cache::DEFAULT_EXPIRES_IN_SECS);
+        if let Err(e) = token_cache::write(cache_dir.as_deref(), &fresh.access_token, expires_in) {
+            tracing::warn!(
+                service = SERVICE,
+                error = %e,
+                "failed to write access-token cache; cross-process sharing disabled for this session"
+            );
+        }
+
+        *cached = Some(fresh.access_token.clone());
         Ok(fresh.access_token)
     }
 
@@ -269,13 +415,14 @@ impl GcalHttp {
     /// `zad service create gcal` and by `service status`.
     pub async fn userinfo(&self) -> Result<UserInfo> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .get(USERINFO_URL)
             .bearer_auth(&access)
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     /// Fetch one page of calendarList (up to 1 entry) as a cheap
@@ -291,12 +438,21 @@ impl GcalHttp {
     // low-level HTTP glue
     // -----------------------------------------------------------------
 
+    /// Resolve the cache directory, preferring the override field and
+    /// falling back to the standard `zad_home`-based path.
+    fn resolved_cache_dir(&self) -> Option<PathBuf> {
+        self.cache_service_dir
+            .clone()
+            .or_else(|| token_cache::service_dir(SERVICE).ok())
+    }
+
     async fn get_json<T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
         query: &[(&str, &str)],
     ) -> Result<T> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .get(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -304,7 +460,7 @@ impl GcalHttp {
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     async fn post_json<T: for<'de> Deserialize<'de>>(
@@ -314,6 +470,7 @@ impl GcalHttp {
         body: &serde_json::Value,
     ) -> Result<T> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .post(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -322,7 +479,7 @@ impl GcalHttp {
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     async fn patch_json<T: for<'de> Deserialize<'de>>(
@@ -332,6 +489,7 @@ impl GcalHttp {
         body: &serde_json::Value,
     ) -> Result<T> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .patch(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -340,11 +498,12 @@ impl GcalHttp {
             .send()
             .await
             .map_err(network_err)?;
-        decode_response(resp).await
+        decode_response(resp, cache_dir.as_deref()).await
     }
 
     async fn delete_empty(&self, path: &str, query: &[(&str, &str)]) -> Result<()> {
         let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
             .delete(format!("{API_BASE}{path}"))
             .bearer_auth(&access)
@@ -352,11 +511,11 @@ impl GcalHttp {
             .send()
             .await
             .map_err(network_err)?;
-        finalize_empty(resp).await
+        finalize_empty(resp, cache_dir.as_deref()).await
     }
 }
 
-async fn finalize_empty(resp: reqwest::Response) -> Result<()> {
+async fn finalize_empty(resp: reqwest::Response, cache_dir: Option<&Path>) -> Result<()> {
     if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
         return Err(err);
     }
@@ -364,6 +523,9 @@ async fn finalize_empty(resp: reqwest::Response) -> Result<()> {
     if status.is_success() {
         rate_limit::clear(SERVICE);
         return Ok(());
+    }
+    if status.as_u16() == 401 {
+        token_cache::clear(cache_dir);
     }
     let body = resp.text().await.unwrap_or_default();
     Err(map_http_error(status, &body))
@@ -376,12 +538,18 @@ fn network_err(e: reqwest::Error) -> ZadError {
     }
 }
 
-async fn decode_response<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Result<T> {
+async fn decode_response<T: for<'de> Deserialize<'de>>(
+    resp: reqwest::Response,
+    cache_dir: Option<&Path>,
+) -> Result<T> {
     if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
         return Err(err);
     }
     let status = resp.status();
     if !status.is_success() {
+        if status.as_u16() == 401 {
+            token_cache::clear(cache_dir);
+        }
         let body = resp.text().await.unwrap_or_default();
         return Err(map_http_error(status, &body));
     }
