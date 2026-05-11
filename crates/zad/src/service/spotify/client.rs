@@ -285,16 +285,20 @@ impl SpotifyHttp {
         Ok(())
     }
 
-    /// `DELETE /playlists/{id}/items` with `{ tracks: [{ uri }] }`.
+    /// `DELETE /playlists/{id}/items` with `{ items: [{ uri }] }`.
     /// Scope: `playlists.write`.
+    ///
+    /// The February 2026 Web API migration renamed the body parameter
+    /// from `tracks` to `items` alongside the endpoint move from
+    /// `/playlists/{id}/tracks` → `/playlists/{id}/items`.
     pub async fn remove_playlist_tracks(&self, playlist_id: &str, uris: &[String]) -> Result<()> {
         self.require_scope("playlists.write")?;
         let path = format!("/playlists/{}/items", urlencode_path(playlist_id));
-        let tracks: Vec<serde_json::Value> = uris
+        let items: Vec<serde_json::Value> = uris
             .iter()
             .map(|u| serde_json::json!({ "uri": u }))
             .collect();
-        let body = serde_json::json!({ "tracks": tracks });
+        let body = serde_json::json!({ "items": items });
         self.delete_with_body(&path, &[], &body).await
     }
 
@@ -308,24 +312,21 @@ impl SpotifyHttp {
         Ok(page.items)
     }
 
-    /// `PUT /me/tracks?ids=…`. Scope: `library.write`.
-    pub async fn save_tracks(&self, ids: &[String]) -> Result<()> {
-        self.require_scope("library.write")?;
-        let joined = ids.join(",");
-        self.put_empty(
-            "/me/tracks",
-            &[("ids", joined.as_str())],
-            &serde_json::json!({}),
-        )
-        .await
+    /// `PUT /me/library` with `{ uris: [...] }`. Scope: `library.write`.
+    ///
+    /// February 2026 unified the per-type save endpoints (`PUT
+    /// /me/tracks`, `PUT /me/albums`, …) into a single
+    /// `PUT /me/library` that takes Spotify URIs instead of IDs.
+    pub async fn save_tracks(&self, uris: &[String]) -> Result<()> {
+        self.save_to_library(uris).await
     }
 
-    /// `DELETE /me/tracks?ids=…`. Scope: `library.write`.
-    pub async fn unsave_tracks(&self, ids: &[String]) -> Result<()> {
-        self.require_scope("library.write")?;
-        let joined = ids.join(",");
-        self.delete_empty("/me/tracks", &[("ids", joined.as_str())])
-            .await
+    /// `DELETE /me/library` with `{ uris: [...] }`. Scope: `library.write`.
+    ///
+    /// February 2026 replaced `DELETE /me/tracks` with the unified
+    /// `DELETE /me/library` that takes Spotify URIs instead of IDs.
+    pub async fn unsave_tracks(&self, uris: &[String]) -> Result<()> {
+        self.remove_from_library(uris).await
     }
 
     /// `GET /me/albums`. Scope: `library.read`.
@@ -338,24 +339,38 @@ impl SpotifyHttp {
         Ok(page.items)
     }
 
-    /// `PUT /me/albums?ids=…`. Scope: `library.write`.
-    pub async fn save_albums(&self, ids: &[String]) -> Result<()> {
-        self.require_scope("library.write")?;
-        let joined = ids.join(",");
-        self.put_empty(
-            "/me/albums",
-            &[("ids", joined.as_str())],
-            &serde_json::json!({}),
-        )
-        .await
+    /// `PUT /me/library` with `{ uris: [...] }`. Scope: `library.write`.
+    ///
+    /// February 2026 replaced `PUT /me/albums` with the unified
+    /// `PUT /me/library` that takes Spotify URIs instead of IDs.
+    pub async fn save_albums(&self, uris: &[String]) -> Result<()> {
+        self.save_to_library(uris).await
     }
 
-    /// `DELETE /me/albums?ids=…`. Scope: `library.write`.
-    pub async fn unsave_albums(&self, ids: &[String]) -> Result<()> {
+    /// `DELETE /me/library` with `{ uris: [...] }`. Scope: `library.write`.
+    ///
+    /// February 2026 replaced `DELETE /me/albums` with the unified
+    /// `DELETE /me/library` that takes Spotify URIs instead of IDs.
+    pub async fn unsave_albums(&self, uris: &[String]) -> Result<()> {
+        self.remove_from_library(uris).await
+    }
+
+    /// `PUT /me/library` with `{ uris: [...] }`. Scope: `library.write`.
+    /// Accepts any mix of `spotify:track:`, `spotify:album:`,
+    /// `spotify:show:`, … URIs.
+    pub async fn save_to_library(&self, uris: &[String]) -> Result<()> {
         self.require_scope("library.write")?;
-        let joined = ids.join(",");
-        self.delete_empty("/me/albums", &[("ids", joined.as_str())])
-            .await
+        let body = serde_json::json!({ "uris": uris });
+        self.put_empty("/me/library", &[], &body).await
+    }
+
+    /// `DELETE /me/library` with `{ uris: [...] }`. Scope:
+    /// `library.write`. Accepts any mix of `spotify:track:`,
+    /// `spotify:album:`, `spotify:show:`, … URIs.
+    pub async fn remove_from_library(&self, uris: &[String]) -> Result<()> {
+        self.require_scope("library.write")?;
+        let body = serde_json::json!({ "uris": uris });
+        self.delete_with_body("/me/library", &[], &body).await
     }
 
     // -----------------------------------------------------------------
@@ -562,8 +577,14 @@ pub struct PlaylistSummary {
     pub owner: Option<UserRef>,
     #[serde(default)]
     pub uri: Option<String>,
-    #[serde(default)]
-    pub tracks: Option<TracksRef>,
+    /// Paging reference for the playlist's contents. February 2026
+    /// renamed this top-level field from `tracks` to `items`; non-owned
+    /// playlists no longer include this field at all (Development Mode
+    /// apps see metadata only). The `tracks` alias keeps deserialization
+    /// working against extended-quota tenants that still ship the old
+    /// shape.
+    #[serde(default, alias = "tracks")]
+    pub items: Option<ItemsRef>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -574,7 +595,7 @@ pub struct UserRef {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct TracksRef {
+pub struct ItemsRef {
     #[serde(default)]
     pub total: Option<u32>,
 }
@@ -587,8 +608,12 @@ pub struct PlaylistPage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlaylistTrackItem {
-    #[serde(default)]
-    pub track: Option<TrackSummary>,
+    /// The track or episode object. February 2026 renamed this field
+    /// from `track` to `item` across every playlist endpoint; the
+    /// `track` alias keeps deserialization working against
+    /// extended-quota tenants that still ship the old shape.
+    #[serde(default, alias = "track")]
+    pub item: Option<TrackSummary>,
     #[serde(default)]
     pub added_at: Option<String>,
 }

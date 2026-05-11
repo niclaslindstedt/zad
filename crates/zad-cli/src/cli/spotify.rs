@@ -447,7 +447,7 @@ fn render_search(r: &SearchResults) -> SearchOutput {
                     uri: pl.uri.clone(),
                     owner: pl.owner.as_ref().map(|o| o.id.clone()),
                     public: pl.public,
-                    tracks: pl.tracks.as_ref().and_then(|t| t.total),
+                    tracks: pl.items.as_ref().and_then(|t| t.total),
                 })
                 .collect()
         }),
@@ -532,7 +532,7 @@ async fn run_playlists_list(args: PlaylistsListArgs) -> Result<()> {
         return Ok(());
     }
     for p in &filtered {
-        let total = p.tracks.as_ref().and_then(|t| t.total).unwrap_or(0);
+        let total = p.items.as_ref().and_then(|t| t.total).unwrap_or(0);
         let owner = p.owner.as_ref().map(|o| o.id.as_str()).unwrap_or("?");
         println!("  {:25}  {} ({total} tracks, by {owner})", p.id, p.name);
     }
@@ -574,8 +574,8 @@ async fn run_playlists_show(args: PlaylistsShowArgs) -> Result<()> {
     Ok(())
 }
 
-fn print_playlist_track(item: &PlaylistTrackItem) {
-    let Some(track) = &item.track else {
+fn print_playlist_track(entry: &PlaylistTrackItem) {
+    let Some(track) = &entry.item else {
         return;
     };
     let artists = track
@@ -751,20 +751,20 @@ async fn library_mutate_tracks(args: LibraryMutateArgs, save: bool) -> Result<()
         permissions.check_target(SpotifyFunction::LibraryWrite, u)?;
     }
 
-    let ids = items_to_ids(&args.items, "track");
+    let uris = normalize_uris(&args.items, "track");
     let http = http_for()?;
     if save {
-        http.save_tracks(&ids).await?;
+        http.save_tracks(&uris).await?;
     } else {
-        http.unsave_tracks(&ids).await?;
+        http.unsave_tracks(&uris).await?;
     }
 
     let verb = if save { "saved" } else { "unsaved" };
     if args.json {
-        let out = serde_json::json!({ verb: ids });
+        let out = serde_json::json!({ verb: uris });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("{verb} {} track(s)", ids.len());
+        println!("{verb} {} track(s)", uris.len());
     }
     Ok(())
 }
@@ -830,20 +830,20 @@ async fn library_mutate_albums(args: LibraryMutateArgs, save: bool) -> Result<()
         permissions.check_target(SpotifyFunction::LibraryWrite, u)?;
     }
 
-    let ids = items_to_ids(&args.items, "album");
+    let uris = normalize_uris(&args.items, "album");
     let http = http_for()?;
     if save {
-        http.save_albums(&ids).await?;
+        http.save_albums(&uris).await?;
     } else {
-        http.unsave_albums(&ids).await?;
+        http.unsave_albums(&uris).await?;
     }
 
     let verb = if save { "saved" } else { "unsaved" };
     if args.json {
-        let out = serde_json::json!({ verb: ids });
+        let out = serde_json::json!({ verb: uris });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
     } else {
-        println!("{verb} {} album(s)", ids.len());
+        println!("{verb} {} album(s)", uris.len());
     }
     Ok(())
 }
@@ -1102,25 +1102,24 @@ fn strip_playlist_uri(s: &str) -> String {
 /// accepts on the playlist add / remove endpoints. Bare IDs get the
 /// `spotify:track:` prefix; full URIs pass through.
 fn normalize_track_uris(items: &[String]) -> Vec<String> {
+    normalize_uris(items, "track")
+}
+
+/// Normalise user-supplied refs to fully-qualified `spotify:<kind>:<id>`
+/// URIs — the form `PUT/DELETE /me/library`, `POST /playlists/{id}/items`,
+/// and `DELETE /playlists/{id}/items` all expect after February 2026.
+/// `kind` is `"track"`, `"album"`, `"show"`, …; it is only used to add
+/// the prefix to bare IDs. Anything already starting with `spotify:` is
+/// passed through verbatim.
+fn normalize_uris(items: &[String], kind: &str) -> Vec<String> {
     items
         .iter()
         .map(|s| {
             if s.starts_with("spotify:") {
                 s.clone()
             } else {
-                format!("spotify:track:{s}")
+                format!("spotify:{kind}:{s}")
             }
         })
-        .collect()
-}
-
-/// Convert user-supplied refs (URIs or bare IDs) to bare IDs, the form
-/// `me/tracks?ids=…` and `me/albums?ids=…` expect. `kind` is `"track"`
-/// or `"album"`; it's used only to strip the matching URI prefix.
-fn items_to_ids(items: &[String], kind: &str) -> Vec<String> {
-    let prefix = format!("spotify:{kind}:");
-    items
-        .iter()
-        .map(|s| s.strip_prefix(&prefix).unwrap_or(s).to_string())
         .collect()
 }
