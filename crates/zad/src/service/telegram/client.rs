@@ -23,6 +23,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -252,6 +253,43 @@ impl TelegramHttp {
             query.push(("offset", o.to_string()));
         }
         let envelope: ApiEnvelope<Vec<Update>> = self.get("getUpdates", &query).await?;
+        envelope.into_result()
+    }
+
+    /// Long-poll variant of [`Self::get_updates`]. Issues `getUpdates`
+    /// with the Bot API's server-side `timeout=<secs>` so the call
+    /// blocks until updates are available or the timeout elapses,
+    /// instead of returning whatever happens to be buffered right now.
+    ///
+    /// The HTTP client used here gets a wall-clock timeout of
+    /// `timeout_secs + 10` so a wedged TCP connection cannot outlive
+    /// the long-poll itself — without this, a hung socket would prevent
+    /// the caller's `tokio::select!` from cancelling cleanly on
+    /// SIGINT.
+    ///
+    /// Scope: same as [`Self::get_updates`] (`messages.read` or
+    /// `chats`).
+    pub async fn get_updates_long_poll(
+        &self,
+        offset: Option<i64>,
+        timeout_secs: u32,
+    ) -> Result<Vec<Update>> {
+        self.require_any_scope(&["messages.read", "chats"])?;
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(timeout_secs as u64 + 10))
+            .build()
+            .map_err(network_err)?;
+        let mut query: Vec<(&str, String)> = vec![("timeout", timeout_secs.to_string())];
+        if let Some(o) = offset {
+            query.push(("offset", o.to_string()));
+        }
+        let resp = client
+            .get(self.url("getUpdates"))
+            .query(&query)
+            .send()
+            .await
+            .map_err(network_err)?;
+        let envelope: ApiEnvelope<Vec<Update>> = decode_envelope(resp).await?;
         envelope.into_result()
     }
 

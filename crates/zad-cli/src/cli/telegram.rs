@@ -40,6 +40,8 @@ pub enum Action {
     Send(SendArgs),
     /// Fetch recent messages the bot has buffered for a chat.
     Read(ReadArgs),
+    /// Long-poll the Bot API and stream new messages for a chat to stdout.
+    Listen(ListenArgs),
     /// List chats the bot has seen (local directory + recent updates).
     Chats(ChatsArgs),
     /// Poll the Bot API for recent updates and upsert chat aliases
@@ -64,6 +66,7 @@ pub async fn run(args: TelegramArgs) -> Result<()> {
     match action {
         Action::Send(a) => run_send(a).await,
         Action::Read(a) => run_read(a).await,
+        Action::Listen(a) => run_listen(a).await,
         Action::Chats(a) => run_chats(a).await,
         Action::Discover(a) => run_discover(a).await,
         Action::Directory(a) => run_directory(a),
@@ -290,6 +293,85 @@ async fn run_read(args: ReadArgs) -> Result<()> {
         println!("[{}] <{}> {}", m.id, m.author, m.body);
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// listen
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Args)]
+pub struct ListenArgs {
+    /// Chat to stream. Same accepted formats as `--chat` on `send`/`read`.
+    #[arg(long)]
+    pub chat: String,
+
+    /// Server-side long-poll seconds (1-50; Telegram caps the timeout
+    /// at 50). Higher values mean fewer HTTP round-trips when the
+    /// queue is idle, at the cost of slightly slower Ctrl-C latency.
+    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=50))]
+    pub timeout: u32,
+
+    /// Emit one JSON object per message (NDJSON) instead of the
+    /// human-readable default.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ListenLine<'a> {
+    command: &'static str,
+    chat_id: String,
+    id: String,
+    author: &'a str,
+    body: &'a str,
+}
+
+async fn run_listen(args: ListenArgs) -> Result<()> {
+    let (cfg, _scope) = effective_config()?;
+    let directory = dir::load().unwrap_or_default();
+    let permissions = crate::cli::echo::load_effective_or_echo(perms::load_effective)?;
+    permissions.check_time(TelegramFunction::Listen)?;
+
+    let (chat_input, chat_id) =
+        resolve_chat_arg(Some(&args.chat), None, cfg.self_chat_id, &directory)?;
+    permissions.check_listen_chat(&chat_input, chat_id, &directory)?;
+
+    let transport = telegram_http_for("messages.read", false)?;
+
+    if crate::cli::echo::echo_active() {
+        crate::cli::echo::render_and_clear(args.json);
+        return Ok(());
+    }
+
+    use std::io::Write;
+    let mut offset: Option<i64> = None;
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => return Ok(()),
+            res = transport.listen_updates(offset, args.timeout) => {
+                let (msgs, next) = res?;
+                let mut stdout = std::io::stdout().lock();
+                for m in msgs.iter().filter(|m| m.chat == chat_id) {
+                    if args.json {
+                        let line = ListenLine {
+                            command: "telegram.listen",
+                            chat_id: chat_id.to_string(),
+                            id: m.id.to_string(),
+                            author: &m.author,
+                            body: &m.body,
+                        };
+                        writeln!(stdout, "{}", serde_json::to_string(&line).unwrap()).ok();
+                    } else {
+                        writeln!(stdout, "[{}] <{}> {}", m.id, m.author, m.body).ok();
+                    }
+                }
+                stdout.flush().ok();
+                if let Some(n) = next {
+                    offset = Some(n);
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,6 +1167,7 @@ fn run_permissions_check(args: PermissionsCheckArgs) -> Result<()> {
         outcome = match function {
             TelegramFunction::Send => permissions.check_send_chat(c, id, &directory),
             TelegramFunction::Read => permissions.check_read_chat(c, id, &directory),
+            TelegramFunction::Listen => permissions.check_listen_chat(c, id, &directory),
             TelegramFunction::Chats => permissions.check_chats_chat(c, id, &directory),
             TelegramFunction::Discover => permissions.check_discover_chat(c, id, &directory),
         };
@@ -1137,10 +1220,11 @@ fn parse_function(name: &str) -> Result<TelegramFunction> {
     match name {
         "send" => Ok(TelegramFunction::Send),
         "read" => Ok(TelegramFunction::Read),
+        "listen" => Ok(TelegramFunction::Listen),
         "chats" => Ok(TelegramFunction::Chats),
         "discover" => Ok(TelegramFunction::Discover),
         other => Err(ZadError::Invalid(format!(
-            "unknown function `{other}`. Expected one of: send, read, chats, discover."
+            "unknown function `{other}`. Expected one of: send, read, listen, chats, discover."
         ))),
     }
 }

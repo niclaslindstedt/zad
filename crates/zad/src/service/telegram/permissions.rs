@@ -33,6 +33,9 @@
 //! [read]
 //! chats.deny = ["*private*"]
 //!
+//! [listen]
+//! chats.allow = ["general", "alerts-*"]
+//!
 //! [chats]
 //! # No restrictions on listing the cached chats.
 //!
@@ -70,6 +73,8 @@ pub struct TelegramPermissionsRaw {
     pub send: FunctionBlockRaw,
     #[serde(default)]
     pub read: FunctionBlockRaw,
+    #[serde(default)]
+    pub listen: FunctionBlockRaw,
     #[serde(default)]
     pub chats: FunctionBlockRaw,
     #[serde(default)]
@@ -144,6 +149,7 @@ pub struct TelegramPermissions {
     pub time: TimeWindow,
     pub send: FunctionBlock,
     pub read: FunctionBlock,
+    pub listen: FunctionBlock,
     pub chats: FunctionBlock,
     pub discover: FunctionBlock,
 }
@@ -156,6 +162,7 @@ impl TelegramPermissions {
             time: TimeWindow::compile(&raw.time).map_err(ZadError::Invalid)?,
             send: FunctionBlock::compile(&raw.send)?,
             read: FunctionBlock::compile(&raw.read)?,
+            listen: FunctionBlock::compile(&raw.listen)?,
             chats: FunctionBlock::compile(&raw.chats)?,
             discover: FunctionBlock::compile(&raw.discover)?,
         })
@@ -165,6 +172,7 @@ impl TelegramPermissions {
         match f {
             TelegramFunction::Send => &self.send,
             TelegramFunction::Read => &self.read,
+            TelegramFunction::Listen => &self.listen,
             TelegramFunction::Chats => &self.chats,
             TelegramFunction::Discover => &self.discover,
         }
@@ -178,6 +186,7 @@ impl TelegramPermissions {
 pub enum TelegramFunction {
     Send,
     Read,
+    Listen,
     Chats,
     Discover,
 }
@@ -187,6 +196,7 @@ impl TelegramFunction {
         match self {
             TelegramFunction::Send => "send",
             TelegramFunction::Read => "read",
+            TelegramFunction::Listen => "listen",
             TelegramFunction::Chats => "chats",
             TelegramFunction::Discover => "discover",
         }
@@ -239,6 +249,15 @@ impl EffectivePermissions {
         directory: &Directory,
     ) -> Result<()> {
         self.check_chat(TelegramFunction::Read, input, resolved_id, directory)
+    }
+
+    pub fn check_listen_chat(
+        &self,
+        input: &str,
+        resolved_id: i64,
+        directory: &Directory,
+    ) -> Result<()> {
+        self.check_chat(TelegramFunction::Listen, input, resolved_id, directory)
     }
 
     pub fn check_chats_chat(
@@ -485,6 +504,7 @@ pub fn starter_template() -> TelegramPermissionsRaw {
             ..FunctionBlockRaw::default()
         },
         read: FunctionBlockRaw::default(),
+        listen: FunctionBlockRaw::default(),
         chats: FunctionBlockRaw::default(),
         discover: FunctionBlockRaw::default(),
     }
@@ -508,7 +528,7 @@ impl crate::permissions::service::PermissionsService for PermissionsService {
     }
 
     fn all_functions() -> &'static [&'static str] {
-        &["send", "read", "chats", "discover"]
+        &["send", "read", "listen", "chats", "discover"]
     }
 
     fn target_kinds() -> &'static [&'static str] {
@@ -566,12 +586,13 @@ fn function_block_mut<'a>(
     Ok(match function {
         "send" => &mut raw.send,
         "read" => &mut raw.read,
+        "listen" => &mut raw.listen,
         "chats" => &mut raw.chats,
         "discover" => &mut raw.discover,
         other => {
             return Err(ZadError::Invalid(format!(
                 "telegram permissions: unknown function `{other}`; expected one of \
-                 send, read, chats, discover"
+                 send, read, listen, chats, discover"
             )));
         }
     })

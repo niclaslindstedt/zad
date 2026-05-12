@@ -253,3 +253,56 @@ fn no_files_present_means_no_permission_restrictions() {
     );
     assert!(effective.check_send_body("anything").is_ok());
 }
+
+#[test]
+#[serial]
+fn listen_chat_honors_allow_and_deny() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("permissions.toml");
+    write_raw(
+        &p,
+        &TelegramPermissionsRaw {
+            listen: FunctionBlockRaw {
+                chats: PatternListRaw {
+                    allow: vec!["alerts-*".into()],
+                    deny: vec!["*admin*".into()],
+                },
+                ..FunctionBlockRaw::default()
+            },
+            ..TelegramPermissionsRaw::default()
+        },
+    );
+    let effective = eff(None, Some(load(&p)));
+
+    assert!(
+        effective
+            .check_listen_chat("alerts-prod", 1, &empty_directory())
+            .is_ok()
+    );
+
+    let err = effective
+        .check_listen_chat("marketing", 2, &empty_directory())
+        .unwrap_err();
+    match err {
+        ZadError::PermissionDenied {
+            function,
+            config_path,
+            ..
+        } => {
+            assert_eq!(function, "listen");
+            assert_eq!(config_path, p);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let err = effective
+        .check_listen_chat("alerts-admin", 3, &empty_directory())
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ZadError::PermissionDenied {
+            function: "listen",
+            ..
+        }
+    ));
+}

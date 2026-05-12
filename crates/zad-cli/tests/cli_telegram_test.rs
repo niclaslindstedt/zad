@@ -58,6 +58,7 @@ fn help_lists_every_subcommand() {
         .success()
         .stdout(contains("send"))
         .stdout(contains("read"))
+        .stdout(contains("listen"))
         .stdout(contains("chats"))
         .stdout(contains("discover"))
         .stdout(contains("directory"))
@@ -312,6 +313,149 @@ fn discover_denied_when_chats_scope_missing() {
         .assert()
         .failure()
         .stderr(contains("scope `chats` is not enabled"));
+}
+
+// ---------------------------------------------------------------------------
+// listen — pre-loop validation paths only (the long-poll loop itself needs
+// the network and is exercised by manual smoke tests).
+// ---------------------------------------------------------------------------
+
+#[test]
+#[serial]
+fn listen_fails_when_project_not_enabled() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "listen", "--chat", "12345"])
+        .assert()
+        .failure()
+        .stderr(contains("telegram is not enabled for this project"));
+}
+
+#[test]
+#[serial]
+fn listen_denied_when_scope_missing() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global_with_scopes(home.path(), &["messages.send", "chats"]);
+    enable_telegram(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "listen", "--chat", "12345"])
+        .assert()
+        .failure()
+        .stderr(contains("scope `messages.read` is not enabled"));
+}
+
+#[test]
+#[serial]
+fn listen_rejects_unknown_alias() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_telegram(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "listen", "--chat", "not-a-chat"])
+        .assert()
+        .failure()
+        .stderr(contains("is neither a chat_id nor a known directory entry"));
+}
+
+#[test]
+#[serial]
+fn listen_rejects_timeout_above_50() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_telegram(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "listen", "--chat", "12345", "--timeout", "51"])
+        .assert()
+        .failure()
+        .stderr(contains("--timeout"));
+}
+
+#[test]
+#[serial]
+fn listen_rejects_zero_timeout() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_telegram(home.path(), project.path());
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "listen", "--chat", "12345", "--timeout", "0"])
+        .assert()
+        .failure()
+        .stderr(contains("--timeout"));
+}
+
+#[test]
+#[serial]
+fn listen_permission_denied_names_listen_function() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    seed_global(home.path());
+    enable_telegram(home.path(), project.path());
+
+    // Scaffold a global permissions policy then deny every chat for
+    // `listen`. The `permissions init` flow generates the signing key
+    // and signs the file, so a hand-edited deny rule still verifies.
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "permissions", "init"])
+        .assert()
+        .success();
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args([
+            "telegram",
+            "permissions",
+            "add",
+            "--function",
+            "listen",
+            "--target",
+            "chat",
+            "--list",
+            "deny",
+            "*",
+        ])
+        .assert()
+        .success();
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "permissions", "commit"])
+        .assert()
+        .success();
+
+    bin()
+        .env("ZAD_HOME_OVERRIDE", home.path())
+        .current_dir(project.path())
+        .args(["telegram", "listen", "--chat", "12345"])
+        .assert()
+        .failure()
+        .stderr(
+            contains("permission denied")
+                .and(contains("listen"))
+                .and(contains_path("services/telegram/permissions.toml")),
+        );
 }
 
 // ---------------------------------------------------------------------------
