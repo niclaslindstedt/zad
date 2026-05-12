@@ -23,9 +23,13 @@ use crate::service::{DryRunOp, DryRunSink};
 #[async_trait]
 pub trait YmusicTransport: Send + Sync {
     async fn search(&self, query: &str, types: &[&str], limit: u32) -> Result<Vec<SearchItem>>;
-    async fn list_my_playlists(&self, limit: u32) -> Result<Vec<PlaylistSummary>>;
+    async fn list_my_playlists(&self, max: Option<u32>) -> Result<Vec<PlaylistSummary>>;
     async fn get_playlist(&self, playlist_id: &str) -> Result<PlaylistSummary>;
-    async fn get_playlist_items(&self, playlist_id: &str, limit: u32) -> Result<Vec<PlaylistItem>>;
+    async fn get_playlist_items(
+        &self,
+        playlist_id: &str,
+        max: Option<u32>,
+    ) -> Result<Vec<PlaylistItem>>;
     async fn create_playlist(
         &self,
         title: &str,
@@ -36,7 +40,7 @@ pub trait YmusicTransport: Send + Sync {
     async fn delete_playlist(&self, playlist_id: &str) -> Result<()>;
     async fn add_playlist_item(&self, playlist_id: &str, video_id: &str) -> Result<String>;
     async fn remove_playlist_item(&self, playlist_item_id: &str) -> Result<()>;
-    async fn list_liked_videos(&self, limit: u32) -> Result<Vec<VideoSummary>>;
+    async fn list_liked_videos(&self, max: Option<u32>) -> Result<Vec<VideoSummary>>;
     async fn like_video(&self, video_id: &str) -> Result<()>;
     async fn unlike_video(&self, video_id: &str) -> Result<()>;
 }
@@ -46,14 +50,18 @@ impl YmusicTransport for YmusicHttp {
     async fn search(&self, query: &str, types: &[&str], limit: u32) -> Result<Vec<SearchItem>> {
         YmusicHttp::search(self, query, types, limit).await
     }
-    async fn list_my_playlists(&self, limit: u32) -> Result<Vec<PlaylistSummary>> {
-        YmusicHttp::list_my_playlists(self, limit).await
+    async fn list_my_playlists(&self, max: Option<u32>) -> Result<Vec<PlaylistSummary>> {
+        YmusicHttp::list_my_playlists(self, max).await
     }
     async fn get_playlist(&self, playlist_id: &str) -> Result<PlaylistSummary> {
         YmusicHttp::get_playlist(self, playlist_id).await
     }
-    async fn get_playlist_items(&self, playlist_id: &str, limit: u32) -> Result<Vec<PlaylistItem>> {
-        YmusicHttp::get_playlist_items(self, playlist_id, limit).await
+    async fn get_playlist_items(
+        &self,
+        playlist_id: &str,
+        max: Option<u32>,
+    ) -> Result<Vec<PlaylistItem>> {
+        YmusicHttp::get_playlist_items(self, playlist_id, max).await
     }
     async fn create_playlist(
         &self,
@@ -75,8 +83,8 @@ impl YmusicTransport for YmusicHttp {
     async fn remove_playlist_item(&self, playlist_item_id: &str) -> Result<()> {
         YmusicHttp::remove_playlist_item(self, playlist_item_id).await
     }
-    async fn list_liked_videos(&self, limit: u32) -> Result<Vec<VideoSummary>> {
-        YmusicHttp::list_liked_videos(self, limit).await
+    async fn list_liked_videos(&self, max: Option<u32>) -> Result<Vec<VideoSummary>> {
+        YmusicHttp::list_liked_videos(self, max).await
     }
     async fn like_video(&self, video_id: &str) -> Result<()> {
         YmusicHttp::like_video(self, video_id).await
@@ -114,7 +122,7 @@ impl YmusicTransport for DryRunYmusicTransport {
     async fn search(&self, _q: &str, _types: &[&str], _limit: u32) -> Result<Vec<SearchItem>> {
         Ok(vec![])
     }
-    async fn list_my_playlists(&self, _limit: u32) -> Result<Vec<PlaylistSummary>> {
+    async fn list_my_playlists(&self, _max: Option<u32>) -> Result<Vec<PlaylistSummary>> {
         Ok(vec![])
     }
     async fn get_playlist(&self, playlist_id: &str) -> Result<PlaylistSummary> {
@@ -128,7 +136,7 @@ impl YmusicTransport for DryRunYmusicTransport {
     async fn get_playlist_items(
         &self,
         _playlist_id: &str,
-        _limit: u32,
+        _max: Option<u32>,
     ) -> Result<Vec<PlaylistItem>> {
         Ok(vec![])
     }
@@ -201,7 +209,7 @@ impl YmusicTransport for DryRunYmusicTransport {
         );
         Ok(())
     }
-    async fn list_liked_videos(&self, _limit: u32) -> Result<Vec<VideoSummary>> {
+    async fn list_liked_videos(&self, _max: Option<u32>) -> Result<Vec<VideoSummary>> {
         Ok(vec![])
     }
     async fn like_video(&self, video_id: &str) -> Result<()> {

@@ -513,7 +513,7 @@ async fn run_playlists_list(args: PlaylistsListArgs) -> Result<()> {
     permissions.check_time(SpotifyFunction::PlaylistsRead)?;
 
     let http = http_for()?;
-    let items = http.list_my_playlists(args.limit).await?;
+    let items = http.list_my_playlists(Some(args.limit)).await?;
     let filtered: Vec<&PlaylistSummary> = items
         .iter()
         .filter(|p| {
@@ -550,7 +550,9 @@ async fn run_playlists_show(args: PlaylistsShowArgs) -> Result<()> {
 
     let http = http_for()?;
     let summary = http.get_playlist(&resolved).await?;
-    let tracks = http.get_playlist_tracks(&resolved, args.limit).await?;
+    let tracks = http
+        .get_playlist_tracks(&resolved, Some(args.limit))
+        .await?;
 
     if args.json {
         let out = serde_json::json!({ "playlist": summary, "tracks": tracks });
@@ -699,7 +701,7 @@ async fn run_library_tracks_list(args: LibraryListArgs) -> Result<()> {
     permissions.check_time(SpotifyFunction::LibraryRead)?;
 
     let http = http_for()?;
-    let items = http.list_saved_tracks(args.limit).await?;
+    let items = http.list_saved_tracks(Some(args.limit)).await?;
     let filtered: Vec<&SavedTrack> = items
         .iter()
         .filter(|s| {
@@ -774,7 +776,7 @@ async fn run_library_albums_list(args: LibraryListArgs) -> Result<()> {
     permissions.check_time(SpotifyFunction::LibraryRead)?;
 
     let http = http_for()?;
-    let items = http.list_saved_albums(args.limit).await?;
+    let items = http.list_saved_albums(Some(args.limit)).await?;
     let filtered: Vec<&SavedAlbum> = items
         .iter()
         .filter(|s| {

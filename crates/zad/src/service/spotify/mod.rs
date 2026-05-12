@@ -39,6 +39,19 @@ pub const AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 /// Spotify's OAuth 2.0 token endpoint (also used for refresh).
 pub const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 
+/// Date (UTC) on which the zad Spotify implementation was last walked
+/// against <https://developer.spotify.com/documentation/web-api/reference/>
+/// and confirmed consistent. Bump this whenever the audit is repeated.
+pub const API_VERIFIED_AT: &str = "2026-05-12";
+
+/// Canonical landing page for the Spotify Web API reference.
+pub const API_REFERENCE_URL: &str =
+    "https://developer.spotify.com/documentation/web-api/reference/";
+
+/// Provider's own version tag for the Web API surface (matches the
+/// `/v1` segment in [`API_BASE`]).
+pub const API_BASE_VERSION: &str = "v1";
+
 /// Compute the minimal set of Spotify OAuth scopes to request, given
 /// the zad-level scopes the operator declared. Mirrors
 /// [`crate::cli::service_gcal::google_scopes_for`]: keep the consent

@@ -12,8 +12,10 @@ use crate::config::{self, SpotifyServiceCfg};
 use crate::error::{Result, ZadError};
 use crate::oauth::{KeychainRefreshStore, RefreshTokenStore};
 use crate::secrets::{self, Scope};
+use crate::service::ApiCalibration;
 use crate::service::spotify::client::{PlaylistSummary, SavedTrack, SearchResults, SpotifyHttp};
 use crate::service::spotify::permissions::{self as perms, EffectivePermissions, SpotifyFunction};
+use crate::service::spotify::{API_BASE_VERSION, API_REFERENCE_URL, API_VERIFIED_AT};
 
 /// Public-client OAuth PKCE credentials for Spotify. Only a
 /// `client_id` and a long-lived `refresh_token` — Spotify's PKCE flow
@@ -147,6 +149,19 @@ impl Spotify {
         self
     }
 
+    /// API-revision provenance for the Spotify surface. Drop the
+    /// returned value into any audit artefact (export envelope,
+    /// telemetry, log preamble) that wants to record which generation
+    /// of the upstream API the operation was sourced against.
+    pub const fn calibration() -> ApiCalibration {
+        ApiCalibration {
+            service: "spotify",
+            verified_at: API_VERIFIED_AT,
+            reference_url: API_REFERENCE_URL,
+            api_base_version: API_BASE_VERSION,
+        }
+    }
+
     pub async fn search(&self, req: SearchRequest) -> Result<SearchResults> {
         if let Some(p) = &self.permissions {
             p.check_time(SpotifyFunction::Search)?;
@@ -160,7 +175,7 @@ impl Spotify {
         if let Some(p) = &self.permissions {
             p.check_time(SpotifyFunction::PlaylistsRead)?;
         }
-        self.http.list_my_playlists(req.limit).await
+        self.http.list_my_playlists(req.max).await
     }
 
     pub async fn create_playlist(&self, req: CreatePlaylistRequest) -> Result<PlaylistSummary> {
@@ -178,7 +193,7 @@ impl Spotify {
         if let Some(p) = &self.permissions {
             p.check_time(SpotifyFunction::LibraryRead)?;
         }
-        self.http.list_saved_tracks(req.limit).await
+        self.http.list_saved_tracks(req.max).await
     }
 }
 
@@ -223,17 +238,27 @@ impl SearchRequest {
 
 #[derive(Debug, Clone)]
 pub struct PlaylistsRequest {
-    pub limit: u32,
+    /// Maximum number of playlists to return. `None` means "fetch
+    /// every playlist", paginating under the hood. `Some(n)` caps the
+    /// result at `n` and stops early.
+    pub max: Option<u32>,
 }
 
 impl PlaylistsRequest {
-    pub fn new(limit: u32) -> Result<Self> {
-        if !(1..=50).contains(&limit) {
-            return Err(ZadError::Invalid(format!(
-                "limit must be between 1 and 50; got {limit}"
-            )));
+    /// Build a request that pages through every playlist. Equivalent
+    /// to `PlaylistsRequest { max: None }`.
+    pub fn all() -> Self {
+        Self { max: None }
+    }
+
+    /// Build a request capped at `max` items. `max == 0` is rejected.
+    pub fn new(max: Option<u32>) -> Result<Self> {
+        if let Some(0) = max {
+            return Err(ZadError::Invalid(
+                "max must be at least 1 (pass None for unlimited)".into(),
+            ));
         }
-        Ok(Self { limit })
+        Ok(Self { max })
     }
 }
 
@@ -260,17 +285,25 @@ impl CreatePlaylistRequest {
 
 #[derive(Debug, Clone)]
 pub struct SavedTracksRequest {
-    pub limit: u32,
+    /// Maximum number of saved tracks to return. `None` means "fetch
+    /// every saved track", paginating under the hood.
+    pub max: Option<u32>,
 }
 
 impl SavedTracksRequest {
-    pub fn new(limit: u32) -> Result<Self> {
-        if !(1..=50).contains(&limit) {
-            return Err(ZadError::Invalid(format!(
-                "limit must be between 1 and 50; got {limit}"
-            )));
+    /// Build a request that pages through every saved track.
+    pub fn all() -> Self {
+        Self { max: None }
+    }
+
+    /// Build a request capped at `max` items. `max == 0` is rejected.
+    pub fn new(max: Option<u32>) -> Result<Self> {
+        if let Some(0) = max {
+            return Err(ZadError::Invalid(
+                "max must be at least 1 (pass None for unlimited)".into(),
+            ));
         }
-        Ok(Self { limit })
+        Ok(Self { max })
     }
 }
 

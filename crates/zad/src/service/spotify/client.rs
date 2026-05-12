@@ -35,6 +35,10 @@ use crate::token_cache;
 
 const SERVICE: &str = "spotify";
 
+/// Maximum number of URIs Spotify accepts in a single `PUT`/`DELETE
+/// /me/library` call. Anything longer is chunked transparently.
+const LIBRARY_BATCH: usize = 40;
+
 /// Thin wrapper over Spotify Web API v1. Holds a refresh token and
 /// mints an access token on demand.
 ///
@@ -69,6 +73,10 @@ pub struct SpotifyHttp {
     /// lock. `None` means "resolve from `zad_home()` at runtime".
     /// Override via [`Self::with_cache_dir`] in tests.
     cache_service_dir: Option<PathBuf>,
+    /// Base URL for the Web API. Defaults to
+    /// [`crate::service::spotify::API_BASE`]; overridable so tests
+    /// can point at a localhost mock.
+    api_base: String,
 }
 
 impl SpotifyHttp {
@@ -106,6 +114,7 @@ impl SpotifyHttp {
             config_path,
             cached_access: Arc::new(Mutex::new(None)),
             cache_service_dir: None,
+            api_base: API_BASE.to_string(),
         }
     }
 
@@ -131,6 +140,15 @@ impl SpotifyHttp {
     #[doc(hidden)]
     pub fn with_cache_dir(mut self, dir: PathBuf) -> Self {
         self.cache_service_dir = Some(dir);
+        self
+    }
+
+    /// Override the Web API base URL. Test-only — production code
+    /// should rely on the default
+    /// [`crate::service::spotify::API_BASE`].
+    #[doc(hidden)]
+    pub fn with_api_base(mut self, url: impl Into<String>) -> Self {
+        self.api_base = url.into();
         self
     }
 
@@ -271,26 +289,32 @@ impl SpotifyHttp {
     }
 
     /// `GET /me/playlists`. Scope: `playlists.read`.
-    pub async fn list_my_playlists(&self, limit: u32) -> Result<Vec<PlaylistSummary>> {
+    ///
+    /// Walks the `offset` cursor under the hood until either `max` is
+    /// reached or the API runs out. `max == None` means "fetch
+    /// everything"; `Some(n)` caps the returned `Vec` at `n` items.
+    /// Single-page requests stop after one HTTP call.
+    pub async fn list_my_playlists(&self, max: Option<u32>) -> Result<Vec<PlaylistSummary>> {
         self.require_scope("playlists.read")?;
-        let limit = limit.clamp(1, 50).to_string();
-        let page: PlaylistPage = self
-            .get_json("/me/playlists", &[("limit", limit.as_str())])
-            .await?;
-        Ok(page.items)
+        self.paged_get("/me/playlists", &[], 50, max, |page: PlaylistPage| {
+            page.items
+        })
+        .await
     }
 
     /// `GET /playlists/{id}/items`. Scope: `playlists.read`.
+    ///
+    /// Paginates with `offset`; per-page cap is 50. `max == None`
+    /// means "fetch every item in the playlist".
     pub async fn get_playlist_tracks(
         &self,
         playlist_id: &str,
-        limit: u32,
+        max: Option<u32>,
     ) -> Result<Vec<PlaylistTrackItem>> {
         self.require_scope("playlists.read")?;
-        let limit = limit.clamp(1, 100).to_string();
         let path = format!("/playlists/{}/items", urlencode_path(playlist_id));
-        let page: PlaylistTrackPage = self.get_json(&path, &[("limit", limit.as_str())]).await?;
-        Ok(page.items)
+        self.paged_get(&path, &[], 50, max, |page: PlaylistTrackPage| page.items)
+            .await
     }
 
     /// `GET /playlists/{id}`. Scope: `playlists.read`.
@@ -300,12 +324,8 @@ impl SpotifyHttp {
         self.get_json(&path, &[]).await
     }
 
-    /// `POST /me/playlists`. Scope: `playlists.write`.
-    ///
-    /// Spotify removed `POST /users/{user_id}/playlists` in the
-    /// February 2026 Web API changes; `/me/playlists` is now the only
-    /// supported create endpoint, which drops the `user_id` argument
-    /// entirely (it always targets the authenticated user).
+    /// `POST /me/playlists`. Scope: `playlists.write`. Targets the
+    /// authenticated user; no `user_id` argument.
     pub async fn create_playlist(
         &self,
         name: &str,
@@ -349,10 +369,6 @@ impl SpotifyHttp {
 
     /// `DELETE /playlists/{id}/items` with `{ items: [{ uri }] }`.
     /// Scope: `playlists.write`.
-    ///
-    /// The February 2026 Web API migration renamed the body parameter
-    /// from `tracks` to `items` alongside the endpoint move from
-    /// `/playlists/{id}/tracks` → `/playlists/{id}/items`.
     pub async fn remove_playlist_tracks(&self, playlist_id: &str, uris: &[String]) -> Result<()> {
         self.require_scope("playlists.write")?;
         let path = format!("/playlists/{}/items", urlencode_path(playlist_id));
@@ -365,74 +381,83 @@ impl SpotifyHttp {
     }
 
     /// `GET /me/tracks`. Scope: `library.read`.
-    pub async fn list_saved_tracks(&self, limit: u32) -> Result<Vec<SavedTrack>> {
+    ///
+    /// Paginates with `offset`; per-page cap is 50. `max == None`
+    /// means "fetch every liked track".
+    pub async fn list_saved_tracks(&self, max: Option<u32>) -> Result<Vec<SavedTrack>> {
         self.require_scope("library.read")?;
-        let limit = limit.clamp(1, 50).to_string();
-        let page: SavedTrackPage = self
-            .get_json("/me/tracks", &[("limit", limit.as_str())])
-            .await?;
-        Ok(page.items)
+        self.paged_get("/me/tracks", &[], 50, max, |page: SavedTrackPage| {
+            page.items
+        })
+        .await
     }
 
-    /// `PUT /me/library` with `{ uris: [...] }`. Scope: `library.write`.
-    ///
-    /// February 2026 unified the per-type save endpoints (`PUT
-    /// /me/tracks`, `PUT /me/albums`, …) into a single
-    /// `PUT /me/library` that takes Spotify URIs instead of IDs.
+    /// Save tracks via the unified `PUT /me/library`. Scope:
+    /// `library.write`.
     pub async fn save_tracks(&self, uris: &[String]) -> Result<()> {
         self.save_to_library(uris).await
     }
 
-    /// `DELETE /me/library` with `{ uris: [...] }`. Scope: `library.write`.
-    ///
-    /// February 2026 replaced `DELETE /me/tracks` with the unified
-    /// `DELETE /me/library` that takes Spotify URIs instead of IDs.
+    /// Unsave tracks via the unified `DELETE /me/library`. Scope:
+    /// `library.write`.
     pub async fn unsave_tracks(&self, uris: &[String]) -> Result<()> {
         self.remove_from_library(uris).await
     }
 
     /// `GET /me/albums`. Scope: `library.read`.
-    pub async fn list_saved_albums(&self, limit: u32) -> Result<Vec<SavedAlbum>> {
+    ///
+    /// Paginates with `offset`; per-page cap is 50. `max == None`
+    /// means "fetch every saved album".
+    pub async fn list_saved_albums(&self, max: Option<u32>) -> Result<Vec<SavedAlbum>> {
         self.require_scope("library.read")?;
-        let limit = limit.clamp(1, 50).to_string();
-        let page: SavedAlbumPage = self
-            .get_json("/me/albums", &[("limit", limit.as_str())])
-            .await?;
-        Ok(page.items)
+        self.paged_get("/me/albums", &[], 50, max, |page: SavedAlbumPage| {
+            page.items
+        })
+        .await
     }
 
-    /// `PUT /me/library` with `{ uris: [...] }`. Scope: `library.write`.
-    ///
-    /// February 2026 replaced `PUT /me/albums` with the unified
-    /// `PUT /me/library` that takes Spotify URIs instead of IDs.
+    /// Save albums via the unified `PUT /me/library`. Scope:
+    /// `library.write`.
     pub async fn save_albums(&self, uris: &[String]) -> Result<()> {
         self.save_to_library(uris).await
     }
 
-    /// `DELETE /me/library` with `{ uris: [...] }`. Scope: `library.write`.
-    ///
-    /// February 2026 replaced `DELETE /me/albums` with the unified
-    /// `DELETE /me/library` that takes Spotify URIs instead of IDs.
+    /// Unsave albums via the unified `DELETE /me/library`. Scope:
+    /// `library.write`.
     pub async fn unsave_albums(&self, uris: &[String]) -> Result<()> {
         self.remove_from_library(uris).await
     }
 
-    /// `PUT /me/library` with `{ uris: [...] }`. Scope: `library.write`.
-    /// Accepts any mix of `spotify:track:`, `spotify:album:`,
-    /// `spotify:show:`, … URIs.
+    /// `PUT /me/library?uris=<csv>`. Scope: `library.write`. Accepts
+    /// any mix of `spotify:track:`, `spotify:album:`, `spotify:show:`,
+    /// … URIs.
+    ///
+    /// Spotify caps the unified library endpoint at 40 URIs per call
+    /// and expects them as a comma-separated query parameter (no
+    /// request body). Slices longer than 40 are chunked transparently;
+    /// the first chunk to fail aborts the rest.
     pub async fn save_to_library(&self, uris: &[String]) -> Result<()> {
         self.require_scope("library.write")?;
-        let body = serde_json::json!({ "uris": uris });
-        self.put_empty("/me/library", &[], &body).await
+        for chunk in uris.chunks(LIBRARY_BATCH) {
+            let joined = chunk.join(",");
+            self.put_query_only("/me/library", &[("uris", joined.as_str())])
+                .await?;
+        }
+        Ok(())
     }
 
-    /// `DELETE /me/library` with `{ uris: [...] }`. Scope:
-    /// `library.write`. Accepts any mix of `spotify:track:`,
-    /// `spotify:album:`, `spotify:show:`, … URIs.
+    /// `DELETE /me/library?uris=<csv>`. Scope: `library.write`.
+    /// Accepts any mix of `spotify:track:`, `spotify:album:`,
+    /// `spotify:show:`, … URIs. Same 40-URI cap and chunking as
+    /// [`Self::save_to_library`].
     pub async fn remove_from_library(&self, uris: &[String]) -> Result<()> {
         self.require_scope("library.write")?;
-        let body = serde_json::json!({ "uris": uris });
-        self.delete_with_body("/me/library", &[], &body).await
+        for chunk in uris.chunks(LIBRARY_BATCH) {
+            let joined = chunk.join(",");
+            self.delete_empty("/me/library", &[("uris", joined.as_str())])
+                .await?;
+        }
+        Ok(())
     }
 
     // -----------------------------------------------------------------
@@ -447,6 +472,61 @@ impl SpotifyHttp {
     }
 
     // -----------------------------------------------------------------
+    // pagination helper
+    // -----------------------------------------------------------------
+
+    /// Walk Spotify's `offset` cursor over a list endpoint until either
+    /// `max` is reached or the API returns a short page. `page_size` is
+    /// the per-call cap (50 for most endpoints, 100 for
+    /// `/playlists/{id}/items`). `extract` projects each decoded page
+    /// into the items slice. The accumulator stops the moment a page
+    /// comes back shorter than `page_size` — Spotify never emits empty
+    /// trailing pages once the cursor is exhausted.
+    async fn paged_get<P, T, F>(
+        &self,
+        path: &str,
+        base_query: &[(&str, &str)],
+        page_size: u32,
+        max: Option<u32>,
+        extract: F,
+    ) -> Result<Vec<T>>
+    where
+        P: for<'de> Deserialize<'de>,
+        F: Fn(P) -> Vec<T>,
+    {
+        // Clamp `max` against `page_size` so a single small-`max` call
+        // still uses one HTTP round-trip. `page_size` is itself bounded
+        // by Spotify's per-endpoint cap of 50.
+        let page_size = page_size.clamp(1, 50);
+        let mut out: Vec<T> = Vec::new();
+        let mut offset: u32 = 0;
+        loop {
+            let remaining = max.map(|m| m.saturating_sub(out.len() as u32));
+            if remaining == Some(0) {
+                break;
+            }
+            let this_limit = remaining.map(|r| r.min(page_size)).unwrap_or(page_size);
+            let limit_str = this_limit.to_string();
+            let offset_str = offset.to_string();
+            let mut query: Vec<(&str, &str)> = base_query.to_vec();
+            query.push(("limit", limit_str.as_str()));
+            query.push(("offset", offset_str.as_str()));
+            let page: P = self.get_json(path, &query).await?;
+            let mut items = extract(page);
+            let received = items.len() as u32;
+            out.append(&mut items);
+            if received < this_limit {
+                break;
+            }
+            offset = offset.saturating_add(received);
+        }
+        if let Some(m) = max {
+            out.truncate(m as usize);
+        }
+        Ok(out)
+    }
+
+    // -----------------------------------------------------------------
     // low-level HTTP glue
     // -----------------------------------------------------------------
 
@@ -458,7 +538,7 @@ impl SpotifyHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .get(format!("{API_BASE}{path}"))
+            .get(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .send()
@@ -476,7 +556,7 @@ impl SpotifyHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .post(format!("{API_BASE}{path}"))
+            .post(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .json(body)
@@ -495,10 +575,27 @@ impl SpotifyHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .put(format!("{API_BASE}{path}"))
+            .put(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .json(body)
+            .send()
+            .await
+            .map_err(network_err)?;
+        finalize_empty(resp, cache_dir.as_deref()).await
+    }
+
+    /// PUT without a request body — only a query string. Spotify's
+    /// unified library save/unsave endpoints take their payload as a
+    /// `?uris=<csv>` query parameter and reject (or ignore) a JSON
+    /// body.
+    async fn put_query_only(&self, path: &str, query: &[(&str, &str)]) -> Result<()> {
+        let access = self.access_token().await?;
+        let cache_dir = self.resolved_cache_dir();
+        let resp = reqwest::Client::new()
+            .put(format!("{}{path}", self.api_base))
+            .bearer_auth(&access)
+            .query(query)
             .send()
             .await
             .map_err(network_err)?;
@@ -509,7 +606,7 @@ impl SpotifyHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .delete(format!("{API_BASE}{path}"))
+            .delete(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .send()
@@ -530,7 +627,7 @@ impl SpotifyHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .delete(format!("{API_BASE}{path}"))
+            .delete(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .json(body)
@@ -663,12 +760,11 @@ pub struct PlaylistSummary {
     pub owner: Option<UserRef>,
     #[serde(default)]
     pub uri: Option<String>,
-    /// Paging reference for the playlist's contents. February 2026
-    /// renamed this top-level field from `tracks` to `items`; non-owned
-    /// playlists no longer include this field at all (Development Mode
-    /// apps see metadata only). The `tracks` alias keeps deserialization
-    /// working against extended-quota tenants that still ship the old
-    /// shape.
+    /// Paging reference for the playlist's contents. Non-owned
+    /// playlists in Development Mode apps see metadata only and the
+    /// field is absent. The `tracks` alias keeps deserialization
+    /// working against extended-quota tenants that still ship the
+    /// older shape.
     #[serde(default, alias = "tracks")]
     pub items: Option<ItemsRef>,
 }
@@ -694,10 +790,9 @@ pub struct PlaylistPage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlaylistTrackItem {
-    /// The track or episode object. February 2026 renamed this field
-    /// from `track` to `item` across every playlist endpoint; the
-    /// `track` alias keeps deserialization working against
-    /// extended-quota tenants that still ship the old shape.
+    /// The track or episode object. The `track` alias keeps
+    /// deserialization working against extended-quota tenants that
+    /// still ship the older shape.
     #[serde(default, alias = "track")]
     pub item: Option<TrackSummary>,
     #[serde(default)]
