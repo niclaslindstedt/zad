@@ -81,6 +81,10 @@ pub struct YmusicHttp {
     /// lock. `None` means "resolve from `zad_home()` at runtime".
     /// Override via [`Self::with_cache_dir`] in tests.
     cache_service_dir: Option<PathBuf>,
+    /// Base URL for the YouTube Data API. Defaults to
+    /// [`crate::service::ymusic::API_BASE`]; overridable so tests can
+    /// point at a localhost mock.
+    api_base: String,
 }
 
 impl YmusicHttp {
@@ -127,6 +131,7 @@ impl YmusicHttp {
             config_path,
             cached_access: Arc::new(Mutex::new(None)),
             cache_service_dir: None,
+            api_base: API_BASE.to_string(),
         }
     }
 
@@ -158,6 +163,15 @@ impl YmusicHttp {
     #[doc(hidden)]
     pub fn with_cache_dir(mut self, dir: PathBuf) -> Self {
         self.cache_service_dir = Some(dir);
+        self
+    }
+
+    /// Override the YouTube Data API base URL. Test-only — production
+    /// code should rely on the default
+    /// [`crate::service::ymusic::API_BASE`].
+    #[doc(hidden)]
+    pub fn with_api_base(mut self, url: impl Into<String>) -> Self {
+        self.api_base = url.into();
         self
     }
 
@@ -281,20 +295,19 @@ impl YmusicHttp {
     }
 
     /// `GET /playlists?mine=true`. Scope: `playlists.read`.
-    pub async fn list_my_playlists(&self, limit: u32) -> Result<Vec<PlaylistSummary>> {
+    ///
+    /// Walks `nextPageToken` under the hood; per-page cap is 50.
+    /// `max == None` means
+    /// "fetch every playlist".
+    pub async fn list_my_playlists(&self, max: Option<u32>) -> Result<Vec<PlaylistSummary>> {
         self.require_scope("playlists.read")?;
-        let limit = limit.clamp(1, 50).to_string();
-        let page: PlaylistPage = self
-            .get_json(
-                "/playlists",
-                &[
-                    ("mine", "true"),
-                    ("part", "snippet,contentDetails,status"),
-                    ("maxResults", limit.as_str()),
-                ],
-            )
-            .await?;
-        Ok(page.items)
+        self.paged_get(
+            "/playlists",
+            &[("mine", "true"), ("part", "snippet,contentDetails,status")],
+            max,
+            |page: PlaylistPage| (page.items, page.next_page_token),
+        )
+        .await
     }
 
     /// `GET /playlists?id=<id>`. Scope: `playlists.read`.
@@ -316,24 +329,26 @@ impl YmusicHttp {
     }
 
     /// `GET /playlistItems?playlistId=<id>`. Scope: `playlists.read`.
+    ///
+    /// Walks `nextPageToken` under the hood; per-page cap is 50.
+    /// `max == None` means
+    /// "fetch every item in the playlist".
     pub async fn get_playlist_items(
         &self,
         playlist_id: &str,
-        limit: u32,
+        max: Option<u32>,
     ) -> Result<Vec<PlaylistItem>> {
         self.require_scope("playlists.read")?;
-        let limit = limit.clamp(1, 50).to_string();
-        let page: PlaylistItemPage = self
-            .get_json(
-                "/playlistItems",
-                &[
-                    ("playlistId", playlist_id),
-                    ("part", "snippet,contentDetails"),
-                    ("maxResults", limit.as_str()),
-                ],
-            )
-            .await?;
-        Ok(page.items)
+        self.paged_get(
+            "/playlistItems",
+            &[
+                ("playlistId", playlist_id),
+                ("part", "snippet,contentDetails"),
+            ],
+            max,
+            |page: PlaylistItemPage| (page.items, page.next_page_token),
+        )
+        .await
     }
 
     /// `POST /playlists`. Scope: `playlists.write`.
@@ -406,20 +421,19 @@ impl YmusicHttp {
     /// `GET /videos?myRating=like`. Scope: `library.read`. The set of
     /// videos the user has liked is the closest YouTube analogue of
     /// Spotify's saved-tracks library.
-    pub async fn list_liked_videos(&self, limit: u32) -> Result<Vec<VideoSummary>> {
+    ///
+    /// Walks `nextPageToken` under the hood; per-page cap is 50.
+    /// `max == None` means
+    /// "fetch every liked video".
+    pub async fn list_liked_videos(&self, max: Option<u32>) -> Result<Vec<VideoSummary>> {
         self.require_scope("library.read")?;
-        let limit = limit.clamp(1, 50).to_string();
-        let page: VideoPage = self
-            .get_json(
-                "/videos",
-                &[
-                    ("myRating", "like"),
-                    ("part", "snippet,contentDetails"),
-                    ("maxResults", limit.as_str()),
-                ],
-            )
-            .await?;
-        Ok(page.items)
+        self.paged_get(
+            "/videos",
+            &[("myRating", "like"), ("part", "snippet,contentDetails")],
+            max,
+            |page: VideoPage| (page.items, page.next_page_token),
+        )
+        .await
     }
 
     /// `POST /videos/rate?id=<id>&rating=like`. Scope: `library.write`.
@@ -483,6 +497,56 @@ impl YmusicHttp {
     }
 
     // -----------------------------------------------------------------
+    // pagination helper
+    // -----------------------------------------------------------------
+
+    /// Walk YouTube's `pageToken` cursor over a list endpoint until
+    /// either `max` is reached or the API stops emitting a
+    /// `nextPageToken`. YouTube Data API v3 caps every list endpoint
+    /// we touch at `maxResults=50`; the helper sends 50 per call
+    /// unless `max` cuts it shorter. `extract` returns
+    /// `(items, next_page_token)` from each decoded page.
+    async fn paged_get<P, T, F>(
+        &self,
+        path: &str,
+        base_query: &[(&str, &str)],
+        max: Option<u32>,
+        extract: F,
+    ) -> Result<Vec<T>>
+    where
+        P: for<'de> Deserialize<'de>,
+        F: Fn(P) -> (Vec<T>, Option<String>),
+    {
+        const PAGE_SIZE: u32 = 50;
+        let mut out: Vec<T> = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let remaining = max.map(|m| m.saturating_sub(out.len() as u32));
+            if remaining == Some(0) {
+                break;
+            }
+            let this_max = remaining.map(|r| r.min(PAGE_SIZE)).unwrap_or(PAGE_SIZE);
+            let max_str = this_max.to_string();
+            let mut query: Vec<(&str, &str)> = base_query.to_vec();
+            query.push(("maxResults", max_str.as_str()));
+            if let Some(tok) = page_token.as_deref() {
+                query.push(("pageToken", tok));
+            }
+            let page: P = self.get_json(path, &query).await?;
+            let (mut items, next) = extract(page);
+            out.append(&mut items);
+            match next {
+                Some(t) if !t.is_empty() => page_token = Some(t),
+                _ => break,
+            }
+        }
+        if let Some(m) = max {
+            out.truncate(m as usize);
+        }
+        Ok(out)
+    }
+
+    // -----------------------------------------------------------------
     // low-level HTTP glue
     // -----------------------------------------------------------------
 
@@ -500,7 +564,7 @@ impl YmusicHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .get(format!("{API_BASE}{path}"))
+            .get(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .send()
@@ -518,7 +582,7 @@ impl YmusicHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .post(format!("{API_BASE}{path}"))
+            .post(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .json(body)
@@ -537,7 +601,7 @@ impl YmusicHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .post(format!("{API_BASE}{path}"))
+            .post(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .json(body)
@@ -556,7 +620,7 @@ impl YmusicHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .put(format!("{API_BASE}{path}"))
+            .put(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .json(body)
@@ -570,7 +634,7 @@ impl YmusicHttp {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
         let resp = reqwest::Client::new()
-            .delete(format!("{API_BASE}{path}"))
+            .delete(format!("{}{path}", self.api_base))
             .bearer_auth(&access)
             .query(query)
             .send()
@@ -767,6 +831,8 @@ pub struct PlaylistStatus {
 pub struct PlaylistPage {
     #[serde(default)]
     pub items: Vec<PlaylistSummary>,
+    #[serde(rename = "nextPageToken", default)]
+    pub next_page_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -806,6 +872,8 @@ pub struct ResourceId {
 pub struct PlaylistItemPage {
     #[serde(default)]
     pub items: Vec<PlaylistItem>,
+    #[serde(rename = "nextPageToken", default)]
+    pub next_page_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -838,6 +906,8 @@ pub struct VideoContentDetails {
 pub struct VideoPage {
     #[serde(default)]
     pub items: Vec<VideoSummary>,
+    #[serde(rename = "nextPageToken", default)]
+    pub next_page_token: Option<String>,
 }
 
 /// One row of `/search` output. The `id` block carries one of

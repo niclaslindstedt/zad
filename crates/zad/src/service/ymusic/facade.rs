@@ -10,10 +10,12 @@ use crate::config::{self, YmusicServiceCfg};
 use crate::error::{Result, ZadError};
 use crate::oauth::{KeychainRefreshStore, RefreshTokenStore};
 use crate::secrets::{self, Scope};
+use crate::service::ApiCalibration;
 use crate::service::ymusic::client::{
     PlaylistSummary, Privacy, SearchItem, VideoSummary, YmusicHttp,
 };
 use crate::service::ymusic::permissions::{self as perms, EffectivePermissions, YmusicFunction};
+use crate::service::ymusic::{API_BASE_VERSION, API_REFERENCE_URL, API_VERIFIED_AT};
 
 /// Full OAuth credentials for YouTube Music (same shape as gcal).
 ///
@@ -150,6 +152,19 @@ impl Ymusic {
         self
     }
 
+    /// API-revision provenance for the YouTube Music surface. Drop the
+    /// returned value into any audit artefact (export envelope,
+    /// telemetry, log preamble) that wants to record which generation
+    /// of the upstream API the operation was sourced against.
+    pub const fn calibration() -> ApiCalibration {
+        ApiCalibration {
+            service: "ymusic",
+            verified_at: API_VERIFIED_AT,
+            reference_url: API_REFERENCE_URL,
+            api_base_version: API_BASE_VERSION,
+        }
+    }
+
     pub async fn search(&self, req: SearchRequest) -> Result<Vec<SearchItem>> {
         if let Some(p) = &self.permissions {
             p.check_time(YmusicFunction::Search)?;
@@ -163,7 +178,7 @@ impl Ymusic {
         if let Some(p) = &self.permissions {
             p.check_time(YmusicFunction::PlaylistsRead)?;
         }
-        self.http.list_my_playlists(req.limit).await
+        self.http.list_my_playlists(req.max).await
     }
 
     pub async fn create_playlist(&self, req: CreatePlaylistRequest) -> Result<PlaylistSummary> {
@@ -191,7 +206,7 @@ impl Ymusic {
         if let Some(p) = &self.permissions {
             p.check_time(YmusicFunction::LibraryRead)?;
         }
-        self.http.list_liked_videos(req.limit).await
+        self.http.list_liked_videos(req.max).await
     }
 }
 
@@ -232,17 +247,24 @@ impl SearchRequest {
 
 #[derive(Debug, Clone)]
 pub struct PlaylistsRequest {
-    pub limit: u32,
+    /// Maximum number of playlists to return. `None` means "fetch
+    /// every playlist", paginating under the hood. `Some(n)` caps the
+    /// result at `n` and stops early.
+    pub max: Option<u32>,
 }
 
 impl PlaylistsRequest {
-    pub fn new(limit: u32) -> Result<Self> {
-        if !(1..=50).contains(&limit) {
-            return Err(ZadError::Invalid(format!(
-                "limit must be between 1 and 50; got {limit}"
-            )));
+    pub fn all() -> Self {
+        Self { max: None }
+    }
+
+    pub fn new(max: Option<u32>) -> Result<Self> {
+        if let Some(0) = max {
+            return Err(ZadError::Invalid(
+                "max must be at least 1 (pass None for unlimited)".into(),
+            ));
         }
-        Ok(Self { limit })
+        Ok(Self { max })
     }
 }
 
@@ -296,17 +318,23 @@ impl AddPlaylistItemRequest {
 
 #[derive(Debug, Clone)]
 pub struct LikedRequest {
-    pub limit: u32,
+    /// Maximum number of liked videos to return. `None` means "fetch
+    /// every liked video", paginating under the hood.
+    pub max: Option<u32>,
 }
 
 impl LikedRequest {
-    pub fn new(limit: u32) -> Result<Self> {
-        if !(1..=50).contains(&limit) {
-            return Err(ZadError::Invalid(format!(
-                "limit must be between 1 and 50; got {limit}"
-            )));
+    pub fn all() -> Self {
+        Self { max: None }
+    }
+
+    pub fn new(max: Option<u32>) -> Result<Self> {
+        if let Some(0) = max {
+            return Err(ZadError::Invalid(
+                "max must be at least 1 (pass None for unlimited)".into(),
+            ));
         }
-        Ok(Self { limit })
+        Ok(Self { max })
     }
 }
 

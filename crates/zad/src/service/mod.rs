@@ -1,3 +1,4 @@
+pub mod calibration;
 pub mod discord;
 pub mod gcal;
 pub mod lifecycle;
@@ -7,6 +8,8 @@ pub mod slack;
 pub mod spotify;
 pub mod telegram;
 pub mod ymusic;
+
+pub use calibration::ApiCalibration;
 
 use std::sync::Arc;
 

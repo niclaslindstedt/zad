@@ -424,7 +424,7 @@ async fn run_playlists_list(args: PlaylistsListArgs) -> Result<()> {
     permissions.check_time(YmusicFunction::PlaylistsRead)?;
 
     let transport = transport_for(false)?;
-    let items = transport.list_my_playlists(args.limit).await?;
+    let items = transport.list_my_playlists(Some(args.limit)).await?;
     let filtered: Vec<&PlaylistSummary> = items
         .iter()
         .filter(|p| {
@@ -475,7 +475,9 @@ async fn run_playlists_show(args: PlaylistsShowArgs) -> Result<()> {
 
     let transport = transport_for(false)?;
     let summary = transport.get_playlist(&resolved).await?;
-    let items = transport.get_playlist_items(&resolved, args.limit).await?;
+    let items = transport
+        .get_playlist_items(&resolved, Some(args.limit))
+        .await?;
 
     if args.json {
         let out = serde_json::json!({ "playlist": summary, "items": items });
@@ -651,7 +653,7 @@ async fn run_playlists_remove(args: PlaylistsRemoveArgs) -> Result<()> {
     // YouTube uses opaque IDs) is just attempted as-is and we let
     // the API surface a 404 if it's not a real item.
     let listing: Option<Vec<PlaylistItem>> = if args.items.iter().any(|s| is_likely_video_id(s)) {
-        Some(transport.get_playlist_items(&resolved, 50).await?)
+        Some(transport.get_playlist_items(&resolved, Some(50)).await?)
     } else {
         None
     };
@@ -716,7 +718,7 @@ async fn run_library_list(args: LibraryListArgs) -> Result<()> {
     permissions.check_time(YmusicFunction::LibraryRead)?;
 
     let transport = transport_for(false)?;
-    let items = transport.list_liked_videos(args.limit).await?;
+    let items = transport.list_liked_videos(Some(args.limit)).await?;
     let filtered: Vec<&VideoSummary> = items
         .iter()
         .filter(|v| {

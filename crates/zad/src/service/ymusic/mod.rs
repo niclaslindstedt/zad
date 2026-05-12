@@ -49,6 +49,18 @@ pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// `channels?mine=true` to capture the authenticated user's identity.
 pub const USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
+/// Date (UTC) on which the zad YouTube Music implementation was last
+/// walked against <https://developers.google.com/youtube/v3/docs/> and
+/// confirmed consistent. Bump this whenever the audit is repeated.
+pub const API_VERIFIED_AT: &str = "2026-05-12";
+
+/// Canonical landing page for the YouTube Data API v3 reference.
+pub const API_REFERENCE_URL: &str = "https://developers.google.com/youtube/v3/docs/";
+
+/// Provider's own version tag for the Data API surface (matches the
+/// `/v3` segment in [`API_BASE`]).
+pub const API_BASE_VERSION: &str = "v3";
+
 /// Compute the minimal set of Google OAuth scopes to request, given
 /// the zad-level scopes the operator declared. Mirrors
 /// [`crate::cli::service_gcal::google_scopes_for`]: keep the consent
