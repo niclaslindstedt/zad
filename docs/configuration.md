@@ -588,8 +588,10 @@ self_email       = "alice@example.com"   # optional — resolved from `@me` in a
 
 Unlike the bot-token services, `gcal` stores **three** keychain
 entries per scope — the OAuth 2.0 client_id + client_secret +
-refresh_token. Access tokens are not persisted: each CLI invocation
-refreshes once and uses the token for that process lifetime.
+refresh_token. Short-lived access tokens are cached in
+`~/.zad/state/gcal/access_token.json` and shared across processes via
+a refresh lock at `~/.zad/state/gcal/refresh.lock.d`, so a fan-out of
+parallel `zad` invocations refreshes once instead of N times.
 
 | Keychain account | Contents |
 |---|---|
@@ -707,9 +709,13 @@ default_playlist = "zad-test"     # optional
 
 Spotify uses a **PKCE-only public client** — no `client_secret` is
 issued or accepted by Spotify for desktop / CLI apps. `spotify` stores
-**two** keychain entries per scope. Access tokens are not persisted:
-each CLI invocation refreshes once and uses the token for that
-process lifetime.
+**two** keychain entries per scope. Short-lived access tokens are
+cached in `~/.zad/state/spotify/access_token.json` and shared across
+processes via a refresh lock at
+`~/.zad/state/spotify/refresh.lock.d`, so a fan-out of parallel `zad`
+invocations refreshes once instead of N times — critical because
+Spotify's PKCE flow rotates the refresh token on every call and
+revokes the previous one after a short grace window.
 
 | Keychain account | Contents |
 |---|---|
