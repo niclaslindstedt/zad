@@ -52,6 +52,21 @@ pub trait TelegramTransport: Send + Sync {
     async fn send(&self, chat: ChatId, body: &str, attachments: &[PathBuf]) -> Result<i64>;
     async fn history(&self, chat: ChatId, limit: usize) -> Result<Vec<ChatMessage>>;
     async fn list_chats(&self) -> Result<Vec<ChatInfo>>;
+
+    /// One long-poll round-trip against `getUpdates`. Returns every
+    /// message-bearing update across every chat (callers filter
+    /// client-side) plus the next `offset` to pass on the following
+    /// call — `max(update_id) + 1` for the batch, or `None` when the
+    /// batch was empty.
+    ///
+    /// Passing `offset = None` on the first call asks Telegram for
+    /// whatever updates are currently buffered; subsequent calls must
+    /// thread the returned offset so each update is acknowledged once.
+    async fn listen_updates(
+        &self,
+        offset: Option<i64>,
+        timeout_secs: u32,
+    ) -> Result<(Vec<ChatMessage>, Option<i64>)>;
 }
 
 #[async_trait]
@@ -111,6 +126,31 @@ impl TelegramTransport for TelegramHttp {
             }
         }
         Ok(seen.into_values().collect())
+    }
+
+    async fn listen_updates(
+        &self,
+        offset: Option<i64>,
+        timeout_secs: u32,
+    ) -> Result<(Vec<ChatMessage>, Option<i64>)> {
+        let updates = TelegramHttp::get_updates_long_poll(self, offset, timeout_secs).await?;
+        let mut msgs: Vec<ChatMessage> = Vec::new();
+        let mut next_offset: Option<i64> = None;
+        for u in &updates {
+            next_offset = Some(match next_offset {
+                Some(n) => n.max(u.update_id + 1),
+                None => u.update_id + 1,
+            });
+            for m in u.messages() {
+                msgs.push(ChatMessage {
+                    id: m.message_id,
+                    chat: m.chat.id,
+                    author: m.author(),
+                    body: m.body(),
+                });
+            }
+        }
+        Ok((msgs, next_offset))
     }
 }
 
@@ -195,5 +235,13 @@ impl TelegramTransport for DryRunTelegramTransport {
 
     async fn list_chats(&self) -> Result<Vec<ChatInfo>> {
         Ok(vec![])
+    }
+
+    async fn listen_updates(
+        &self,
+        _offset: Option<i64>,
+        _timeout_secs: u32,
+    ) -> Result<(Vec<ChatMessage>, Option<i64>)> {
+        Ok((vec![], None))
     }
 }

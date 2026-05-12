@@ -21,6 +21,7 @@ then load the matching bot token from the OS keychain.
 |---|---|
 | `send`        | Send a message to a chat (private/group/supergroup/channel). |
 | `read`        | Fetch recent messages the bot has buffered for a chat. |
+| `listen`      | Long-poll the Bot API and stream new messages for a chat to stdout. |
 | `chats`       | List chats the bot has seen (local directory plus recent updates). |
 | `discover`    | Poll the Bot API for recent updates and cache chat aliases. |
 | `directory`   | Inspect or hand-edit the name → chat_id directory. |
@@ -57,7 +58,7 @@ file path to edit. The mapping is:
 | Verb | Required scope |
 |---|---|
 | `send`        | `messages.send` |
-| `read`        | `messages.read` |
+| `read`, `listen` | `messages.read` |
 | `chats`, `discover` | `chats` |
 | `directory`, `permissions` | none (local state only) |
 
@@ -84,6 +85,7 @@ mapping from verb to function block is:
 |---|---|---|
 | `send`     | `[send]`     | `chats` (for `--chat`); body against `content`; files against `[send.attachments]` |
 | `read`     | `[read]`     | `chats` |
+| `listen`   | `[listen]`   | `chats` |
 | `chats`    | `[chats]`    | `chats` |
 | `discover` | `[discover]` | `chats` — denied chats are skipped in the walk |
 
@@ -150,6 +152,34 @@ that points to the caveat instead of silently succeeding.
 | `--chat <id\|@username\|name>` | chat_id \| `@username` \| directory name | — | Chat to filter updates by. |
 | `--limit <n>` | integer | `20` | Maximum number of messages to return (1–100). |
 | `--json` | bool | `false` | Emit machine-readable JSON instead of human-readable text. |
+
+## `zad telegram listen`
+
+```
+zad telegram listen --chat <ID|@USERNAME|NAME> [--timeout N] [--json]
+```
+
+Long-poll the Bot API's `getUpdates` endpoint and emit one line per
+incoming message for `--chat` to standard output. The process runs
+until SIGINT (`Ctrl-C`).
+
+Without `--json` each message prints as `[id] <author> body`, mirroring
+`read`'s human format. With `--json` each message is a single NDJSON
+object (one per line, **not** pretty-printed) with fields `command`
+(`"telegram.listen"`), `chat_id`, `id`, `author`, and `body` — suitable
+for piping into `| jq` or any line-oriented consumer. stdout is
+flushed after each batch so consumers see updates promptly.
+
+Like `read`, `listen` shares the bot's single `getUpdates` queue:
+running `read`, `chats`, or `discover` concurrently will steal updates
+this command would otherwise see. Updates for other chats are dropped
+from output but still advance the offset so the queue drains.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--chat <id\|@username\|name>` | chat_id \| `@username` \| directory name | — | Required. Chat to stream. |
+| `--timeout <n>` | integer | `30` | Server-side long-poll seconds (1–50). |
+| `--json` | bool | `false` | Emit NDJSON (one object per line) instead of human-readable text. |
 
 ## `zad telegram chats`
 
@@ -231,7 +261,7 @@ zad telegram permissions time     [--function <f>] [--local] {set-days --days mo
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--function <name>` | string | — | One of `send`, `read`, `chats`, `discover`. |
+| `--function <name>` | string | — | One of `send`, `read`, `listen`, `chats`, `discover`. |
 | `--chat <id\|name>` | chat_id \| directory name | — | Target chat for chat-scoped functions. |
 | `--body <text>` | string | — | Message body to test against `content` rules (only for `send`). |
 | `--force` | bool | false | Required by `init` to overwrite an existing file. |
@@ -308,6 +338,12 @@ zad telegram send --chat team-room --file ./a.log --file ./b.png "both attached"
 
 # Fetch recent updates the bot has buffered (forward-only).
 zad telegram read --chat team-room --limit 50 --json | jq '.messages[].body'
+
+# Stream new messages for a chat as they arrive (Ctrl-C to stop).
+zad telegram listen --chat team-room
+
+# Same, but as NDJSON for piping into jq / other line-oriented tools.
+zad telegram listen --chat team-room --json | jq -r .body
 
 # List every chat zad knows about (directory cache + observed updates).
 zad telegram chats --json
