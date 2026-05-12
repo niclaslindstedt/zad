@@ -720,6 +720,21 @@ fn map_http_error(status: reqwest::StatusCode, body: &str) -> ZadError {
 // Percent-encode path components.
 // ---------------------------------------------------------------------------
 
+/// Serde adapter that turns `null` (or a missing field) into an
+/// empty string. Spotify sends `"id": null` for tracks, artists, and
+/// albums on local-file playlist rows; we want those to decode into
+/// an empty `String` so the `id` field's existing "empty means
+/// absent" convention keeps working without forcing every downstream
+/// type to become `Option<String>`.
+fn deserialize_null_string_as_empty<'de, D>(
+    deserializer: D,
+) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 fn urlencode_path(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -807,6 +822,11 @@ pub struct PlaylistTrackPage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TrackSummary {
+    /// Spotify track id. Empty on local-file playlist items — those
+    /// rows carry `is_local: true` on the wrapping `PlaylistTrackItem`
+    /// and Spotify sends `"id": null` instead of a real id. Callers
+    /// that route through ids should treat empty as "absent".
+    #[serde(default, deserialize_with = "deserialize_null_string_as_empty")]
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -823,6 +843,9 @@ pub struct TrackSummary {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ArtistRef {
+    /// Spotify artist id. Empty on local-file playlist items — see
+    /// [`TrackSummary::id`] for the wider context.
+    #[serde(default, deserialize_with = "deserialize_null_string_as_empty")]
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -831,6 +854,9 @@ pub struct ArtistRef {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AlbumRef {
+    /// Spotify album id. Empty on local-file playlist items — see
+    /// [`TrackSummary::id`] for the wider context.
+    #[serde(default, deserialize_with = "deserialize_null_string_as_empty")]
     pub id: String,
     pub name: String,
     #[serde(default)]
