@@ -1,6 +1,7 @@
 # Changelog
 
-## [0.8.3]
+## [0.9.0]
 
-- fix(spotify): tolerate `id: null` on local-file playlist items (#83)
+- feat(telegram): add `zad telegram listen` long-poll subcommand (#84)
+- feat(ymusic): cross-process gate on Google 403 quota errors (#85)
 
