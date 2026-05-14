@@ -25,11 +25,28 @@ use serde::{Deserialize, Serialize};
 use crate::config::path::zad_home;
 use crate::error::{Result, ZadError};
 
-/// Hard cap on `--wait` sleep duration. Servers occasionally hand out
+/// Hard cap on a single `--wait` sleep. Servers occasionally hand out
 /// pathological `Retry-After` values; refusing to sleep more than an
 /// hour keeps scripts predictable without forcing callers to invent
-/// their own timeouts.
+/// their own timeouts. Persisted deadlines further out than this (e.g.
+/// YouTube daily quota, which resets at midnight Pacific Time and can
+/// be 23h away) are still recorded faithfully — see
+/// [`MAX_DAILY_WAIT_SECONDS`] and [`deadline_from_max`] — but a single
+/// `precall_check` invocation will sleep at most this long, then
+/// surface a `RateLimited` error if the deadline is still in the
+/// future so the user can decide whether to re-run.
 pub const MAX_WAIT_SECONDS: u64 = 3_600;
+
+/// Generous cap intended for provider-specific "long" deadlines such
+/// as a daily-quota reset. The default `MAX_WAIT_SECONDS` clamp is
+/// short on purpose so that a pathological short-term `Retry-After`
+/// can never persist for hours; provider integrations that *do* know
+/// the deadline is hours away (e.g. YouTube's daily quota resets at
+/// midnight Pacific Time) pass this cap into [`deadline_from_max`].
+/// Persisting the real deadline keeps every sibling process gated by
+/// [`precall_check`] until the window passes — without that, parallel
+/// invocations would each burn another unit on a doomed call.
+pub const MAX_DAILY_WAIT_SECONDS: u64 = 25 * 3_600;
 
 /// Default fallback when a 429 arrives with no `Retry-After` header.
 /// Five seconds is the smallest interval most public APIs ever ask
@@ -138,15 +155,30 @@ fn parse_http_date(s: &str) -> std::result::Result<Timestamp, jiff::Error> {
     Ok(zoned.timestamp())
 }
 
-/// Convert a `Retry-After` duration into an absolute deadline.
+/// Convert a `Retry-After` duration into an absolute deadline,
+/// clamped at [`MAX_WAIT_SECONDS`] so a pathological provider value
+/// can never persist a stale rate-limit window for hours.
 pub fn deadline_from(duration: Duration) -> Timestamp {
+    deadline_from_max(duration, MAX_WAIT_SECONDS)
+}
+
+/// Like [`deadline_from`] but takes an explicit cap. Daily-quota
+/// callers pass [`MAX_DAILY_WAIT_SECONDS`] so the persisted state can
+/// span the full reset window; short-term callers pass
+/// [`MAX_WAIT_SECONDS`].
+pub fn deadline_from_max(duration: Duration, max_seconds: u64) -> Timestamp {
     let now = Timestamp::now();
-    let secs = duration.as_secs().min(MAX_WAIT_SECONDS) as i64;
+    let secs = duration.as_secs().min(max_seconds) as i64;
     now.checked_add(jiff::Span::new().seconds(secs))
         .unwrap_or(now)
 }
 
 /// Build a [`ZadError::RateLimited`] from an absolute deadline.
+///
+/// Public so provider-specific classifiers (e.g.
+/// [`crate::google_quota`] for YouTube Music / Google Calendar) can
+/// turn their own non-2xx detections into the same typed error
+/// shape the CLI already renders.
 pub fn rate_limited_error(service: &'static str, deadline: Timestamp) -> ZadError {
     let now = Timestamp::now();
     let secs = deadline.as_second().saturating_sub(now.as_second()).max(0) as u64;
@@ -159,9 +191,17 @@ pub fn rate_limited_error(service: &'static str, deadline: Timestamp) -> ZadErro
 
 /// Pre-call gate: consult persisted state. If we are still inside a
 /// wait window:
-/// - with `wait = true`, sleep until the deadline and return `Ok(())`.
+/// - with `wait = true`, sleep until the deadline (capped at
+///   [`MAX_WAIT_SECONDS`] per invocation) and return `Ok(())` when the
+///   window has fully passed. If the deadline is further out than the
+///   single-sleep cap (typical for YouTube daily-quota errors, which
+///   can be many hours away), we sleep the cap and then return
+///   `Err(ZadError::RateLimited { .. })` pointing at the still-future
+///   deadline — the user can re-run with `--wait` to continue waiting
+///   in capped slices.
 /// - with `wait = false`, return `Err(ZadError::RateLimited { .. })`
-///   so the caller can fail fast without spending a request.
+///   immediately so the caller can fail fast without spending a
+///   request.
 ///
 /// When no deadline is recorded (or it has already passed), this is a
 /// no-op regardless of `wait`. That keeps `--wait` safe to leave on
@@ -179,10 +219,18 @@ pub async fn precall_check(service: &'static str, wait: bool) -> Result<()> {
     tracing::info!(
         service = service,
         wait_seconds = capped,
+        total_remaining_seconds = secs,
         "rate-limit wait window active; sleeping"
     );
     tokio::time::sleep(Duration::from_secs(capped)).await;
-    clear(service);
+    // Re-check after sleeping. If the deadline is fully past,
+    // `read_deadline` has already removed the file. If it's still
+    // in the future (because we capped the sleep), keep the state
+    // so sibling processes still see the rate-limit window, and
+    // surface a typed error pointing at the remaining wait.
+    if let Some(still_blocked) = read_deadline(service) {
+        return Err(rate_limited_error(service, still_blocked));
+    }
     Ok(())
 }
 

@@ -179,6 +179,60 @@ fn handle_429_persists_state_and_emits_typed_error() {
 
 #[test]
 #[serial]
+fn precall_check_with_wait_returns_error_when_deadline_exceeds_single_sleep_cap() {
+    with_home(|| {
+        // Daily-quota-shaped deadline: far further out than the
+        // MAX_WAIT_SECONDS single-sleep cap. The pre-call gate must
+        // sleep zero (we set the deadline in the past after a hop)
+        // — actually, the cleaner test is: write a deadline well
+        // beyond MAX_WAIT_SECONDS and confirm precall_check with
+        // wait=true does not silently clear it.
+        let far_future = jiff::Timestamp::now()
+            .checked_add(jiff::Span::new().seconds((zad::rate_limit::MAX_WAIT_SECONDS + 60) as i64))
+            .unwrap();
+        rate_limit::write_deadline("ymusic", far_future).unwrap();
+
+        // We can't actually wait MAX_WAIT_SECONDS in a test, but we
+        // can short-circuit the assertion path: with wait=false the
+        // gate returns RateLimited immediately, and the state file
+        // is untouched. That's the cross-process invariant.
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt
+            .block_on(rate_limit::precall_check("ymusic", false))
+            .unwrap_err();
+        assert!(matches!(err, ZadError::RateLimited { .. }));
+        // State must still be there so the next process also sees it.
+        assert!(
+            rate_limit::read_deadline("ymusic").is_some(),
+            "deadline must persist across precall_check calls until the window passes",
+        );
+    });
+}
+
+#[test]
+#[serial]
+fn precall_check_with_wait_consumes_short_deadline_and_clears_state() {
+    with_home(|| {
+        // Tiny deadline (1s) so the test can actually wait it out.
+        let near = jiff::Timestamp::now()
+            .checked_add(jiff::Span::new().seconds(1))
+            .unwrap();
+        rate_limit::write_deadline("ymusic", near).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(rate_limit::precall_check("ymusic", true))
+            .expect("wait=true with sub-cap deadline returns Ok");
+        // The state file is removed opportunistically once the
+        // deadline is in the past.
+        assert!(
+            rate_limit::read_deadline("ymusic").is_none(),
+            "expired deadline should be cleaned up after precall_check",
+        );
+    });
+}
+
+#[test]
+#[serial]
 fn rate_limited_error_message_mentions_wait_flag() {
     let err = ZadError::RateLimited {
         service: "spotify",

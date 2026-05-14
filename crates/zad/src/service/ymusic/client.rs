@@ -11,13 +11,24 @@
 //! ## Error mapping
 //!
 //! Every non-2xx HTTP status surfaces as `ZadError::Service { name:
-//! "ymusic", message }`. Two cases are specialised:
+//! "ymusic", message }`. Three cases are specialised:
 //!
 //! - `401` with `invalid_credentials` / `invalid_token` →
 //!   "credentials revoked; re-run `zad service create ymusic`"
-//! - `403`/`429` with Google's `quotaExceeded` /
-//!   `rateLimitExceeded` body → "YouTube Data API quota exhausted;
-//!   back off before retrying"
+//! - `429` (rare on YouTube — mostly `uploadRateLimitExceeded`) →
+//!   surfaces as [`ZadError::RateLimited`] via the shared
+//!   [`rate_limit::check_response`] helper.
+//! - `403` with a Google quota reason in the JSON body
+//!   (`quotaExceeded`, `dailyLimitExceeded`, `rateLimitExceeded`,
+//!   `userRateLimitExceeded`) — Google's de-facto equivalent of HTTP
+//!   429 — is *also* mapped to [`ZadError::RateLimited`] and persisted
+//!   to `~/.zad/state/ymusic/rate_limit.json` so every sibling
+//!   process running in parallel hits the pre-call gate instead of
+//!   burning more quota (each invalid YouTube call still costs ≥1
+//!   quota point per the Data API quota calculator). Daily quotas
+//!   deadline at the next Pacific-midnight reset boundary; short-term
+//!   per-user limits use the 60-second sliding window or the
+//!   provider's `Retry-After` value when present.
 //!
 //! ## YouTube quirks vs. Spotify
 //!
@@ -40,6 +51,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::{Result, ZadError};
+use crate::google_quota;
 use crate::oauth::{self, RefreshTokenStore};
 use crate::rate_limit;
 use crate::service::ymusic::{API_BASE, TOKEN_URL, USERINFO_URL};
@@ -655,6 +667,10 @@ async fn decode_response<T: for<'de> Deserialize<'de>>(
     resp: reqwest::Response,
     cache_dir: Option<&Path>,
 ) -> Result<T> {
+    // Fast path for the canonical RFC 6585 status. Google's
+    // `uploadRateLimitExceeded` is the only 429 the Data API
+    // currently emits, but the shared helper keeps every service on
+    // the same contract.
     if let Some(err) = rate_limit::check_response(SERVICE, &resp) {
         return Err(err);
     }
@@ -663,8 +679,11 @@ async fn decode_response<T: for<'de> Deserialize<'de>>(
         if status.as_u16() == 401 {
             token_cache::clear(cache_dir);
         }
+        // Snapshot headers before consuming the body — the 403-quota
+        // classifier reads `Retry-After` when Google ships one.
+        let headers = resp.headers().clone();
         let body = resp.text().await.unwrap_or_default();
-        return Err(map_http_error(status, &body));
+        return Err(classify_error(status, &body, &headers));
     }
     rate_limit::clear(SERVICE);
     resp.json::<T>().await.map_err(|e| ZadError::Service {
@@ -685,8 +704,29 @@ async fn finalize_empty(resp: reqwest::Response, cache_dir: Option<&Path>) -> Re
     if status.as_u16() == 401 {
         token_cache::clear(cache_dir);
     }
+    let headers = resp.headers().clone();
     let body = resp.text().await.unwrap_or_default();
-    Err(map_http_error(status, &body))
+    Err(classify_error(status, &body, &headers))
+}
+
+/// Map a non-2xx YouTube response to a typed error.
+///
+/// On 403 we inspect the JSON body for one of Google's quota reasons
+/// and promote it to [`ZadError::RateLimited`], persisting the
+/// deadline so every sibling process is gated by
+/// [`rate_limit::precall_check`] until the window passes — without
+/// that, parallel `zad ymusic` invocations would each burn another
+/// quota unit on a doomed call. All other 4xx/5xx fall through to a
+/// human [`ZadError::Service`] message.
+fn classify_error(
+    status: reqwest::StatusCode,
+    body: &str,
+    headers: &reqwest::header::HeaderMap,
+) -> ZadError {
+    if let Some(err) = google_quota::check_403(SERVICE, status, body, headers) {
+        return err;
+    }
+    map_http_error(status, body)
 }
 
 fn map_http_error(status: reqwest::StatusCode, body: &str) -> ZadError {
@@ -700,12 +740,21 @@ fn map_http_error(status: reqwest::StatusCode, body: &str) -> ZadError {
             "YouTube rejected the access token (HTTP {code}); the credentials may have been \
              revoked. Re-run `zad service create ymusic` to re-authorize. Body: {body}"
         )
-    } else if code == 429
-        || (code == 403 && (lower.contains("quotaexceeded") || lower.contains("ratelimitexceeded")))
-    {
+    } else if code == 403 {
+        // 403 without a known quota reason — usually scope / consent /
+        // ownership. Point the user at the most common remediation.
         format!(
-            "YouTube Data API quota / rate limit exhausted (HTTP {code}); back off before \
-             retrying. Body: {body}"
+            "YouTube rejected the request (HTTP {code}); the OAuth grant may be missing a scope \
+             or the target resource is owned by a different channel. Re-run \
+             `zad service create ymusic` if you recently changed scopes. Body: {body}"
+        )
+    } else if (500..=599).contains(&code) {
+        // Per Google's AIP-194 only UNAVAILABLE (503) is a transient
+        // signal; ymusic does not retry today (matches Spotify) but
+        // we surface a hint so operators know a re-run is reasonable.
+        format!(
+            "YouTube returned a server error (HTTP {code}); this is typically transient — \
+             retry the same command. Body: {body}"
         )
     } else {
         format!("HTTP {code}: {body}")
