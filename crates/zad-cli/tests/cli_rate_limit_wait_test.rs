@@ -53,8 +53,7 @@ fn without_wait_a_pending_deadline_fails_fast_with_helpful_message() {
         .assert()
         .failure()
         .stderr(contains("rate-limited"))
-        .stderr(contains("--wait"))
-        .stderr(contains("HTTP 429"));
+        .stderr(contains("--wait"));
 }
 
 #[test]

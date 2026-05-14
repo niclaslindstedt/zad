@@ -36,6 +36,7 @@
 
 pub mod config;
 pub mod error;
+pub mod google_quota;
 pub mod logging;
 pub mod oauth;
 pub mod permissions;
