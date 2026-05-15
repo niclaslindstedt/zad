@@ -165,7 +165,11 @@ async fn list_liked_videos_returns_parsed_items() {
 
     let paths = log.snapshot();
     let browse_calls: Vec<&String> = paths.iter().filter(|p| p.contains("/browse")).collect();
-    assert_eq!(browse_calls.len(), 1, "expected one /browse call: {paths:?}");
+    assert_eq!(
+        browse_calls.len(),
+        1,
+        "expected one /browse call: {paths:?}"
+    );
 }
 
 #[tokio::test]

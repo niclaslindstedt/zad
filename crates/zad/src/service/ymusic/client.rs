@@ -351,8 +351,9 @@ impl YmusicHttp {
             }
             let mut body = innertube_body();
             body["continuation"] = Value::String(token.clone());
-            let raw: Value =
-                self.post_innertube(&format!("/browse?ctoken={token}"), &body).await?;
+            let raw: Value = self
+                .post_innertube(&format!("/browse?ctoken={token}"), &body)
+                .await?;
             out.extend(parse_playlist_items(&raw));
             cont = next_continuation_token(&raw);
         }
@@ -383,9 +384,7 @@ impl YmusicHttp {
             .map(str::to_string)
             .ok_or(ZadError::Service {
                 name: "ymusic",
-                message: format!(
-                    "InnerTube create_playlist returned no playlistId; body: {raw}"
-                ),
+                message: format!("InnerTube create_playlist returned no playlistId; body: {raw}"),
             })?;
         Ok(PlaylistSummary {
             id,
@@ -612,9 +611,7 @@ fn search_params_for(types: &[&str]) -> Option<&'static str> {
         "video" | "videos" => "EgWKAQIQAWoOEAMQBBAJEAoQBRAVEBM%3D",
         "song" | "songs" | "track" => "EgWKAQIIAWoOEAMQBBAJEAoQBRAVEBM%3D",
         "playlist" | "playlists" => "EgWKAQIoAWoOEAMQBBAJEAoQBRAVEBM%3D",
-        "channel" | "channels" | "artist" | "artists" => {
-            "EgWKAQIgAWoOEAMQBBAJEAoQBRAVEBM%3D"
-        }
+        "channel" | "channels" | "artist" | "artists" => "EgWKAQIgAWoOEAMQBBAJEAoQBRAVEBM%3D",
         "album" | "albums" => "EgWKAQIYAWoOEAMQBBAJEAoQBRAVEBM%3D",
         _ => return None,
     })
@@ -758,7 +755,10 @@ fn parse_playlist_items(raw: &Value) -> Vec<PlaylistItem> {
             .map(str::to_string);
         let title = first_run_text(r.pointer("/flexColumns/0"));
         let channel_title = first_run_text(r.pointer("/flexColumns/1"));
-        let id = set_video_id.clone().or_else(|| video_id.clone()).unwrap_or_default();
+        let id = set_video_id
+            .clone()
+            .or_else(|| video_id.clone())
+            .unwrap_or_default();
         if id.is_empty() {
             continue;
         }
@@ -772,9 +772,7 @@ fn parse_playlist_items(raw: &Value) -> Vec<PlaylistItem> {
                     video_id: Some(v),
                 }),
             }),
-            content_details: video_id.map(|v| PlaylistItemContentDetails {
-                video_id: Some(v),
-            }),
+            content_details: video_id.map(|v| PlaylistItemContentDetails { video_id: Some(v) }),
         });
     }
     out
