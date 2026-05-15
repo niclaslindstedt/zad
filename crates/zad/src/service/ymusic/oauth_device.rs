@@ -245,7 +245,9 @@ async fn poll_once(cfg: &DeviceFlowConfig, device_code: &str) -> Result<PollOutc
     })?;
     let raw: RawPollResponse = serde_json::from_str(&body).map_err(|e| ZadError::Service {
         name: "ymusic",
-        message: format!("failed to decode device-flow poll response (HTTP {status}): {e}; body: {body}"),
+        message: format!(
+            "failed to decode device-flow poll response (HTTP {status}): {e}; body: {body}"
+        ),
     })?;
     if let Some(err) = raw.error.as_deref() {
         return Ok(match err {
@@ -261,7 +263,9 @@ async fn poll_once(cfg: &DeviceFlowConfig, device_code: &str) -> Result<PollOutc
                     name: "ymusic",
                     message: format!(
                         "device-flow token endpoint returned error `{other}`: {}",
-                        raw.error_description.as_deref().unwrap_or("(no description)")
+                        raw.error_description
+                            .as_deref()
+                            .unwrap_or("(no description)")
                     ),
                 });
             }
