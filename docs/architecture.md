@@ -131,10 +131,13 @@ crates/
           facade.rs — typed `Telegram` library facade
         ymusic/
           mod.rs    — `YmusicService` wrapper + scope mapping
-                      (`youtube_scopes_for`)
-          client.rs — YouTube Data API v3 calls (search, playlists,
-                      library) using a Google OAuth 2.0 Desktop-app
-                      refresh flow
+                      (`youtube_scopes_for`) and InnerTube constants
+          client.rs — InnerTube (music.youtube.com/youtubei/v1) calls
+                      for search, playlists, and library, with OAuth
+                      access-token refresh against Google's TVHTML5
+                      client
+          oauth_device.rs — RFC 8628 device flow (the TVHTML5
+                      client_id / client_secret are constants here)
           transport.rs — `YmusicTransport` trait + live/dry-run impls
           permissions.rs — YouTube-Music-specific per-verb permissions
           facade.rs — typed `Ymusic` library facade
@@ -169,8 +172,8 @@ crates/
         service_slack.rs    — `SlackLifecycle`
         service_spotify.rs  — `SpotifyLifecycle` (PKCE loopback)
         service_telegram.rs — `TelegramLifecycle`
-        service_ymusic.rs   — `YmusicLifecycle` (Google OAuth Desktop
-                              app loopback)
+        service_ymusic.rs   — `YmusicLifecycle` (OAuth 2.0 device
+                              flow against Google's TVHTML5 client)
         onepass.rs    — `zad 1pass <verb>` runtime handlers
         discord.rs    — `zad discord <verb>` runtime handlers
         gcal.rs       — `zad gcal <verb>` runtime handlers

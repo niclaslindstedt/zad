@@ -304,8 +304,9 @@ helpers you flatten in and how many keychain entries you write.
 | Shape | Example services | Helpers |
 |---|---|---|
 | One long-lived bot token | Discord, Telegram, Slack bot | `#[command(flatten)] BotTokenArgs` + one `secrets::account(NAME, "bot", scope)` entry |
-| OAuth (client_secret + refresh_token) | Google Calendar (gcal), YouTube Music (ymusic), Reddit | Declare your own `--client-id` / `--client-secret` / `--refresh-token` flags; store **three** keychain entries with `kind = "client-id" / "client-secret" / "refresh"` |
+| OAuth (client_secret + refresh_token) | Google Calendar (gcal), Reddit | Declare your own `--client-id` / `--client-secret` / `--refresh-token` flags; store **three** keychain entries with `kind = "client-id" / "client-secret" / "refresh"` |
 | OAuth (PKCE public client — no secret) | Spotify | Same flags minus `--client-secret`; store **two** keychain entries with `kind = "client-id"` and `kind = "refresh"`. Use [`crate::oauth`] with `client_secret: None`. |
+| OAuth (device flow, shared client) | YouTube Music (ymusic) | Single `--refresh-token` flag; the OAuth client_id / client_secret are TVHTML5 constants compiled into the binary. Use [`crate::service::ymusic::oauth_device::run_device_flow`]. Store **one** keychain entry with `kind = "refresh"`. |
 | Keypair / PEM | GitHub App | A `--private-key-file` flag; store the PEM bytes under `kind = "pem"` (plus `app_id`/`installation_id` as non-secret `Cfg` fields) |
 | User + password → access token | Matrix, IRC SASL | A `--username` flag + interactive password prompt; store just the derived access token under `kind = "access"` |
 

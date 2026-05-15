@@ -987,22 +987,12 @@ pub(crate) fn effective_config() -> Result<(YmusicServiceCfg, &'static str, Scop
     )))
 }
 
-/// Live `YmusicHttp` for the effective scope. Reads three keychain
-/// entries; any one missing surfaces a clear `re-run create` error.
+/// Live `YmusicHttp` for the effective scope. The refresh token is
+/// the only per-user secret in the InnerTube era; the OAuth client
+/// identity comes from the TVHTML5 constants compiled into the
+/// binary.
 fn http_for() -> Result<YmusicHttp> {
     let (cfg, _label, scope, path) = effective_config()?;
-    let client_id = secrets::load(&secrets::account("ymusic", "client-id", scope.clone()))?.ok_or(
-        ZadError::Service {
-            name: "ymusic",
-            message: "client-id missing from keychain; re-run `zad service create ymusic`".into(),
-        },
-    )?;
-    let client_secret = secrets::load(&secrets::account("ymusic", "client-secret", scope.clone()))?
-        .ok_or(ZadError::Service {
-            name: "ymusic",
-            message: "client-secret missing from keychain; re-run `zad service create ymusic`"
-                .into(),
-        })?;
     let refresh_token =
         secrets::load(&secrets::account("ymusic", "refresh", scope))?.ok_or(ZadError::Service {
             name: "ymusic",
@@ -1011,8 +1001,8 @@ fn http_for() -> Result<YmusicHttp> {
         })?;
     let scope_set: BTreeSet<String> = cfg.scopes.iter().cloned().collect();
     Ok(YmusicHttp::new(
-        client_id,
-        client_secret,
+        String::new(),
+        String::new(),
         refresh_token,
         scope_set,
         path,

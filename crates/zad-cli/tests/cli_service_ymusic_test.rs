@@ -1,7 +1,9 @@
 //! End-to-end tests for `zad service {create, enable, disable, show,
-//! delete} ymusic`. Modelled on `cli_service_gcal_test.rs` — same
-//! Google OAuth Desktop-app credential shape (`client_id`,
-//! `client_secret`, `refresh_token`).
+//! delete} ymusic`. The InnerTube transport uses OAuth device flow
+//! with the shared TVHTML5 client (constants in
+//! `zad::service::ymusic::oauth_device`), so the only per-user
+//! secret is the refresh token — these tests exercise the
+//! `--refresh-token-env` non-interactive path.
 
 use std::fs;
 
@@ -36,21 +38,12 @@ fn seed_global(home: &std::path::Path) {
 fn create_global(home: &std::path::Path, project: &std::path::Path) {
     bin()
         .env("ZAD_HOME_OVERRIDE", home)
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .env("YMUSIC_CLIENT_SECRET", "test-client-secret")
         .env("YMUSIC_REFRESH_TOKEN", "1//fake-refresh-token")
         .current_dir(project)
         .args([
             "service",
             "create",
             "ymusic",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--client-secret-env",
-            "YMUSIC_CLIENT_SECRET",
             "--refresh-token-env",
             "YMUSIC_REFRESH_TOKEN",
             "--scopes",
@@ -72,21 +65,12 @@ fn create_global_writes_flat_config_and_keychain() {
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .env("YMUSIC_CLIENT_SECRET", "test-client-secret")
         .env("YMUSIC_REFRESH_TOKEN", "1//fake-refresh-token")
         .current_dir(project.path())
         .args([
             "service",
             "create",
             "ymusic",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--client-secret-env",
-            "YMUSIC_CLIENT_SECRET",
             "--refresh-token-env",
             "YMUSIC_REFRESH_TOKEN",
             "--scopes",
@@ -118,14 +102,6 @@ fn create_global_writes_flat_config_and_keychain() {
 
     // Secrets must never leak into the TOML.
     assert!(
-        !body.contains("test-client-id.apps.googleusercontent.com"),
-        "client_id leaked:\n{body}"
-    );
-    assert!(
-        !body.contains("test-client-secret"),
-        "client_secret leaked:\n{body}"
-    );
-    assert!(
         !body.contains("fake-refresh-token"),
         "refresh token leaked:\n{body}"
     );
@@ -149,11 +125,6 @@ fn create_local_writes_under_project_slug() {
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .env("YMUSIC_CLIENT_SECRET", "test-client-secret")
         .env("YMUSIC_REFRESH_TOKEN", "1//fake-refresh-token")
         .current_dir(project.path())
         .args([
@@ -161,10 +132,6 @@ fn create_local_writes_under_project_slug() {
             "create",
             "ymusic",
             "--local",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--client-secret-env",
-            "YMUSIC_CLIENT_SECRET",
             "--refresh-token-env",
             "YMUSIC_REFRESH_TOKEN",
             "--scopes",
@@ -317,10 +284,7 @@ fn show_reports_effective_source_and_keychain() {
         .stdout(contains("effective : global"))
         .stdout(contains("PLxFakePlaylistId"))
         .stdout(contains("playlists.read"))
-        .stdout(contains("ymusic-client-id:global"))
-        .stdout(contains("ymusic-client-secret:global"))
         .stdout(contains("ymusic-refresh:global"))
-        .stdout(predicates::str::contains("test-client-secret").not())
         .stdout(predicates::str::contains("fake-refresh-token").not());
 }
 
@@ -375,21 +339,12 @@ fn json_output_for_create() {
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .env("YMUSIC_CLIENT_SECRET", "test-client-secret")
         .env("YMUSIC_REFRESH_TOKEN", "1//fake-refresh-token")
         .current_dir(project.path())
         .args([
             "service",
             "create",
             "ymusic",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--client-secret-env",
-            "YMUSIC_CLIENT_SECRET",
             "--refresh-token-env",
             "YMUSIC_REFRESH_TOKEN",
             "--scopes",
@@ -425,78 +380,17 @@ fn json_output_for_show() {
 
 #[test]
 #[serial]
-fn create_non_interactive_requires_client_id() {
-    let home = tempfile::tempdir().unwrap();
-    let project = tempfile::tempdir().unwrap();
-
-    bin()
-        .env("ZAD_HOME_OVERRIDE", home.path())
-        .current_dir(project.path())
-        .args([
-            "service",
-            "create",
-            "ymusic",
-            "--scopes",
-            "search",
-            "--non-interactive",
-            "--no-validate",
-        ])
-        .assert()
-        .failure()
-        .stderr(contains("--client-id"));
-}
-
-#[test]
-#[serial]
-fn create_non_interactive_requires_client_secret() {
-    let home = tempfile::tempdir().unwrap();
-    let project = tempfile::tempdir().unwrap();
-
-    bin()
-        .env("ZAD_HOME_OVERRIDE", home.path())
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .current_dir(project.path())
-        .args([
-            "service",
-            "create",
-            "ymusic",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--scopes",
-            "search",
-            "--non-interactive",
-            "--no-validate",
-        ])
-        .assert()
-        .failure()
-        .stderr(contains("--client-secret"));
-}
-
-#[test]
-#[serial]
 fn create_non_interactive_requires_refresh_token() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
 
     bin()
         .env("ZAD_HOME_OVERRIDE", home.path())
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .env("YMUSIC_CLIENT_SECRET", "test-client-secret")
         .current_dir(project.path())
         .args([
             "service",
             "create",
             "ymusic",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--client-secret-env",
-            "YMUSIC_CLIENT_SECRET",
             "--scopes",
             "search",
             "--non-interactive",

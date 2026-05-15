@@ -30,20 +30,11 @@ fn store_keychain_creds(home: &std::path::Path) {
     // the production naming. `--no-validate` keeps it offline.
     bin()
         .env("ZAD_HOME_OVERRIDE", home)
-        .env(
-            "YMUSIC_CLIENT_ID",
-            "test-client-id.apps.googleusercontent.com",
-        )
-        .env("YMUSIC_CLIENT_SECRET", "test-client-secret")
         .env("YMUSIC_REFRESH_TOKEN", "1//fake-refresh-token")
         .args([
             "service",
             "create",
             "ymusic",
-            "--client-id-env",
-            "YMUSIC_CLIENT_ID",
-            "--client-secret-env",
-            "YMUSIC_CLIENT_SECRET",
             "--refresh-token-env",
             "YMUSIC_REFRESH_TOKEN",
             "--scopes",
