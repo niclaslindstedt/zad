@@ -1,6 +1,9 @@
-//! Typed library facade for YouTube Music. Same shape as
-//! `service::gcal::facade` (full OAuth: client_id + client_secret +
-//! refresh_token).
+//! Typed library facade for YouTube Music. The InnerTube transport
+//! uses Google's TVHTML5 OAuth client (constants in
+//! [`super::oauth_device`]), so the only per-user secret is the
+//! refresh token. `client_id` and `client_secret` survive on
+//! [`YmusicCredentials`] for source compatibility with code from the
+//! Data API era but are ignored by [`YmusicHttp`].
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -371,18 +374,9 @@ fn effective_config() -> Result<(YmusicServiceCfg, Scope<'static>, PathBuf)> {
 }
 
 fn load_credentials(scope: &Scope<'_>) -> Result<YmusicCredentials> {
-    let client_id = secrets::load(&secrets::account("ymusic", "client-id", scope.clone()))?.ok_or(
-        ZadError::Service {
-            name: "ymusic",
-            message: "client-id missing from keychain; re-run `zad service create ymusic`".into(),
-        },
-    )?;
-    let client_secret = secrets::load(&secrets::account("ymusic", "client-secret", scope.clone()))?
-        .ok_or(ZadError::Service {
-            name: "ymusic",
-            message: "client-secret missing from keychain; re-run `zad service create ymusic`"
-                .into(),
-        })?;
+    // The refresh token is the only per-user secret in the
+    // InnerTube era; `client_id` / `client_secret` are TVHTML5
+    // constants in [`crate::service::ymusic::oauth_device`].
     let refresh_account = secrets::account("ymusic", "refresh", scope.clone());
     let refresh_token = secrets::load(&refresh_account)?.ok_or(ZadError::Service {
         name: "ymusic",
@@ -391,8 +385,8 @@ fn load_credentials(scope: &Scope<'_>) -> Result<YmusicCredentials> {
     let refresh_token_store: Option<Arc<dyn RefreshTokenStore>> =
         Some(Arc::new(KeychainRefreshStore::new(refresh_account)));
     Ok(YmusicCredentials {
-        client_id,
-        client_secret,
+        client_id: String::new(),
+        client_secret: String::new(),
         refresh_token,
         refresh_token_store,
     })

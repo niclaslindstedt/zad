@@ -14,15 +14,17 @@ zad ymusic <VERB> [OPTIONS]
 
 `zad ymusic` operates the YouTube Music service at runtime. The
 project must already have `ymusic` enabled (`zad service enable
-ymusic`) and valid Google OAuth credentials registered in either
-scope — runtime verbs resolve the effective configuration with local
-winning over global, load the three-field OAuth credential
-(`client_id` + `client_secret` + `refresh_token`) from the OS
-keychain, and mint a fresh access token once per CLI invocation.
+ymusic`) and a valid refresh token registered in either scope —
+runtime verbs resolve the effective configuration with local winning
+over global, load the refresh token from the OS keychain, and mint a
+fresh access token once per CLI invocation.
 
-YouTube Music has no dedicated API; the runtime client talks to the
-**YouTube Data API v3**, which covers playlists, library (rated
-videos), and search the same way Spotify Web API v1 covers Spotify.
+The runtime client talks to YouTube Music's internal **InnerTube**
+backend at `music.youtube.com/youtubei/v1` — the same surface the
+`music.youtube.com` web app uses. InnerTube is **not metered by the
+YouTube Data API daily quota**, which the older Data API v3 transport
+in earlier zad versions was bound by; large playlist migrations that
+used to take weeks of calendar time now finish in minutes.
 
 | Verb | Description |
 |---|---|
@@ -41,36 +43,35 @@ Every verb supports `--json` for machine-readable output. Mutating
 verbs (`playlists create/rename/delete/add/remove`,
 `library like/unlike`) also support `--dry-run` for offline previews.
 
-## Credentials (OAuth 2.0 Desktop app)
+## Credentials (OAuth 2.0 device flow)
 
-YouTube Music uses **Google OAuth 2.0 Desktop app**, identical in
-shape to `gcal`. `zad service create ymusic` stores **three** keychain
-entries per scope:
+YouTube Music uses Google's **OAuth 2.0 device flow** (RFC 8628)
+against the shared **TVHTML5** client. The TVHTML5 client_id and
+client_secret are constants compiled into the binary (and ship with
+every install of `ytmusicapi`, every YouTube Music app, every Smart
+TV — Google does not treat them as confidential), so there is
+**nothing per-operator to register**. `zad service create ymusic`
+stores **one** keychain entry per scope:
 
-- `ymusic-client-id:<scope>`
-- `ymusic-client-secret:<scope>`
 - `ymusic-refresh:<scope>`
 
 Access tokens are **never persisted**: each CLI invocation exchanges
 the refresh token for a fresh access token and uses it for the
 lifetime of that process.
 
-### Creating a Google OAuth client
+### Running the device flow
 
-1. Open the Google Cloud Console credentials page:
-   `https://console.cloud.google.com/apis/credentials`.
-2. Click **Create credentials → OAuth client ID**, type **Desktop
-   app**.
-3. Enable the **YouTube Data API v3** under **APIs & Services →
-   Library**.
-4. Run `zad service create ymusic`. zad opens your browser to the
-   Google consent screen, accepts the redirect on
-   `http://127.0.0.1:<port>`, exchanges the authorization code for a
-   refresh token, and stores all three keychain entries.
+1. Run `zad service create ymusic`.
+2. zad prints a short URL (typically `https://www.google.com/device`)
+   and a 9-character user code, then starts polling.
+3. Visit the URL **in any browser** (it does not have to be on this
+   machine), type the code, sign in to the YouTube account whose
+   library you want to use, and approve.
+4. zad receives the refresh token and stores it.
 
-If you already have a refresh token (minted out-of-band), pass
-`--refresh-token` (or `--refresh-token-env`) to skip the browser
-flow — useful for CI.
+If you already have a refresh token (minted out-of-band — e.g. with
+`ytmusicapi`'s `setup_oauth`), pass `--refresh-token` (or
+`--refresh-token-env`) to skip the prompt entirely. Useful for CI.
 
 The Google account you authorize must have a **YouTube channel**
 attached (most do automatically; if not, `zad service create ymusic`
