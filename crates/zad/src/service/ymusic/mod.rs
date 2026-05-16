@@ -57,24 +57,23 @@ pub const API_BASE: &str = "https://music.youtube.com/youtubei/v1";
 /// poll *and* the per-call access-token refresh.
 pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
-/// Public API key for the WEB_REMIX InnerTube client. Ships in
-/// every `music.youtube.com` HTML page; Google does not treat it as
-/// confidential.
-pub const INNERTUBE_API_KEY: &str = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
-
 /// `clientName` value sent in every InnerTube `context.client`
 /// envelope. Identifies the caller as the YouTube Music web app.
 pub const WEB_REMIX_CLIENT_NAME: &str = "WEB_REMIX";
 
 /// `clientVersion` value sent alongside [`WEB_REMIX_CLIENT_NAME`].
-/// Updated occasionally when InnerTube starts rejecting older
-/// strings; treat it as a moving target.
-pub const WEB_REMIX_CLIENT_VERSION: &str = "1.20240101.00.00";
+/// InnerTube starts rejecting old strings with a 400
+/// `INVALID_ARGUMENT` once they fall too far behind the live web
+/// client. The format is `1.YYYYMMDD.NN.NN`; `ytmusicapi` rebuilds
+/// it as `"1." + today.strftime("%Y%m%d") + ".01.00"` on every
+/// run. Bump this constant whenever a 400 sweep starts hitting
+/// every `/browse` call again.
+pub const WEB_REMIX_CLIENT_VERSION: &str = "1.20260516.01.00";
 
 /// Date (UTC) on which the InnerTube surface used here was last
 /// walked against `ytmusicapi`'s reference + the web client's
 /// observed payloads. Bump this when the audit is repeated.
-pub const API_VERIFIED_AT: &str = "2026-05-15";
+pub const API_VERIFIED_AT: &str = "2026-05-16";
 
 /// Canonical landing page describing the InnerTube surface this
 /// service targets. (Google does not document it publicly; we point
