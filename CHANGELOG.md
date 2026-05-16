@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.9.2]
+## [0.9.3]
 
-- style(ymusic): apply cargo fmt to ymusic transport and tests (#87)
+- fix(ymusic)!: drop OpenID userinfo probe and dead scope mapper (#100)
 
