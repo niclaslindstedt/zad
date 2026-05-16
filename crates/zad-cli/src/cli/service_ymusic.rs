@@ -118,6 +118,11 @@ impl LifecycleService for YmusicLifecycle {
     }
 
     async fn validate(_cfg: &YmusicServiceCfg, creds: &mut YmusicSecrets) -> Result<String> {
+        // The TVHTML5 device flow only grants the `youtube` scope; the
+        // resulting access token is rejected by the OpenID Connect
+        // userinfo endpoint (HTTP 401 "Invalid Credentials"). Identity
+        // therefore comes from InnerTube's `my_channel` browse, which
+        // works with the `youtube` scope we actually have.
         let captured: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let store = Arc::new(CaptureRefreshToken(captured.clone()));
         let http = YmusicHttp::with_store(
@@ -128,20 +133,13 @@ impl LifecycleService for YmusicLifecycle {
             std::path::PathBuf::new(),
             Some(store),
         );
-        let info = http.userinfo().await?;
-        let email = info.email.unwrap_or_else(|| "<unknown>".into());
-        let identity = match http.my_channel().await {
-            Ok(c) => {
-                let title = c
-                    .snippet
-                    .as_ref()
-                    .and_then(|s| s.title.as_deref())
-                    .unwrap_or(email.as_str())
-                    .to_string();
-                format!("{title} ({email})")
-            }
-            Err(_) => format!("{email} (no YouTube channel)"),
-        };
+        let channel = http.my_channel().await?;
+        let title = channel
+            .snippet
+            .as_ref()
+            .and_then(|s| s.title.as_deref())
+            .unwrap_or("YouTube Music user");
+        let identity = format!("{title} ({})", channel.id);
         if let Some(rotated) = captured.lock().unwrap().take() {
             creds.refresh_token = rotated;
         }

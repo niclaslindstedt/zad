@@ -56,10 +56,6 @@ pub const API_BASE: &str = "https://music.youtube.com/youtubei/v1";
 /// Google's OAuth 2.0 token endpoint, used here for the device-flow
 /// poll *and* the per-call access-token refresh.
 pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
-/// OpenID Connect userinfo endpoint — hit at validate-time to
-/// capture the authenticated user's identity. Unchanged from the
-/// Data API era; works with the TVHTML5 client too.
-pub const USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
 /// Public API key for the WEB_REMIX InnerTube client. Ships in
 /// every `music.youtube.com` HTML page; Google does not treat it as
@@ -89,33 +85,3 @@ pub const API_REFERENCE_URL: &str = "https://github.com/sigma67/ytmusicapi";
 /// we record the WEB_REMIX clientVersion for parity with other
 /// services that surface an `api_base_version`.
 pub const API_BASE_VERSION: &str = WEB_REMIX_CLIENT_VERSION;
-
-/// Compute the minimal set of Google OAuth scopes to request, given
-/// the zad-level scopes the operator declared. Mirrors
-/// [`crate::cli::service_gcal::google_scopes_for`]: keep the consent
-/// screen as narrow as possible.
-///
-/// The mapping:
-/// - `search` → no provider scope of its own (the YouTube Data API
-///   accepts unauthenticated search, but we still need an authorized
-///   session so `validate` can identify the channel).
-/// - `playlists.read`, `library.read` → `youtube.readonly`.
-/// - `playlists.write`, `library.write` → `youtube` (read+write
-///   superset).
-///
-/// The OpenID Connect `openid email` scopes are always added so
-/// `userinfo` can populate the authenticated email at validate time.
-pub fn youtube_scopes_for(zad_scopes: &[String]) -> Vec<String> {
-    let has = |s: &str| zad_scopes.iter().any(|z| z == s);
-    let mut out: Vec<String> = vec!["openid".into(), "email".into()];
-
-    if has("playlists.write") || has("library.write") {
-        out.push("https://www.googleapis.com/auth/youtube".into());
-    } else if has("playlists.read") || has("library.read") {
-        out.push("https://www.googleapis.com/auth/youtube.readonly".into());
-    }
-
-    out.sort();
-    out.dedup();
-    out
-}

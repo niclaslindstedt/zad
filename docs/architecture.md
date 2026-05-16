@@ -130,8 +130,7 @@ crates/
           permissions.rs — Telegram-specific `EffectivePermissions`
           facade.rs — typed `Telegram` library facade
         ymusic/
-          mod.rs    — `YmusicService` wrapper + scope mapping
-                      (`youtube_scopes_for`) and InnerTube constants
+          mod.rs    — `YmusicService` wrapper + InnerTube constants
           client.rs — InnerTube (music.youtube.com/youtubei/v1) calls
                       for search, playlists, and library, with OAuth
                       access-token refresh against Google's TVHTML5
