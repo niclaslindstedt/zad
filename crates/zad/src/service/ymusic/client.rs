@@ -54,7 +54,7 @@ use crate::oauth::{self, RefreshTokenStore};
 use crate::rate_limit;
 use crate::service::ymusic::oauth_device::{TVHTML5_CLIENT_ID, TVHTML5_CLIENT_SECRET};
 use crate::service::ymusic::{
-    API_BASE, INNERTUBE_API_KEY, TOKEN_URL, WEB_REMIX_CLIENT_NAME, WEB_REMIX_CLIENT_VERSION,
+    API_BASE, TOKEN_URL, WEB_REMIX_CLIENT_NAME, WEB_REMIX_CLIENT_VERSION,
 };
 use crate::token_cache;
 
@@ -540,21 +540,26 @@ impl YmusicHttp {
     async fn post_innertube(&self, path: &str, body: &Value) -> Result<Value> {
         let access = self.access_token().await?;
         let cache_dir = self.resolved_cache_dir();
-        let url = if path.contains('?') {
-            format!("{}{path}&key={INNERTUBE_API_KEY}", self.api_base)
-        } else {
-            format!("{}{path}?key={INNERTUBE_API_KEY}", self.api_base)
-        };
+        // No `?key=` query param: that routes the request through
+        // Google's API gateway, which then validates that the bearer
+        // token's project matches the API key's project. Our bearer
+        // is minted by the TVHTML5 client; the InnerTube key is the
+        // public WEB key — the mismatch trips a 400 INVALID_ARGUMENT
+        // before the request reaches InnerTube. ytmusicapi does the
+        // same: it only attaches the key when authenticating with
+        // browser cookies, never with OAuth.
+        let url = format!("{}{path}", self.api_base);
         let resp = reqwest::Client::new()
             .post(&url)
             .bearer_auth(&access)
-            .header("X-Origin", "https://music.youtube.com")
+            // `Origin`, not `X-Origin` — InnerTube's CSRF check looks
+            // at the standard CORS origin; `X-Origin` is ignored.
+            .header("Origin", "https://music.youtube.com")
             .header(
                 "User-Agent",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
                  (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             )
-            .header("X-Goog-Visitor-Id", "")
             .json(body)
             .send()
             .await
