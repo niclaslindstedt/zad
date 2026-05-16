@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.9.1]
+## [0.9.2]
 
-- feat(ymusic)!: swap transport to InnerTube + TVHTML5 device-flow OAuth (#86)
+- style(ymusic): apply cargo fmt to ymusic transport and tests (#87)
 
