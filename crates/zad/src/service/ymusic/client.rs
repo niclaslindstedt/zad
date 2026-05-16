@@ -54,8 +54,7 @@ use crate::oauth::{self, RefreshTokenStore};
 use crate::rate_limit;
 use crate::service::ymusic::oauth_device::{TVHTML5_CLIENT_ID, TVHTML5_CLIENT_SECRET};
 use crate::service::ymusic::{
-    API_BASE, INNERTUBE_API_KEY, TOKEN_URL, USERINFO_URL, WEB_REMIX_CLIENT_NAME,
-    WEB_REMIX_CLIENT_VERSION,
+    API_BASE, INNERTUBE_API_KEY, TOKEN_URL, WEB_REMIX_CLIENT_NAME, WEB_REMIX_CLIENT_VERSION,
 };
 use crate::token_cache;
 
@@ -524,20 +523,6 @@ impl YmusicHttp {
             }),
             content_details: None,
         })
-    }
-
-    /// OpenID Connect `userinfo` — fetches the authenticated user's
-    /// email so the lifecycle banner has something to show.
-    pub async fn userinfo(&self) -> Result<UserInfo> {
-        let access = self.access_token().await?;
-        let cache_dir = self.resolved_cache_dir();
-        let resp = reqwest::Client::new()
-            .get(USERINFO_URL)
-            .bearer_auth(&access)
-            .send()
-            .await
-            .map_err(network_err)?;
-        decode_response(resp, cache_dir.as_deref()).await
     }
 
     // -----------------------------------------------------------------
@@ -1010,16 +995,6 @@ impl Privacy {
 // Public response types — shape-compatible with the old Data API
 // projections so the facade and CLI keep compiling unchanged.
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UserInfo {
-    #[serde(default)]
-    pub email: Option<String>,
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub sub: Option<String>,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChannelSummary {

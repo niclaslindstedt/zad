@@ -116,9 +116,10 @@ file path to edit. The mapping is:
 | `library like`, `library unlike`                  | `library.write`    |
 | `permissions`                                     | none (local state only) |
 
-Google-side OAuth scopes are computed from the zad scopes at create
-time, so the consent screen shows the least possible surface. See
-`youtube_scopes_for` in `crates/zad/src/service/ymusic/mod.rs` for the mapping.
+The TVHTML5 device flow always grants the
+`https://www.googleapis.com/auth/youtube` scope (read+write); zad
+filters at the *zad-scope* layer above before each call so a
+read-only profile can never invoke a write verb.
 
 ## Permissions (second layer)
 
