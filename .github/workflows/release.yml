@@ -98,7 +98,7 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Install cross
         if: matrix.use_cross == true
-        uses: taiki-e/install-action@ec28e287910af896fd98e04056d31fa68607e7ad # v2
+        uses: taiki-e/install-action@873c7452cadb7c034694a1282227095d93fbdf92 # v2
         with:
           tool: cross
       # Skip tests on cross-built and aarch64-windows matrix entries —
